@@ -21,6 +21,31 @@ namespace Hook {
     HWND g_hwnd = NULL;
     WNDPROC oWndProc = NULL;
 
+    BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
+        DWORD pid = 0;
+        GetWindowThreadProcessId(hwnd, &pid);
+        if (pid == GetCurrentProcessId()) {
+            if (IsWindowVisible(hwnd) && GetWindow(hwnd, GW_OWNER) == NULL) {
+                LONG style = GetWindowLongPtr(hwnd, GWL_STYLE);
+                if ((style & WS_CAPTION) || (style & WS_POPUP)) {
+                    g_hwnd = hwnd;
+                    return FALSE;
+                }
+            }
+        }
+        return TRUE;
+    }
+
+    void SetMouseCursorVisible(bool visible) {
+        if (auto world = SDK::UWorld::GetWorld()) {
+            if (world->OwningGameInstance && world->OwningGameInstance->LocalPlayers.IsValidIndex(0)) {
+                if (auto pc = world->OwningGameInstance->LocalPlayers[0]->PlayerController) {
+                    pc->bShowMouseCursor = visible;
+                }
+            }
+        }
+    }
+
     LRESULT APIENTRY WndProcHook(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         Shadow::Input(hwnd, uMsg, wParam, lParam);
 
@@ -48,37 +73,14 @@ namespace Hook {
         return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
     }
 
-    BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
-        DWORD pid = 0;
-        GetWindowThreadProcessId(hwnd, &pid);
-        if (pid == GetCurrentProcessId()) {
-            if (IsWindowVisible(hwnd) && GetWindow(hwnd, GW_OWNER) == NULL) {
-                LONG style = GetWindowLongPtr(hwnd, GWL_STYLE);
-                if ((style & WS_CAPTION) || (style & WS_POPUP)) {
-                    g_hwnd = hwnd;
-                    return FALSE;
-                }
-            }
-        }
-        return TRUE;
-    }
-
     typedef void(__fastcall* tPostRender)(SDK::UGameViewportClient* _this, SDK::UCanvas* Canvas);
     tPostRender oPostRender = nullptr;
-
-    void SetMouseCursorVisible(bool visible) {
-        if (auto world = SDK::UWorld::GetWorld()) {
-            if (world->OwningGameInstance && world->OwningGameInstance->LocalPlayers.IsValidIndex(0)) {
-                if (auto pc = world->OwningGameInstance->LocalPlayers[0]->PlayerController) {
-                    pc->bShowMouseCursor = visible;
-                }
-            }
-        }
-    }
 
     void __fastcall hkPostRender(SDK::UGameViewportClient* rcx, SDK::UCanvas* canvas, void* r8, void* r9) {
         if (!canvas) return oPostRender(rcx, canvas);
 
+        // Shadow Gui内部会自动获取引擎默认字体
+        /*
         if (!Shadow::DefaultFont) {
             static SDK::UFont* OpenSansRegular12 = nullptr;
 
@@ -87,8 +89,9 @@ namespace Hook {
                 if (_Font && _Font->IsA(SDK::UFont::StaticClass())) OpenSansRegular12 = (SDK::UFont*)_Font; Shadow::DefaultFont = OpenSansRegular12;
             }
         }
+        */
 
-        Shadow::SetAllowedKeys({ 'W', 'A', 'S', 'D', VK_SPACE });
+        Shadow::SetAllowedKeys({ 'W', 'A', 'S', 'D', VK_SPACE }); // 放行常用移动按键
 
         static bool bWasMenuOpen = false;
         if (bShowMenu != bWasMenuOpen) {
@@ -105,8 +108,8 @@ namespace Hook {
             if (Shadow::Begin(U8("测试菜单##main_window"))) {
                 if (Shadow::BeginTabBar("MainTabs##tabs")) {
 
-                    if (Shadow::BeginTabItem("Settings##tab0")) {
-                        Shadow::HotKey("Menu Key##menu_key", &keyMenu);
+                    if (Shadow::BeginTabItem(U8("设置##tab0"))) {
+                        Shadow::HotKey(U8("菜单按键##menu_key"), &keyMenu);
                         Shadow::EndTabItem();
                     }
 

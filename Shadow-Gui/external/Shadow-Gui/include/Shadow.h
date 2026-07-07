@@ -57,6 +57,18 @@ namespace Shadow {
         bool IsDragging = false;
         Vec2 DragOffset = { 0.f, 0.f };
 
+        // 窗口调整大小
+        bool IsResizing = false;
+        Vec2 ResizeStartPos = { 0.f, 0.f };
+        Vec2 ResizeStartSize = { 0.f, 0.f };
+        float ResizeTriangleSize = 16.f;
+        bool IsHoveringResize = false;
+
+        // 剪裁区域
+        bool ClippingEnabled = false;
+        Vec2 ClipMin = { 0.f, 0.f };
+        Vec2 ClipMax = { 0.f, 0.f };
+
         // 游标与布局
         Vec2 Cursor = { 0.f, 0.f };
         float Padding = 8.f;
@@ -347,6 +359,7 @@ namespace Shadow {
             HandleKeyUp(VK_LBUTTON);
             g_Ctx.MouseDown = false;
             g_Ctx.IsDragging = false;
+            g_Ctx.IsResizing = false;
             break;
         case WM_RBUTTONDOWN: if (HandleKeyDown(VK_RBUTTON)) return 0; break;
         case WM_RBUTTONUP:   HandleKeyUp(VK_RBUTTON); break;
@@ -395,25 +408,72 @@ namespace Shadow {
         return 0;
     }
 
+    // 剪裁辅助函数：设置剪裁区域
+    inline void PushClipRect(Vec2 min, Vec2 max) {
+        g_Ctx.ClippingEnabled = true;
+        g_Ctx.ClipMin = min;
+        g_Ctx.ClipMax = max;
+    }
+
+    // 剪裁辅助函数：清除剪裁区域
+    inline void PopClipRect() {
+        g_Ctx.ClippingEnabled = false;
+    }
+
+    // 检查矩形是否在剪裁区域内（至少部分可见）
+    inline bool IsRectVisible(Vec2 pos, Vec2 size) {
+        if (!g_Ctx.ClippingEnabled) return true;
+
+        // 检查矩形是否完全在剪裁区域之外
+        if (pos.x + size.x < g_Ctx.ClipMin.x || pos.x > g_Ctx.ClipMax.x ||
+            pos.y + size.y < g_Ctx.ClipMin.y || pos.y > g_Ctx.ClipMax.y) {
+            return false;
+        }
+        return true;
+    }
+
+    // 裁剪矩形到剪裁区域
+    inline void ClipRect(Vec2& pos, Vec2& size) {
+        if (!g_Ctx.ClippingEnabled) return;
+
+        // 裁剪左边界
+        if (pos.x < g_Ctx.ClipMin.x) {
+            size.x -= (g_Ctx.ClipMin.x - pos.x);
+            pos.x = g_Ctx.ClipMin.x;
+        }
+        // 裁剪上边界
+        if (pos.y < g_Ctx.ClipMin.y) {
+            size.y -= (g_Ctx.ClipMin.y - pos.y);
+            pos.y = g_Ctx.ClipMin.y;
+        }
+        // 裁剪右边界
+        if (pos.x + size.x > g_Ctx.ClipMax.x) {
+            size.x = g_Ctx.ClipMax.x - pos.x;
+        }
+        // 裁剪下边界
+        if (pos.y + size.y > g_Ctx.ClipMax.y) {
+            size.y = g_Ctx.ClipMax.y - pos.y;
+        }
+
+        // 确保尺寸不为负
+        if (size.x < 0.f) size.x = 0.f;
+        if (size.y < 0.f) size.y = 0.f;
+    }
+
     inline void DrawRect(Vec2 pos, Vec2 size, Color color) {
         if (!g_Ctx.Canvas) return;
+
+        // 检查是否可见
+        if (!IsRectVisible(pos, size)) return;
+
+        // 裁剪矩形
+        ClipRect(pos, size);
+        if (size.x <= 0.f || size.y <= 0.f) return;
+
         SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
         SDK::FVector2D uePos{ static_cast<double>(pos.x), static_cast<double>(pos.y) };
         SDK::FVector2D ueSize{ static_cast<double>(size.x), static_cast<double>(size.y) };
         g_Ctx.Canvas->K2_DrawBox(uePos, ueSize, 1.0f, ueColor);
-    }
-
-    inline void DrawTextString(std::string_view text, Vec2 pos, Color color) {
-        if (!g_Ctx.Canvas || !g_Ctx.DefaultFont) return;
-        SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
-        SDK::FVector2D uePos{ static_cast<double>(pos.x), static_cast<double>(pos.y) };
-        SDK::FVector2D scale{ 1.0, 1.0 };
-        SDK::FLinearColor shadow{ 0.f, 0.f, 0.f, 1.f };
-        SDK::FVector2D shadowOff{ 1.0, 1.0 };
-        SDK::FLinearColor outline{ 0.f, 0.f, 0.f, 0.f };
-
-        std::wstring wstr = ToWString(text);
-        g_Ctx.Canvas->K2_DrawText(g_Ctx.DefaultFont, SDK::FString(wstr.c_str()), uePos, scale, ueColor, 0.f, shadow, shadowOff, false, false, false, outline);
     }
 
     inline Vec2 MeasureTextSize(std::string_view text) {
@@ -424,6 +484,136 @@ namespace Shadow {
         return { static_cast<float>(size.X), static_cast<float>(size.Y) };
     }
 
+    // 测量单个字符的宽度
+    inline float MeasureCharWidth(wchar_t ch) {
+        if (!g_Ctx.Canvas || !g_Ctx.DefaultFont) return 0.f;
+        std::wstring single(1, ch);
+        SDK::FVector2D scale{ 1.0, 1.0 };
+        SDK::FVector2D size = g_Ctx.Canvas->K2_TextSize(g_Ctx.DefaultFont, SDK::FString(single.c_str()), scale);
+        return static_cast<float>(size.X);
+    }
+
+    // 测量文本的整体高度
+    inline float MeasureTextHeight(std::string_view text) {
+        if (!g_Ctx.Canvas || !g_Ctx.DefaultFont || text.empty()) return 0.f;
+        Vec2 size = MeasureTextSize(text);
+        return size.y;
+    }
+
+    // 裁剪文本：根据剪裁区域裁剪文本字符串
+    // 返回裁剪后的文本，以及是否需要调整位置
+    inline std::string ClipTextString(std::string_view text, Vec2 pos, Vec2& outPos, bool& shouldDraw) {
+        shouldDraw = true;
+        outPos = pos;
+
+        if (!g_Ctx.ClippingEnabled) {
+            return std::string(text);
+        }
+
+        // 垂直裁剪：如果文本底部超出剪裁区域底部，整个文本不绘制
+        float textHeight = MeasureTextHeight(text);
+        if (pos.y + textHeight > g_Ctx.ClipMax.y) {
+            shouldDraw = false;
+            return "";
+        }
+
+        // 如果文本顶部在剪裁区域之上，整个文本不绘制
+        if (pos.y < g_Ctx.ClipMin.y) {
+            shouldDraw = false;
+            return "";
+        }
+
+        // 水平裁剪：从右侧逐字符删除
+        std::wstring wstr = ToWString(text);
+        if (wstr.empty()) {
+            shouldDraw = false;
+            return "";
+        }
+
+        // 检查是否完全在剪裁区域右侧之外
+        if (pos.x >= g_Ctx.ClipMax.x) {
+            shouldDraw = false;
+            return "";
+        }
+
+        // 检查是否需要从左边裁剪
+        if (pos.x < g_Ctx.ClipMin.x) {
+            // 计算需要从左边删除多少字符
+            float currentX = pos.x;
+            std::wstring clippedWstr;
+            bool foundStart = false;
+
+            for (size_t i = 0; i < wstr.size(); ++i) {
+                float charWidth = MeasureCharWidth(wstr[i]);
+                if (!foundStart) {
+                    if (currentX + charWidth > g_Ctx.ClipMin.x) {
+                        foundStart = true;
+                        clippedWstr += wstr[i];
+                        outPos.x = currentX;
+                    }
+                    currentX += charWidth;
+                }
+                else {
+                    clippedWstr += wstr[i];
+                }
+            }
+
+            if (!foundStart) {
+                shouldDraw = false;
+                return "";
+            }
+            wstr = clippedWstr;
+        }
+
+        // 从右边裁剪：循环删除超出右边界的字符
+        float totalWidth = 0.f;
+        for (wchar_t ch : wstr) {
+            totalWidth += MeasureCharWidth(ch);
+        }
+
+        while (!wstr.empty() && outPos.x + totalWidth > g_Ctx.ClipMax.x) {
+            // 删除最后一个字符
+            wchar_t lastChar = wstr.back();
+            float lastCharWidth = MeasureCharWidth(lastChar);
+            totalWidth -= lastCharWidth;
+            wstr.pop_back();
+        }
+
+        if (wstr.empty()) {
+            shouldDraw = false;
+            return "";
+        }
+
+        // 将裁剪后的宽字符串转换回UTF-8
+        int size_needed = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), static_cast<int>(wstr.size()), nullptr, 0, nullptr, nullptr);
+        std::string result(size_needed, 0);
+        WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), static_cast<int>(wstr.size()), &result[0], size_needed, nullptr, nullptr);
+
+        shouldDraw = true;
+        return result;
+    }
+
+    inline void DrawTextString(std::string_view text, Vec2 pos, Color color) {
+        if (!g_Ctx.Canvas || !g_Ctx.DefaultFont) return;
+
+        // 使用新的文本裁剪函数
+        Vec2 clippedPos = pos;
+        bool shouldDraw = true;
+        std::string clippedText = ClipTextString(text, pos, clippedPos, shouldDraw);
+
+        if (!shouldDraw || clippedText.empty()) return;
+
+        SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
+        SDK::FVector2D uePos{ static_cast<double>(clippedPos.x), static_cast<double>(clippedPos.y) };
+        SDK::FVector2D scale{ 1.0, 1.0 };
+        SDK::FLinearColor shadow{ 0.f, 0.f, 0.f, 1.f };
+        SDK::FVector2D shadowOff{ 1.0, 1.0 };
+        SDK::FLinearColor outline{ 0.f, 0.f, 0.f, 0.f };
+
+        std::wstring wstr = ToWString(clippedText);
+        g_Ctx.Canvas->K2_DrawText(g_Ctx.DefaultFont, SDK::FString(wstr.c_str()), uePos, scale, ueColor, 0.f, shadow, shadowOff, false, false, false, outline);
+    }
+
     // 动态获取右半部分的统一控制起始X位置
     inline float GetControlOffsetX() {
         return std::max(120.f, g_Ctx.WindowSize.x * 0.4f);
@@ -432,7 +622,7 @@ namespace Shadow {
     inline void NewFrame(SDK::UCanvas* Canvas) {
         g_Ctx.Canvas = Canvas;
         if (!g_Ctx.DefaultFont) {
-            if (SDK::UEngine::GetEngine()) { g_Ctx.DefaultFont = SDK::UEngine::GetEngine()->MediumFont; }
+            if (SDK::UEngine::GetEngine()) { g_Ctx.DefaultFont = SDK::UEngine::GetEngine()->LargeFont; }
         }
 
         // 获取字体大小并动态设定控件全局的高度和间隔
@@ -620,20 +810,103 @@ namespace Shadow {
         DrawRect(g_Ctx.WindowPos, { g_Ctx.WindowSize.x, titleBarHeight }, { 0.2f, 0.2f, 0.2f, 1.f });
         DrawTextString(display, { g_Ctx.WindowPos.x + 10.f, g_Ctx.WindowPos.y + 7.f }, { 1.f, 1.f, 1.f, 1.f });
 
-        if (IsMouseHovering(g_Ctx.WindowPos, { g_Ctx.WindowSize.x, titleBarHeight }) && g_Ctx.MouseClicked) {
+        // 整个窗口区域都可以拖拽（不仅仅是标题栏）
+        Vec2 wholeWindowSize = g_Ctx.WindowSize;
+        bool hoveringWholeWindow = IsMouseHovering(g_Ctx.WindowPos, wholeWindowSize);
+
+        // 检查是否悬停在调整大小三角形上
+        float triSize = g_Ctx.ResizeTriangleSize;
+        Vec2 triPos = {
+            g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - triSize,
+            g_Ctx.WindowPos.y + g_Ctx.WindowSize.y - triSize
+        };
+        g_Ctx.IsHoveringResize = IsMouseHoveringRaw(triPos, { triSize, triSize });
+
+        if (hoveringWholeWindow && g_Ctx.MouseClicked && !g_Ctx.IsHoveringResize) {
             g_Ctx.IsDragging = true;
             g_Ctx.DragOffset.x = g_Ctx.MousePos.x - g_Ctx.WindowPos.x;
             g_Ctx.DragOffset.y = g_Ctx.MousePos.y - g_Ctx.WindowPos.y;
         }
+
+        // 处理调整大小
+        if (g_Ctx.IsHoveringResize && g_Ctx.MouseClicked) {
+            g_Ctx.IsResizing = true;
+            g_Ctx.ResizeStartPos = g_Ctx.MousePos;
+            g_Ctx.ResizeStartSize = g_Ctx.WindowSize;
+        }
+
         if (g_Ctx.IsDragging) {
             g_Ctx.WindowPos.x = g_Ctx.MousePos.x - g_Ctx.DragOffset.x;
             g_Ctx.WindowPos.y = g_Ctx.MousePos.y - g_Ctx.DragOffset.y;
         }
+
+        if (g_Ctx.IsResizing) {
+            Vec2 delta = {
+                g_Ctx.MousePos.x - g_Ctx.ResizeStartPos.x,
+                g_Ctx.MousePos.y - g_Ctx.ResizeStartPos.y
+            };
+
+            // 设置最小尺寸，防止缩小到消失
+            float minWidth = 200.f;
+            float minHeight = 150.f;
+
+            g_Ctx.WindowSize.x = std::max(minWidth, g_Ctx.ResizeStartSize.x + delta.x);
+            g_Ctx.WindowSize.y = std::max(minHeight, g_Ctx.ResizeStartSize.y + delta.y);
+
+            if (!g_Ctx.MouseDown) {
+                g_Ctx.IsResizing = false;
+            }
+        }
+
+        // 绘制调整大小的三角形
+        {
+            float x = g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - triSize;
+            float y = g_Ctx.WindowPos.y + g_Ctx.WindowSize.y - triSize;
+
+            // 三角形颜色：悬停或拖拽时变亮
+            Color triColor = (g_Ctx.IsHoveringResize || g_Ctx.IsResizing) ?
+                Color{ 0.8f, 0.8f, 0.8f, 1.f } :
+                Color{ 0.5f, 0.5f, 0.5f, 1.f };
+
+            // 绘制三角形背景（小矩形区域）
+            DrawRect({ x, y }, { triSize, triSize }, { 0.15f, 0.15f, 0.15f, 0.9f });
+
+            // 使用线条绘制三角形
+            float pad = 3.f;
+            SDK::FLinearColor ueColor{ triColor.r, triColor.g, triColor.b, triColor.a };
+
+            // 三角形三个顶点
+            SDK::FVector2D p1{ static_cast<double>(x + pad), static_cast<double>(y + triSize - pad) };
+            SDK::FVector2D p2{ static_cast<double>(x + triSize - pad), static_cast<double>(y + triSize - pad) };
+            SDK::FVector2D p3{ static_cast<double>(x + triSize - pad), static_cast<double>(y + pad) };
+
+            if (g_Ctx.Canvas) {
+                g_Ctx.Canvas->K2_DrawLine(p1, p2, 1.0f, ueColor);
+                g_Ctx.Canvas->K2_DrawLine(p2, p3, 1.0f, ueColor);
+                g_Ctx.Canvas->K2_DrawLine(p3, p1, 1.0f, ueColor);
+            }
+        }
+
+        // 设置光标起始位置
         g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Padding, g_Ctx.WindowPos.y + titleBarHeight + g_Ctx.Padding };
+
+        // 设置剪裁区域为窗口内部区域（不包括标题栏上方，但包括整个窗口内部）
+        PushClipRect(
+            { g_Ctx.WindowPos.x, g_Ctx.WindowPos.y + titleBarHeight },
+            { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y }
+        );
+
         return true;
     }
 
     inline void End() {
+        // 清除剪裁区域
+        PopClipRect();
+
+        // 清理调整大小状态
+        if (!g_Ctx.MouseDown) {
+            g_Ctx.IsResizing = false;
+        }
         RenderPopups();
         g_Ctx.MouseClicked = false;
         // 清理单帧按键状态
@@ -684,6 +957,13 @@ namespace Shadow {
         std::string_view display; size_t id; ParseLabel(name, display, id);
 
         Vec2 boxSize = { g_Ctx.ItemHeight, g_Ctx.ItemHeight };
+
+        // 检查是否在可见区域内
+        if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Padding;
+            return;
+        }
+
         bool hovered = IsMouseHovering(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight });
 
         if (hovered && g_Ctx.MouseClicked) { *value = !(*value); }
@@ -705,6 +985,12 @@ namespace Shadow {
         Vec2 size = MeasureTextSize(display);
         size.x += 20.f; size.y = g_Ctx.ItemHeight;
 
+        // 检查是否在可见区域内
+        if (!IsRectVisible(g_Ctx.Cursor, size)) {
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Padding;
+            return false;
+        }
+
         bool hovered = IsMouseHovering(g_Ctx.Cursor, size);
         bool clicked = hovered && g_Ctx.MouseClicked;
 
@@ -719,8 +1005,14 @@ namespace Shadow {
         if (!g_Ctx.InActiveTab) return;
         std::string_view display; size_t id; ParseLabel(name, display, id);
 
+        // 检查是否在可见区域内
+        if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Padding;
+            return;
+        }
+
         float controlOffsetX = GetControlOffsetX();
-        float sliderWidth = std::max(50.f, g_Ctx.WindowSize.x - controlOffsetX - g_Ctx.Padding * 8.f); // 留出边缘空间给数值
+        float sliderWidth = std::max(50.f, g_Ctx.WindowSize.x - controlOffsetX - g_Ctx.Padding * 8.f);
         Vec2 sliderPos = { g_Ctx.Cursor.x + controlOffsetX, g_Ctx.Cursor.y };
         Vec2 size = { sliderWidth, g_Ctx.ItemHeight };
 
@@ -737,7 +1029,6 @@ namespace Shadow {
             }
         }
 
-        // 哪怕鼠标光标移到区域之外，依然拖拽直到松开左键
         if (!g_Ctx.MouseDown && g_Ctx.DraggingSliderId == id) {
             g_Ctx.DraggingSliderId = 0;
         }
@@ -789,6 +1080,12 @@ namespace Shadow {
         if (!g_Ctx.InActiveTab) return;
         std::string_view display; size_t id; ParseLabel(name, display, id);
 
+        // 检查是否在可见区域内
+        if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Padding;
+            return;
+        }
+
         DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + 2.f }, { 1.f, 1.f, 1.f, 1.f });
 
         float controlOffsetX = GetControlOffsetX();
@@ -809,7 +1106,6 @@ namespace Shadow {
             g_Ctx.MouseClicked = false;
         }
 
-        // 修改为一个简约的整体实心矩形（去掉了底部的格子）
         DrawRect(boxPos, boxSize, { *r, *g, *b, *a });
 
         if (hovered || g_Ctx.ActiveColorPickerId == id) {
@@ -827,6 +1123,12 @@ namespace Shadow {
         if (!g_Ctx.InActiveTab) return false;
         std::string_view display; size_t id; ParseLabel(name, display, id);
 
+        // 检查是否在可见区域内
+        if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Padding;
+            return false;
+        }
+
         DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + 2.f }, { 1.f, 1.f, 1.f, 1.f });
 
         float controlOffsetX = GetControlOffsetX();
@@ -840,7 +1142,7 @@ namespace Shadow {
         bool btnHovered = IsMouseHovering(btnPos, btnSize);
         if (btnHovered && g_Ctx.MouseClicked) {
             g_Ctx.AssigningHotkey = hotkey;
-            g_Ctx.MouseClicked = false; // 吞噬左键点击，防止直接自我绑定或透传
+            g_Ctx.MouseClicked = false;
         }
 
         DrawRect(btnPos, btnSize, btnHovered ? Color{ 0.4f, 0.4f, 0.4f, 1.f } : Color{ 0.3f, 0.3f, 0.3f, 1.f });
@@ -854,6 +1156,12 @@ namespace Shadow {
         if (!g_Ctx.InActiveTab) return;
         std::string_view display; size_t id; ParseLabel(name, display, id);
 
+        // 检查是否在可见区域内
+        if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Padding;
+            return;
+        }
+
         DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + 2.f }, { 1.f, 1.f, 1.f, 1.f });
 
         float controlOffsetX = GetControlOffsetX();
@@ -867,7 +1175,7 @@ namespace Shadow {
         bool btnHovered = IsMouseHovering(btnPos, btnSize);
         if (btnHovered && g_Ctx.MouseClicked) {
             g_Ctx.AssigningHotkey = hotkey;
-            g_Ctx.MouseClicked = false; // 吞噬左键点击，防止直接自我绑定或透传
+            g_Ctx.MouseClicked = false;
         }
 
         DrawRect(btnPos, btnSize, btnHovered ? Color{ 0.4f, 0.4f, 0.4f, 1.f } : Color{ 0.3f, 0.3f, 0.3f, 1.f });
@@ -895,7 +1203,6 @@ namespace Shadow {
         case HotkeyMode::AlwaysOn:  *is_active = true; break;
         }
 
-        // 使用算好的状态圆点相对纵向居中位置
         float dotSize = std::max(6.f, g_Ctx.ItemHeight * 0.4f);
         float dotOffset = (g_Ctx.ItemHeight - dotSize) / 2.f;
         DrawRect({ modeBtnPos.x + modeBtnSize.x + 10.f, g_Ctx.Cursor.y + dotOffset }, { dotSize, dotSize },

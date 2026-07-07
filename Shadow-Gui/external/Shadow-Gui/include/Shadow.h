@@ -57,6 +57,12 @@ namespace Shadow {
         bool IsDragging = false;
         Vec2 DragOffset = { 0.f, 0.f };
 
+        // 栈平衡检查
+        int BeginStack = 0;
+        int TabBarStack = 0;
+        int TabItemStack = 0;
+        std::string LastErrorMsg;
+
         // 窗口调整大小
         bool IsResizing = false;
         Vec2 ResizeStartPos = { 0.f, 0.f };
@@ -619,6 +625,42 @@ namespace Shadow {
         return std::max(120.f, g_Ctx.WindowSize.x * 0.4f);
     }
 
+    // 检查栈平衡并绘制错误信息
+    inline void CheckAndDrawErrors() {
+        std::string errorMsg;
+
+        if (g_Ctx.BeginStack > 0) {
+            errorMsg = std::format("ERROR: Begin() called {} time(s) without matching End()!", g_Ctx.BeginStack);
+        }
+        else if (g_Ctx.BeginStack < 0) {
+            errorMsg = std::format("ERROR: End() called {} time(s) without matching Begin()!", -g_Ctx.BeginStack);
+        }
+        else if (g_Ctx.TabBarStack > 0) {
+            errorMsg = std::format("ERROR: BeginTabBar() called {} time(s) without matching EndTabBar()!", g_Ctx.TabBarStack);
+        }
+        else if (g_Ctx.TabBarStack < 0) {
+            errorMsg = std::format("ERROR: EndTabBar() called {} time(s) without matching BeginTabBar()!", -g_Ctx.TabBarStack);
+        }
+        else if (g_Ctx.TabItemStack > 0) {
+            errorMsg = std::format("ERROR: BeginTabItem() called {} time(s) without matching EndTabItem()!", g_Ctx.TabItemStack);
+        }
+        else if (g_Ctx.TabItemStack < 0) {
+            errorMsg = std::format("ERROR: EndTabItem() called {} time(s) without matching BeginTabItem()!", -g_Ctx.TabItemStack);
+        }
+
+        if (!errorMsg.empty()) {
+            // 临时禁用剪裁以确保错误信息始终可见
+            bool oldClipping = g_Ctx.ClippingEnabled;
+            g_Ctx.ClippingEnabled = false;
+
+            // 绘制错误文本在屏幕左上角 (x=5, y=5)，颜色为 (255, 50, 50, 255)
+            DrawTextString(errorMsg, { 5.f, 5.f }, { 1.f, 0.196f, 0.196f, 1.f });
+
+            // 恢复剪裁状态
+            g_Ctx.ClippingEnabled = oldClipping;
+        }
+    }
+
     inline void NewFrame(SDK::UCanvas* Canvas) {
         g_Ctx.Canvas = Canvas;
         if (!g_Ctx.DefaultFont) {
@@ -631,6 +673,11 @@ namespace Shadow {
         g_Ctx.Padding = 8.f;
 
         g_Ctx.InActiveTab = true;
+
+        // 重置栈计数器
+        g_Ctx.BeginStack = 0;
+        g_Ctx.TabBarStack = 0;
+        g_Ctx.TabItemStack = 0;
     }
 
     inline void RenderPopups() {
@@ -803,6 +850,9 @@ namespace Shadow {
         std::string_view display; size_t id;
         ParseLabel(name, display, id);
 
+        // 栈平衡检查：递增 Begin 栈计数
+        g_Ctx.BeginStack++;
+
         DrawRect(g_Ctx.WindowPos, g_Ctx.WindowSize, { 0.1f, 0.1f, 0.1f, 0.9f });
 
         // 动态标题栏高度
@@ -900,6 +950,9 @@ namespace Shadow {
     }
 
     inline void End() {
+        // 栈平衡检查：递减 Begin 栈计数
+        g_Ctx.BeginStack--;
+
         // 清除剪裁区域
         PopClipRect();
 
@@ -911,10 +964,17 @@ namespace Shadow {
         g_Ctx.MouseClicked = false;
         // 清理单帧按键状态
         memset(g_Ctx.KeyPressed, 0, sizeof(g_Ctx.KeyPressed));
+
+        // 检查并绘制错误信息
+        CheckAndDrawErrors();
     }
 
     inline bool BeginTabBar(std::string_view name) {
         std::string_view display; size_t id; ParseLabel(name, display, id);
+
+        // 栈平衡检查：递增 TabBar 栈计数
+        g_Ctx.TabBarStack++;
+
         g_Ctx.TabCursor = g_Ctx.Cursor;
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Padding;
         DrawRect({ g_Ctx.WindowPos.x, g_Ctx.Cursor.y }, { g_Ctx.WindowSize.x, 2.f }, { 0.3f, 0.3f, 0.3f, 1.f });
@@ -922,10 +982,17 @@ namespace Shadow {
         return true;
     }
 
-    inline void EndTabBar() {}
+    inline void EndTabBar() {
+        // 栈平衡检查：递减 TabBar 栈计数
+        g_Ctx.TabBarStack--;
+    }
 
     inline bool BeginTabItem(std::string_view name) {
         std::string_view display; size_t id; ParseLabel(name, display, id);
+
+        // 栈平衡检查：递增 TabItem 栈计数
+        g_Ctx.TabItemStack++;
+
         Vec2 tabSize = MeasureTextSize(display);
         tabSize.x += 20.f; tabSize.y = g_Ctx.ItemHeight;
 
@@ -950,7 +1017,11 @@ namespace Shadow {
         return isActive;
     }
 
-    inline void EndTabItem() { g_Ctx.InActiveTab = true; }
+    inline void EndTabItem() {
+        // 栈平衡检查：递减 TabItem 栈计数
+        g_Ctx.TabItemStack--;
+        g_Ctx.InActiveTab = true;
+    }
 
     inline void CheckBox(std::string_view name, bool* value) {
         if (!g_Ctx.InActiveTab) return;

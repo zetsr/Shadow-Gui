@@ -110,8 +110,8 @@ namespace Hook {
 
                     if (Shadow::BeginTabItem(U8("设置##tab0"))) {
                         Shadow::HotKey(U8("菜单按键##menu_key"), &keyMenu);
-                        Shadow::EndTabItem();
                     }
+                    Shadow::EndTabItem();
 
                     if (Shadow::BeginTabItem("Combat##tab1")) {
                         Shadow::CheckBox("God Mode##checkbox_1", &bGodMode);
@@ -121,17 +121,15 @@ namespace Hook {
                         if (Shadow::Button("Reset Speed##btn_1")) {
                             fSpeed = 1.0f;
                         }
-
-                        Shadow::EndTabItem();
                     }
+                    Shadow::EndTabItem();
 
                     if (Shadow::BeginTabItem("Visuals##tab2")) {
                         Shadow::ColorPicker("ESP Color##cp_1", &cESP.r, &cESP.g, &cESP.b, &cESP.a);
-                        Shadow::EndTabItem();
                     }
-
-                    Shadow::EndTabBar();
+                    Shadow::EndTabItem();
                 }
+                Shadow::EndTabBar();
             }
             Shadow::End();
         }

@@ -870,17 +870,36 @@ namespace Shadow {
         };
         g_Ctx.IsHoveringResize = IsMouseHoveringRaw(triPos, { triSize, triSize });
 
-        if (hoveringWholeWindow && g_Ctx.MouseClicked && !g_Ctx.IsHoveringResize) {
+        // 检查是否有其他控件正在被拖拽
+        bool isOtherDragging = (g_Ctx.DraggingSliderId != 0) ||
+            g_Ctx.IsDraggingSV ||
+            g_Ctx.IsDraggingHue ||
+            g_Ctx.IsDraggingAlpha ||
+            g_Ctx.IsDraggingColorPicker;
+
+        // 只有当前没有其他控件被拖拽，且IsDragging已经是true（之前已激活），才继续拖拽
+        // 新激活拖拽需要检查 isOtherDragging
+        if (!g_Ctx.IsDragging && hoveringWholeWindow && g_Ctx.MouseClicked && !g_Ctx.IsHoveringResize && !isOtherDragging) {
             g_Ctx.IsDragging = true;
             g_Ctx.DragOffset.x = g_Ctx.MousePos.x - g_Ctx.WindowPos.x;
             g_Ctx.DragOffset.y = g_Ctx.MousePos.y - g_Ctx.WindowPos.y;
         }
 
-        // 处理调整大小
-        if (g_Ctx.IsHoveringResize && g_Ctx.MouseClicked) {
+        // 如果正在拖拽，检查是否应该停止
+        if (g_Ctx.IsDragging && isOtherDragging) {
+            g_Ctx.IsDragging = false;
+        }
+
+        // 处理调整大小（同样需要检查是否有其他控件正在被拖拽）
+        if (!g_Ctx.IsResizing && g_Ctx.IsHoveringResize && g_Ctx.MouseClicked && !isOtherDragging) {
             g_Ctx.IsResizing = true;
             g_Ctx.ResizeStartPos = g_Ctx.MousePos;
             g_Ctx.ResizeStartSize = g_Ctx.WindowSize;
+        }
+
+        // 如果正在调整大小，检查是否应该停止
+        if (g_Ctx.IsResizing && isOtherDragging) {
+            g_Ctx.IsResizing = false;
         }
 
         if (g_Ctx.IsDragging) {

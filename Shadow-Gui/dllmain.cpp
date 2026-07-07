@@ -115,7 +115,7 @@ namespace Hook {
 
                     if (Shadow::BeginTabItem("Combat##tab1")) {
                         Shadow::CheckBox("God Mode##checkbox_1", &bGodMode);
-                        Shadow::Slider("Run Speed##slider_1", &fSpeed, 1.0f, 10.0f, 0.1f);
+                        Shadow::Slider("Run Speed##slider_1", &fSpeed, 1.0f, 10.0f, 0.01f);
                         Shadow::HotKey("Aimbot Key##hotkey_1", &keyAimbot, &bAimbotActive, &modeAimbot);
 
                         if (Shadow::Button("Reset Speed##btn_1")) {

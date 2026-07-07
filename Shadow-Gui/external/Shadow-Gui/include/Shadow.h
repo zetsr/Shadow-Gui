@@ -853,12 +853,10 @@ namespace Shadow {
         // 栈平衡检查：递增 Begin 栈计数
         g_Ctx.BeginStack++;
 
-        DrawRect(g_Ctx.WindowPos, g_Ctx.WindowSize, { 0.1f, 0.1f, 0.1f, 0.9f });
-
         // 动态标题栏高度
         float titleBarHeight = std::max(30.f, g_Ctx.ItemHeight + 10.f);
-        DrawRect(g_Ctx.WindowPos, { g_Ctx.WindowSize.x, titleBarHeight }, { 0.2f, 0.2f, 0.2f, 1.f });
-        DrawTextString(display, { g_Ctx.WindowPos.x + 10.f, g_Ctx.WindowPos.y + 7.f }, { 1.f, 1.f, 1.f, 1.f });
+
+        // --- 1. 提前处理鼠标输入与窗口坐标更新，防止渲染滞后导致拖拽发生漂移 ---
 
         // 整个窗口区域都可以拖拽（不仅仅是标题栏）
         Vec2 wholeWindowSize = g_Ctx.WindowSize;
@@ -907,6 +905,12 @@ namespace Shadow {
                 g_Ctx.IsResizing = false;
             }
         }
+
+        // --- 2. 此时再开始绘制背景，使用更新后的 WindowPos 和 WindowSize ---
+
+        DrawRect(g_Ctx.WindowPos, g_Ctx.WindowSize, { 0.1f, 0.1f, 0.1f, 0.9f });
+        DrawRect(g_Ctx.WindowPos, { g_Ctx.WindowSize.x, titleBarHeight }, { 0.2f, 0.2f, 0.2f, 1.f });
+        DrawTextString(display, { g_Ctx.WindowPos.x + 10.f, g_Ctx.WindowPos.y + 7.f }, { 1.f, 1.f, 1.f, 1.f });
 
         // 绘制调整大小的三角形
         {

@@ -80,7 +80,7 @@ namespace Hook {
         if (!canvas) return oPostRender(rcx, canvas);
 
         // Shadow Gui内部会自动获取引擎默认字体
-        /*
+
         if (!Shadow::DefaultFont) {
             static SDK::UFont* OpenSansRegular12 = nullptr;
 
@@ -89,7 +89,7 @@ namespace Hook {
                 if (_Font && _Font->IsA(SDK::UFont::StaticClass())) OpenSansRegular12 = (SDK::UFont*)_Font; Shadow::DefaultFont = OpenSansRegular12;
             }
         }
-        */
+
 
         Shadow::SetAllowedKeys({ 'W', 'A', 'S', 'D', VK_SPACE }); // 放行常用移动按键
 

@@ -8,14 +8,6 @@
 
 namespace Hook {
     bool bShowMenu = true;
-    bool bGodMode = false;
-    float fSpeed = 1.0f;
-    Shadow::Color cESP = { 1.0f, 0.0f, 0.0f, 1.0f };
-
-    int keyAimbot = VK_RBUTTON;
-    bool bAimbotActive = false;
-    Shadow::HotkeyMode modeAimbot = Shadow::HotkeyMode::HoldOn;
-
     int keyMenu = VK_F1;
 
     HWND g_hwnd = NULL;
@@ -79,6 +71,23 @@ namespace Hook {
     void __fastcall hkPostRender(SDK::UGameViewportClient* rcx, SDK::UCanvas* canvas, void* r8, void* r9) {
         if (!canvas) return oPostRender(rcx, canvas);
 
+        static bool bGodMode = false;
+        static  float fSpeed = 1.0f;
+        static  Shadow::Color cESP = { 1.0f, 0.0f, 0.0f, 1.0f };
+
+        static  int selectedTarget = 0; // 0:敌人, 1:队友, 2:AI
+        static  bool showHealth[3] = { true, true, true };  // 血量显示开关
+        static  bool showBox[3] = { false, false, false };   // 方框显示开关
+        static   bool showButton[3] = { false, false, false }; // 按钮显示开关
+
+        // 下拉框选项列表
+        static    std::vector<std::string> targetOptions = { U8("敌人"), U8("队友"), U8("AI") };
+
+        static    int keyAimbot = VK_RBUTTON;
+        static    bool bAimbotActive = false;
+        static   Shadow::HotkeyMode modeAimbot = Shadow::HotkeyMode::HoldOn;
+
+
         // Shadow Gui内部会自动获取引擎默认字体
 
         if (!Shadow::DefaultFont) {
@@ -113,19 +122,41 @@ namespace Hook {
                     }
                     Shadow::EndTabItem();
 
-                    if (Shadow::BeginTabItem("Combat##tab1")) {
-                        Shadow::CheckBox("God Mode##checkbox_1", &bGodMode);
-                        Shadow::Slider("Run Speed##slider_1", &fSpeed, 1.0f, 10.0f, 0.01f);
-                        Shadow::HotKey("Aimbot Key##hotkey_1", &keyAimbot, &bAimbotActive, &modeAimbot);
+                    // 修改 Combat 标签为中文
+                    if (Shadow::BeginTabItem(U8("战斗##tab1"))) {
+                        Shadow::CheckBox(U8("无敌模式##checkbox_1"), &bGodMode);
+                        Shadow::Slider(U8("移动速度##slider_1"), &fSpeed, 1.0f, 10.0f, 0.01f);
+                        Shadow::HotKey(U8("自瞄按键##hotkey_1"), &keyAimbot, &bAimbotActive, &modeAimbot);
 
-                        if (Shadow::Button("Reset Speed##btn_1")) {
+                        if (Shadow::Button(U8("重置速度##btn_1"))) {
                             fSpeed = 1.0f;
                         }
                     }
                     Shadow::EndTabItem();
 
-                    if (Shadow::BeginTabItem("Visuals##tab2")) {
-                        Shadow::ColorPicker("ESP Color##cp_1", &cESP.r, &cESP.g, &cESP.b, &cESP.a);
+                    // 修改 Visuals 标签为中文，并添加新的内容
+                    if (Shadow::BeginTabItem(U8("视觉##tab2"))) {
+                        Shadow::ColorPicker(U8("ESP颜色##cp_1"), &cESP.r, &cESP.g, &cESP.b, &cESP.a);
+
+                        // 添加目标选择下拉框
+                        Shadow::ComboBox(U8("目标选择##target_combo"), &selectedTarget, targetOptions);
+
+                        // 根据选择的目标显示对应的选项
+                        if (selectedTarget == 0) {
+                            Shadow::CheckBox(U8("敌人 - 血量##health_enemy"), &showHealth[0]);
+                            Shadow::CheckBox(U8("敌人 - 方框##box_enemy"), &showBox[0]);
+                            Shadow::CheckBox(U8("敌人 - 按钮##button_enemy"), &showButton[0]);
+                        }
+                        else if (selectedTarget == 1) {
+                            Shadow::CheckBox(U8("队友 - 血量##health_teammate"), &showHealth[1]);
+                            Shadow::CheckBox(U8("队友 - 方框##box_teammate"), &showBox[1]);
+                            Shadow::CheckBox(U8("队友 - 按钮##button_teammate"), &showButton[1]);
+                        }
+                        else if (selectedTarget == 2) {
+                            Shadow::CheckBox(U8("AI - 血量##health_ai"), &showHealth[2]);
+                            Shadow::CheckBox(U8("AI - 方框##box_ai"), &showBox[2]);
+                            Shadow::CheckBox(U8("AI - 按钮##button_ai"), &showButton[2]);
+                        }
                     }
                     Shadow::EndTabItem();
                 }

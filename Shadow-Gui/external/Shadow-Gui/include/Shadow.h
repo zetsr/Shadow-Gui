@@ -44,12 +44,21 @@ namespace Shadow {
         Vec2 MousePos = { 0.f, 0.f };
         bool MouseDown = false;
         bool MouseClicked = false;
+        bool RightMouseDown = false;     // 新增：右键按下状态
+        bool RightMouseClicked = false;  // 新增：右键单击触发
 
         // 键盘与热键状态机
         bool KeyStates[256] = { false };
         bool HotkeyToggles[256] = { false };
         bool KeyPressed[256] = { false }; // 单帧触发状态
         int* AssigningHotkey = nullptr;
+
+        // ComboBox / Dropdown 状态 (新增)
+        size_t ActiveDropdownId = 0;
+        int* DropdownCurrentItem = nullptr;
+        std::vector<std::string> DropdownItems;
+        Vec2 DropdownPos = { 0.f, 0.f };
+        Vec2 DropdownSize = { 0.f, 0.f };
 
         // 窗口状态
         Vec2 WindowPos = { 100.f, 100.f };
@@ -78,7 +87,7 @@ namespace Shadow {
         // 游标与布局
         Vec2 Cursor = { 0.f, 0.f };
         float Padding = 8.f;
-        float ItemHeight = 20.f; // 现在会被动态计算
+        float ItemHeight = 20.f;
 
         // Tab状态
         size_t ActiveTabId = 0;
@@ -257,6 +266,15 @@ namespace Shadow {
     }
 
     inline bool IsMouseHovering(Vec2 pos, Vec2 size) {
+        // 如果下拉框开启，检测鼠标是否悬停在下拉框上，以此阻挡底层UI的Hover判定
+        if (g_Ctx.ActiveDropdownId != 0) {
+            float dropWidth = g_Ctx.DropdownSize.x;
+            float dropHeight = g_Ctx.DropdownItems.size() * g_Ctx.ItemHeight;
+            if (IsMouseHoveringRaw({ g_Ctx.DropdownPos.x - 1.f, g_Ctx.DropdownPos.y - 1.f }, { dropWidth + 2.f, dropHeight + 2.f })) {
+                return false;
+            }
+        }
+
         if (g_Ctx.ActiveColorPickerId != 0) {
             Vec2 popupPos = g_Ctx.ColorPickerPos;
             float hexBoxHeight = std::max(24.f, g_Ctx.ItemHeight + 4.f);
@@ -367,8 +385,15 @@ namespace Shadow {
             g_Ctx.IsDragging = false;
             g_Ctx.IsResizing = false;
             break;
-        case WM_RBUTTONDOWN: if (HandleKeyDown(VK_RBUTTON)) return 0; break;
-        case WM_RBUTTONUP:   HandleKeyUp(VK_RBUTTON); break;
+        case WM_RBUTTONDOWN:
+            if (HandleKeyDown(VK_RBUTTON)) return 0;
+            g_Ctx.RightMouseDown = true;
+            g_Ctx.RightMouseClicked = true;
+            break;
+        case WM_RBUTTONUP:
+            HandleKeyUp(VK_RBUTTON);
+            g_Ctx.RightMouseDown = false;
+            break;
         case WM_MBUTTONDOWN: if (HandleKeyDown(VK_MBUTTON)) return 0; break;
         case WM_MBUTTONUP:   HandleKeyUp(VK_MBUTTON); break;
         case WM_XBUTTONDOWN: {
@@ -438,6 +463,13 @@ namespace Shadow {
         return true;
     }
 
+    // 检查矩形是否完全在剪裁区域内
+    inline bool IsRectFullyVisible(Vec2 pos, Vec2 size) {
+        if (!g_Ctx.ClippingEnabled) return true;
+        return pos.x >= g_Ctx.ClipMin.x && pos.y >= g_Ctx.ClipMin.y &&
+            (pos.x + size.x) <= g_Ctx.ClipMax.x && (pos.y + size.y) <= g_Ctx.ClipMax.y;
+    }
+
     // 裁剪矩形到剪裁区域
     inline void ClipRect(Vec2& pos, Vec2& size) {
         if (!g_Ctx.ClippingEnabled) return;
@@ -479,6 +511,23 @@ namespace Shadow {
         SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
         SDK::FVector2D uePos{ static_cast<double>(pos.x), static_cast<double>(pos.y) };
         SDK::FVector2D ueSize{ static_cast<double>(size.x), static_cast<double>(size.y) };
+
+        // 使用 DefaultTexture 绘制实心或半透明矩形填充
+        if (g_Ctx.Canvas->DefaultTexture) {
+            g_Ctx.Canvas->K2_DrawTexture(
+                g_Ctx.Canvas->DefaultTexture,
+                uePos,
+                ueSize,
+                SDK::FVector2D{ 0.0, 0.0 },
+                SDK::FVector2D{ 1.0, 1.0 },
+                ueColor,
+                SDK::EBlendMode::BLEND_Translucent,
+                0.0f,
+                SDK::FVector2D{ 0.0, 0.0 }
+            );
+        }
+
+        // 额外叠加一层原有的线框，以保留菜单锐利的边界线条感
         g_Ctx.Canvas->K2_DrawBox(uePos, ueSize, 1.0f, ueColor);
     }
 
@@ -681,6 +730,45 @@ namespace Shadow {
     }
 
     inline void RenderPopups() {
+        // --- 绘制下拉框 (Dropdown/ComboBox) ---
+        if (g_Ctx.ActiveDropdownId != 0 && g_Ctx.DropdownCurrentItem) {
+            float dropWidth = g_Ctx.DropdownSize.x;
+            float dropHeight = g_Ctx.DropdownItems.size() * g_Ctx.ItemHeight;
+            Vec2 dropPos = g_Ctx.DropdownPos;
+
+            // 绘制弹出层背景和边框
+            DrawRect({ dropPos.x - 1.f, dropPos.y - 1.f }, { dropWidth + 2.f, dropHeight + 2.f }, { 0.4f, 0.4f, 0.4f, 1.f });
+            DrawRect(dropPos, { dropWidth, dropHeight }, { 0.15f, 0.15f, 0.15f, 1.f });
+
+            bool hoveringDropdown = IsMouseHoveringRaw(dropPos, { dropWidth, dropHeight });
+
+            for (size_t i = 0; i < g_Ctx.DropdownItems.size(); ++i) {
+                Vec2 itemPos = { dropPos.x, dropPos.y + i * g_Ctx.ItemHeight };
+                bool itemHovered = IsMouseHoveringRaw(itemPos, { dropWidth, g_Ctx.ItemHeight });
+
+                if (itemHovered) {
+                    DrawRect(itemPos, { dropWidth, g_Ctx.ItemHeight }, { 0.3f, 0.3f, 0.3f, 1.f });
+                    if (g_Ctx.MouseClicked) {
+                        *g_Ctx.DropdownCurrentItem = static_cast<int>(i);
+                        g_Ctx.ActiveDropdownId = 0;
+                        g_Ctx.MouseClicked = false; // 吞噬点击
+                    }
+                }
+
+                Color textColor = (*g_Ctx.DropdownCurrentItem == static_cast<int>(i)) ? Color{ 1.f, 1.f, 0.f, 1.f } : Color{ 1.f, 1.f, 1.f, 1.f };
+                DrawTextString(g_Ctx.DropdownItems[i], { itemPos.x + 8.f, itemPos.y + 2.f }, textColor);
+            }
+
+            // 点击外部关闭下拉框
+            if (g_Ctx.MouseClicked && !hoveringDropdown) {
+                g_Ctx.ActiveDropdownId = 0;
+            }
+            if (hoveringDropdown) {
+                g_Ctx.MouseClicked = false;
+            }
+        }
+
+        // --- 原有绘制 ColorPicker 的逻辑 ---
         if (g_Ctx.ActiveColorPickerId != 0 && g_Ctx.ColorPickerR) {
             Vec2 popupPos = g_Ctx.ColorPickerPos;
             float padding = CPConfig::Padding;
@@ -689,9 +777,7 @@ namespace Shadow {
             float alphaWidth = CPConfig::AlphaWidth;
             float spacing = CPConfig::Spacing;
 
-            // 动态响应输入框高度
             float hexBoxHeight = std::max(24.f, g_Ctx.ItemHeight + 4.f);
-
             float popupWidth = padding + svSize + spacing + hueWidth + spacing + alphaWidth + padding;
             float popupHeight = padding + svSize + spacing + hexBoxHeight + padding;
 
@@ -707,18 +793,17 @@ namespace Shadow {
             bool alphaHovered = IsMouseHoveringRaw(alphaPos, { alphaWidth, svSize });
             bool hexHovered = IsMouseHoveringRaw(hexPos, hexSize);
 
-            // 统一互相排斥的拖拽交互逻辑，且防止与拖拽整个UI层冲突
             if (g_Ctx.MouseDown) {
                 if (!g_Ctx.IsDraggingSV && !g_Ctx.IsDraggingHue && !g_Ctx.IsDraggingAlpha && !g_Ctx.IsDraggingColorPicker) {
                     if (svHovered) g_Ctx.IsDraggingSV = true;
                     else if (hueHovered) g_Ctx.IsDraggingHue = true;
                     else if (alphaHovered) g_Ctx.IsDraggingAlpha = true;
-                    else if (popupHovered && !hexHovered) { // 如果在弹出框背景点击则开始拖拽此弹出框
+                    else if (popupHovered && !hexHovered) {
                         if (g_Ctx.MouseClicked) {
                             g_Ctx.IsDraggingColorPicker = true;
                             g_Ctx.ColorPickerDragOffset.x = g_Ctx.MousePos.x - popupPos.x;
                             g_Ctx.ColorPickerDragOffset.y = g_Ctx.MousePos.y - popupPos.y;
-                            g_Ctx.MouseClicked = false; // 吞噬点击
+                            g_Ctx.MouseClicked = false;
                         }
                     }
                 }
@@ -740,7 +825,6 @@ namespace Shadow {
                     g_Ctx.ColorPickerPos.y = g_Ctx.MousePos.y - g_Ctx.ColorPickerDragOffset.y;
                     popupPos = g_Ctx.ColorPickerPos;
 
-                    // 重建坐标同步绘制
                     svPos = { popupPos.x + padding, popupPos.y + padding };
                     huePos = { svPos.x + svSize + spacing, svPos.y };
                     alphaPos = { huePos.x + hueWidth + spacing, svPos.y };
@@ -755,11 +839,9 @@ namespace Shadow {
                 g_Ctx.IsDraggingColorPicker = false;
             }
 
-            // 绘制弹出层背景
             DrawRect({ popupPos.x - 2.f, popupPos.y - 2.f }, { popupWidth + 4.f, popupHeight + 4.f }, { 0.3f, 0.3f, 0.3f, 1.f });
             DrawRect(popupPos, { popupWidth, popupHeight }, { 0.08f, 0.08f, 0.08f, 1.f });
 
-            // Hex 文本框点击逻辑
             if (g_Ctx.MouseClicked && hexHovered) {
                 g_Ctx.IsTypingHex = true;
                 g_Ctx.MouseClicked = false;
@@ -796,7 +878,6 @@ namespace Shadow {
                 DrawRect({ huePos.x, huePos.y + i * hueStepSize }, { hueWidth, hueStepSize + 0.5f }, { r, g, b, 1.f });
             }
 
-            // Alpha透明度层底层可以用黑色代替，或不处理
             int alphaSteps = 40;
             float alphaStepSize = svSize / alphaSteps;
             for (int i = 0; i < alphaSteps; ++i) {
@@ -804,12 +885,11 @@ namespace Shadow {
                 DrawRect({ alphaPos.x, alphaPos.y + i * alphaStepSize }, { alphaWidth, alphaStepSize + 0.5f }, { *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB, a });
             }
 
-            // Hex 文本框与文本居中处理
             DrawRect(hexPos, hexSize, { 0.15f, 0.15f, 0.15f, 1.f });
 
             std::string displayHex;
             if (g_Ctx.IsTypingHex) {
-                displayHex = "#" + g_Ctx.HexInputBuffer + "_"; // 输入时光标
+                displayHex = "#" + g_Ctx.HexInputBuffer + "_";
             }
             else {
                 uint8_t r8 = static_cast<uint8_t>(*g_Ctx.ColorPickerR * 255.f);
@@ -820,7 +900,7 @@ namespace Shadow {
             }
 
             Vec2 textSize = MeasureTextSize(displayHex);
-            float textY = hexPos.y + (hexBoxHeight - textSize.y) / 2.f; // 垂直居中数学计算
+            float textY = hexPos.y + (hexBoxHeight - textSize.y) / 2.f;
             DrawTextString(displayHex, { hexPos.x + 8.f, textY }, { 1.f, 1.f, 1.f, 1.f });
 
             Vec2 cursorSV = { svPos.x + g_Ctx.ColorPickerS * svSize, svPos.y + (1.f - g_Ctx.ColorPickerV) * svSize };
@@ -985,6 +1065,7 @@ namespace Shadow {
         }
         RenderPopups();
         g_Ctx.MouseClicked = false;
+        g_Ctx.RightMouseClicked = false; // 新增清除右键单帧状态
         // 清理单帧按键状态
         memset(g_Ctx.KeyPressed, 0, sizeof(g_Ctx.KeyPressed));
 
@@ -1044,6 +1125,59 @@ namespace Shadow {
         // 栈平衡检查：递减 TabItem 栈计数
         g_Ctx.TabItemStack--;
         g_Ctx.InActiveTab = true;
+    }
+
+    inline bool ComboBox(std::string_view name, int* current_item, const std::vector<std::string>& items) {
+        if (!g_Ctx.InActiveTab) return false;
+        std::string_view display; size_t id; ParseLabel(name, display, id);
+
+        if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Padding;
+            return false;
+        }
+
+        DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + 2.f }, { 1.f, 1.f, 1.f, 1.f });
+
+        float controlOffsetX = GetControlOffsetX();
+        float boxWidth = std::max(100.f, g_Ctx.WindowSize.x - controlOffsetX - g_Ctx.Padding * 8.f);
+        Vec2 boxPos = { g_Ctx.Cursor.x + controlOffsetX, g_Ctx.Cursor.y };
+        Vec2 boxSize = { boxWidth, g_Ctx.ItemHeight };
+
+        bool hovered = IsMouseHovering(boxPos, boxSize);
+        if (hovered && g_Ctx.MouseClicked) {
+            if (g_Ctx.ActiveDropdownId == id) {
+                g_Ctx.ActiveDropdownId = 0;
+            }
+            else {
+                g_Ctx.ActiveDropdownId = id;
+                g_Ctx.DropdownCurrentItem = current_item;
+                g_Ctx.DropdownItems = items;
+                g_Ctx.DropdownPos = { boxPos.x, boxPos.y + boxSize.y };
+                g_Ctx.DropdownSize = { boxWidth, 0.f };
+            }
+            g_Ctx.MouseClicked = false;
+        }
+
+        DrawRect(boxPos, boxSize, hovered ? Color{ 0.4f, 0.4f, 0.4f, 1.f } : Color{ 0.3f, 0.3f, 0.3f, 1.f });
+
+        std::string currentText = (*current_item >= 0 && *current_item < static_cast<int>(items.size())) ? items[*current_item] : "Unknown";
+        DrawTextString(currentText, { boxPos.x + 8.f, boxPos.y + 2.f }, { 1.f, 1.f, 1.f, 1.f });
+
+        // 绘制下拉框展开三角：如果三角形区域由于滚动越过了边界导致部分不可见，则直接隐藏它以避免画线溢出剪裁框
+        float triSize = 6.f;
+        Vec2 triPos = { boxPos.x + boxSize.x - 12.f, boxPos.y + boxSize.y / 2.f - triSize / 2.f };
+        if (g_Ctx.Canvas && IsRectFullyVisible(triPos, { triSize, triSize })) {
+            SDK::FLinearColor ueColor{ 0.8f, 0.8f, 0.8f, 1.f };
+            SDK::FVector2D p1{ static_cast<double>(triPos.x), static_cast<double>(triPos.y) };
+            SDK::FVector2D p2{ static_cast<double>(triPos.x + triSize), static_cast<double>(triPos.y) };
+            SDK::FVector2D p3{ static_cast<double>(triPos.x + triSize / 2.f), static_cast<double>(triPos.y + triSize) };
+            g_Ctx.Canvas->K2_DrawLine(p1, p2, 1.0f, ueColor);
+            g_Ctx.Canvas->K2_DrawLine(p2, p3, 1.0f, ueColor);
+            g_Ctx.Canvas->K2_DrawLine(p3, p1, 1.0f, ueColor);
+        }
+
+        g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Padding;
+        return hovered && g_Ctx.MouseClicked;
     }
 
     inline void CheckBox(std::string_view name, bool* value) {
@@ -1260,6 +1394,8 @@ namespace Shadow {
 
         float controlOffsetX = GetControlOffsetX();
         bool isAssigning = (g_Ctx.AssigningHotkey == hotkey);
+        std::vector<std::string> modeStrs = { "None", "Hold On", "Toggle On", "Hold Off", "Always On" };
+
         std::string keyName = isAssigning ? "[Press Key]" : std::format("[{}]", GetKeyName(*hotkey));
 
         Vec2 btnSize = { MeasureTextSize(keyName).x + 16.f, g_Ctx.ItemHeight };
@@ -1267,28 +1403,34 @@ namespace Shadow {
         Vec2 btnPos = { g_Ctx.Cursor.x + controlOffsetX, g_Ctx.Cursor.y };
 
         bool btnHovered = IsMouseHovering(btnPos, btnSize);
-        if (btnHovered && g_Ctx.MouseClicked) {
-            g_Ctx.AssigningHotkey = hotkey;
-            g_Ctx.MouseClicked = false;
+
+        if (btnHovered) {
+            if (g_Ctx.MouseClicked) {
+                // 左键设置按键
+                g_Ctx.AssigningHotkey = hotkey;
+                g_Ctx.MouseClicked = false;
+            }
+            else if (g_Ctx.RightMouseClicked) {
+                // 右键直接呼出 Hotkey Mode 的下拉菜单，不再显示额外的框
+                if (g_Ctx.ActiveDropdownId == id) {
+                    g_Ctx.ActiveDropdownId = 0;
+                }
+                else {
+                    g_Ctx.ActiveDropdownId = id;
+                    g_Ctx.DropdownCurrentItem = reinterpret_cast<int*>(hotkey_mode);
+                    g_Ctx.DropdownItems = modeStrs;
+                    g_Ctx.DropdownPos = { btnPos.x, btnPos.y + btnSize.y };
+                    g_Ctx.DropdownSize = { 100.f, 0.f };
+                }
+                g_Ctx.RightMouseClicked = false;
+            }
         }
 
+        // 绘制唯一的主按钮
         DrawRect(btnPos, btnSize, btnHovered ? Color{ 0.4f, 0.4f, 0.4f, 1.f } : Color{ 0.3f, 0.3f, 0.3f, 1.f });
         DrawTextString(keyName, { btnPos.x + 8.f, btnPos.y + 2.f }, { 1.f, 1.f, 1.f, 1.f });
 
-        const char* modeStrs[] = { "None", "Hold On", "Toggle On", "Hold Off", "Always On" };
-        Vec2 modeBtnPos = { btnPos.x + btnSize.x + 10.f, g_Ctx.Cursor.y };
-        Vec2 modeBtnSize = { MeasureTextSize(modeStrs[static_cast<int>(*hotkey_mode)]).x + 16.f, g_Ctx.ItemHeight };
-        modeBtnSize.x = std::max(modeBtnSize.x, 80.f);
-
-        bool modeHovered = IsMouseHovering(modeBtnPos, modeBtnSize);
-        if (modeHovered && g_Ctx.MouseClicked) {
-            int nextMode = (static_cast<int>(*hotkey_mode) + 1) % 5;
-            *hotkey_mode = static_cast<HotkeyMode>(nextMode);
-        }
-
-        DrawRect(modeBtnPos, modeBtnSize, modeHovered ? Color{ 0.4f, 0.4f, 0.4f, 1.f } : Color{ 0.3f, 0.3f, 0.3f, 1.f });
-        DrawTextString(modeStrs[static_cast<int>(*hotkey_mode)], { modeBtnPos.x + 8.f, modeBtnPos.y + 2.f }, { 1.f, 1.f, 0.f, 1.f });
-
+        // 计算当前是否被激活
         switch (*hotkey_mode) {
         case HotkeyMode::None:      *is_active = false; break;
         case HotkeyMode::HoldOn:    *is_active = g_Ctx.KeyStates[*hotkey]; break;
@@ -1297,9 +1439,10 @@ namespace Shadow {
         case HotkeyMode::AlwaysOn:  *is_active = true; break;
         }
 
+        // 绘制状态指示小圆（方）点，紧贴在主按钮的右侧
         float dotSize = std::max(6.f, g_Ctx.ItemHeight * 0.4f);
         float dotOffset = (g_Ctx.ItemHeight - dotSize) / 2.f;
-        DrawRect({ modeBtnPos.x + modeBtnSize.x + 10.f, g_Ctx.Cursor.y + dotOffset }, { dotSize, dotSize },
+        DrawRect({ btnPos.x + btnSize.x + 10.f, g_Ctx.Cursor.y + dotOffset }, { dotSize, dotSize },
             *is_active ? Color{ 0.f, 1.f, 0.f, 1.f } : Color{ 1.f, 0.f, 0.f, 1.f });
 
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Padding;

@@ -111,8 +111,41 @@ namespace Hook {
         Shadow::NewFrame(canvas);
 
         if (bShowMenu) {
-            if (Shadow::Begin(U8("测试菜单##main_window"))) {
-                if (Shadow::BeginTabBar("MainTabs##tabs")) {
+            // --- 1. 静态状态变量定义 ---
+            // 普通 Flag 开关
+            static bool bWindowNoResize = true;
+            static bool bWindowNoMove = false;          // 新增：禁止移动
+            static bool bWindowNoScrollbar = true;
+
+            static bool bTabReorderable = true;
+            static bool bTabFittingScroll = true;
+            static bool bTabNoScrollbar = true;
+
+            // 互斥 Flag：文字对齐方式 (0 = 左对齐, 1 = 居中对齐, 2 = 右对齐)
+            static int selectedTextAlign = 1; // 默认 1 (居中)
+            // 严格配合 Combo 使用的选项文本（利用 C++ 字符串数组）
+            static const std::vector<std::string> alignOptions = { U8("左对齐"), U8("居中对齐"), U8("右对齐") };
+
+            // --- 2. 动态按位组合 Flags ---
+            int currentWindowFlags = 0;
+            if (bWindowNoResize)    currentWindowFlags |= Shadow::ShadowWindowFlags_NoResize;
+            if (bWindowNoMove)      currentWindowFlags |= Shadow::ShadowWindowFlags_NoMove;
+            if (bWindowNoScrollbar) currentWindowFlags |= Shadow::ShadowWindowFlags_NoScrollbar;
+
+            // 处理互斥的对齐 Flag
+            if (selectedTextAlign == 0)      currentWindowFlags |= Shadow::ShadowWindowFlags_TextAlignLeft;
+            else if (selectedTextAlign == 1) currentWindowFlags |= Shadow::ShadowWindowFlags_TextAlignCenter;
+            else if (selectedTextAlign == 2) currentWindowFlags |= Shadow::ShadowWindowFlags_TextAlignRight;
+
+            int currentTabBarFlags = 0;
+            if (bTabReorderable)   currentTabBarFlags |= Shadow::ShadowTabBarFlags_Reorderable;
+            if (bTabFittingScroll) currentTabBarFlags |= Shadow::ShadowTabBarFlags_FittingPolicyScroll;
+            if (bTabNoScrollbar)   currentTabBarFlags |= Shadow::ShadowTabBarFlags_NoScrollbar;
+
+            // --- 3. UI 渲染 ---
+            if (Shadow::Begin(U8("测试菜单##main_window"), currentWindowFlags)) {
+
+                if (Shadow::BeginTabBar("MainTabs##tabs", currentTabBarFlags)) {
 
                     if (Shadow::BeginTabItem(U8("设置##tab0"))) {
                         Shadow::HotKey(U8("菜单按键##menu_key"), &keyMenu);
@@ -128,12 +161,19 @@ namespace Hook {
                         if (Shadow::Button(U8("重置速度##btn_1"))) {
                             fSpeed = 1.0f;
                         }
-                        Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
-                        Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
-                        Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
-                        Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
-                        Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
-                        Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
+
+                        // 窗口通用 Flags 开关
+                        Shadow::Checkbox(U8("禁用窗口缩放##flag_w_no_resize"), &bWindowNoResize);
+                        Shadow::Checkbox(U8("禁用窗口移动##flag_w_no_move"), &bWindowNoMove);
+                        Shadow::Checkbox(U8("禁用窗口滚动条##flag_w_no_scroll"), &bWindowNoScrollbar);
+
+                        // 互斥使用 Combo 下拉框选择对齐方式
+                        Shadow::Combo(U8("标题对齐方式##flag_w_align_combo"), &selectedTextAlign, alignOptions);
+
+                        // 标签页 Flags 开关
+                        Shadow::Checkbox(U8("启用标签拖拽##flag_t_reorder"), &bTabReorderable);
+                        Shadow::Checkbox(U8("标签溢出滚动##flag_t_fit_scroll"), &bTabFittingScroll);
+                        Shadow::Checkbox(U8("禁用标签滚动条##flag_t_no_scroll"), &bTabNoScrollbar);
                     }
                     Shadow::EndTabItem();
 
@@ -163,22 +203,22 @@ namespace Hook {
                     }
                     Shadow::EndTabItem();
 
-                    if (Shadow::BeginTabItem(U8("设置##tab1"))) {
+                    if (Shadow::BeginTabItem(U8("测试1##tab1"))) {
 
                     }
                     Shadow::EndTabItem();
 
-                    if (Shadow::BeginTabItem(U8("设置##tab2"))) {
+                    if (Shadow::BeginTabItem(U8("测试2##tab2"))) {
 
                     }
                     Shadow::EndTabItem();
 
-                    if (Shadow::BeginTabItem(U8("设置##tab3"))) {
+                    if (Shadow::BeginTabItem(U8("测试3##tab3"))) {
 
                     }
                     Shadow::EndTabItem();
 
-                    if (Shadow::BeginTabItem(U8("设置##tab4"))) {
+                    if (Shadow::BeginTabItem(U8("测试4##tab4"))) {
 
                     }
                     Shadow::EndTabItem();

@@ -45,6 +45,7 @@ namespace Shadow {
         GuiCol_PopupBorder,
         GuiCol_ResizeGrip,
         GuiCol_ResizeGripHovered,
+        GuiCol_ResizeGripActive,
         GuiCol_Tab,
         GuiCol_TabHovered,
         GuiCol_TabActive,
@@ -58,6 +59,26 @@ namespace Shadow {
         GuiCol_ColorPickerLight,
         GuiCol_COUNT
     };
+
+    enum ShadowWindowFlags_ {
+        ShadowWindowFlags_None = 0,
+        ShadowWindowFlags_NoResize = 1 << 0,
+        ShadowWindowFlags_NoMove = 1 << 1,
+        ShadowWindowFlags_NoScrollbar = 1 << 2,
+
+        ShadowWindowFlags_TextAlignLeft = 0,
+        ShadowWindowFlags_TextAlignCenter = 1 << 3,
+        ShadowWindowFlags_TextAlignRight = 1 << 4,
+    };
+    using ShadowWindowFlags = int;
+
+    enum ShadowTabBarFlags_ {
+        ShadowTabBarFlags_None = 0,
+        ShadowTabBarFlags_Reorderable = 1 << 0,
+        ShadowTabBarFlags_FittingPolicyScroll = 1 << 1,
+        ShadowTabBarFlags_NoScrollbar = 1 << 2,
+    };
+    using ShadowTabBarFlags = int;
 
     struct GuiStyle {
         Color Colors[GuiCol_COUNT];
@@ -81,6 +102,13 @@ namespace Shadow {
         float CPHueWidth = 20.f;
         float CPAlphaWidth = 20.f;
         float CPSpacing = 8.f;
+    };
+
+    struct TabDisplayInfo {
+        size_t id;
+        Vec2 pos;
+        Vec2 size;
+        std::string display;
     };
 
     struct GuiContext {
@@ -173,6 +201,48 @@ namespace Shadow {
 
         std::unordered_map<size_t, float> SliderInputWidthCache;
         std::unordered_map<size_t, size_t> SliderInputLengthCache;
+
+        // --- 问题3：窗口行为 Flags ---
+        ShadowWindowFlags CurrentWindowFlags = ShadowWindowFlags_None;
+
+        // --- 问题5：TabBar 相关状态 ---
+        ShadowTabBarFlags CurrentTabBarFlags = ShadowTabBarFlags_None;
+        size_t CurrentTabBarId = 0;
+
+        // Tab 顺序层：key = TabBarId，value = 该 TabBar 下按"UI显示顺序"排列的 Tab id 列表
+        std::unordered_map<size_t, std::vector<size_t>> TabOrderMap;
+        // 记录每个 TabBar 本帧内，代码调用 BeginTabItem 出现的顺序（用于把新 Tab 插入 TabOrderMap）
+        std::unordered_map<size_t, std::vector<size_t>> TabAppearedThisFrame;
+
+        // 记录每个 Tab 的显示信息（本帧内，供 Reorderable 拖拽计算使用）
+        std::unordered_map<size_t, std::vector<TabDisplayInfo>> TabBarDisplayCache;
+        // 每个 TabBar 的稳定布局表：key = tabBarId, value = (tabId -> 左边界X偏移，相对 TabBarOrigin.x，不含滚动/拖拽)
+        std::unordered_map<size_t, std::unordered_map<size_t, float>> TabBarLayoutX;
+        // 每个 Tab 的宽度缓存：key = tabId (全局唯一即可，因为 HashString 基本不冲突)
+        std::unordered_map<size_t, float> TabWidthCache;
+
+        // 拖拽重排状态
+        size_t DraggingTabId = 0;
+        size_t DraggingTabBarId = 0;
+        float DraggingTabGrabOffsetX = 0.f;
+        float DraggingTabCurrentX = 0.f;
+
+        // TabBar 水平滚动
+        std::unordered_map<size_t, float> TabBarScrollX;
+        size_t DraggingTabBarScrollId = 0;
+        float TabBarScrollDragOffset = 0.f;
+
+        // 保存本帧 TabBar 的几何信息，供 BeginTabItem / EndTabBar 使用
+        Vec2 TabBarOrigin = { 0.f, 0.f };   // TabBar 起始绘制点（含滚动偏移前的基准点）
+        float TabBarViewWidth = 0.f;        // TabBar 可视宽度（用于裁剪 + 滚动条判断）
+        float TabBarContentWidth = 0.f;     // 本帧内所有 Tab 累积的总宽度（下一帧使用）
+        float TabBarContentWidthAccum = 0.f;// 本帧累积中的宽度（当前帧计算用）
+        bool TabBarNeedsScrollbar = false;  // 上一帧是否需要滚动条（本帧渲染依据）
+
+        // 上一帧完整记录的 TabBar 占用矩形（供本帧 Begin() 读取，排除窗口垂直滚动干扰）
+        std::vector<std::pair<Vec2, Vec2>> TabBarHoverRects;
+        // 本帧正在收集的 TabBar 占用矩形（由 EndTabBar 写入，帧末尾会被搬运到 TabBarHoverRects）
+        std::vector<std::pair<Vec2, Vec2>> TabBarHoverRectsPending;
     };
 
     inline GuiContext g_Ctx;
@@ -215,7 +285,8 @@ namespace Shadow {
         colors[GuiCol_Separator] = { 0.025f, 0.032f, 0.045f, 1.000f };
 
         colors[GuiCol_ResizeGrip] = { 0.025f, 0.032f, 0.045f, 1.000f };
-        colors[GuiCol_ResizeGripHovered] = { 0.520f, 0.220f, 0.220f, 1.000f };
+        colors[GuiCol_ResizeGripActive] = { 0.520f, 0.220f, 0.220f, 1.000f }; 
+        colors[GuiCol_ResizeGripHovered] = { 0.300f, 0.130f, 0.130f, 1.000f };
 
         colors[GuiCol_ErrorText] = { 1.000f, 0.196f, 0.196f, 1.000f };
         colors[GuiCol_TextShadow] = { 0.000f, 0.000f, 0.000f, 1.000f };
@@ -973,6 +1044,11 @@ namespace Shadow {
         g_Ctx.BeginStack = 0;
         g_Ctx.TabBarStack = 0;
         g_Ctx.TabItemStack = 0;
+
+        // 修复：把上一帧 EndTabBar 收集到的“待生效”矩形，正式提升为本帧 Begin() 可读取的数据，
+        // 然后清空“待收集”容器供本帧重新填充。这样 Begin() 读到的永远是完整跑完的上一帧数据，不会有空窗期。
+        g_Ctx.TabBarHoverRects = std::move(g_Ctx.TabBarHoverRectsPending);
+        g_Ctx.TabBarHoverRectsPending.clear();
     }
 
     inline void RenderPopups() {
@@ -1149,11 +1225,16 @@ namespace Shadow {
         }
     }
 
-    inline bool Begin(std::string_view name) {
+    inline bool Begin(std::string_view name, ShadowWindowFlags flags = ShadowWindowFlags_None) {
         std::string_view display; size_t id;
         ParseLabel(name, display, id);
         g_Ctx.BeginStack++;
         g_Ctx.IsScrollApplied = false;
+        g_Ctx.CurrentWindowFlags = flags;
+
+        bool noResize = (flags & ShadowWindowFlags_NoResize) != 0;
+        bool noMove = (flags & ShadowWindowFlags_NoMove) != 0;
+        bool noScrollbar = (flags & ShadowWindowFlags_NoScrollbar) != 0;
 
         float titleBarHeight = std::max(30.f, g_Ctx.ItemHeight + 10.f);
         Vec2 wholeWindowSize = g_Ctx.WindowSize;
@@ -1161,9 +1242,9 @@ namespace Shadow {
 
         float triSize = g_Ctx.Style.ResizeGripSize;
         Vec2 triPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - triSize, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y - triSize };
-        g_Ctx.IsHoveringResize = IsMouseHoveringRaw(triPos, { triSize, triSize });
+        g_Ctx.IsHoveringResize = (!noResize) && IsMouseHoveringRaw(triPos, { triSize, triSize });
 
-        bool isOtherDragging = (g_Ctx.DraggingSliderId != 0) || g_Ctx.IsDraggingSV || g_Ctx.IsDraggingHue || g_Ctx.IsDraggingAlpha || g_Ctx.IsDraggingColorPicker || g_Ctx.IsDraggingScrollbar;
+        bool isOtherDragging = (g_Ctx.DraggingSliderId != 0) || g_Ctx.IsDraggingSV || g_Ctx.IsDraggingHue || g_Ctx.IsDraggingAlpha || g_Ctx.IsDraggingColorPicker || g_Ctx.IsDraggingScrollbar || g_Ctx.DraggingTabId != 0 || g_Ctx.DraggingTabBarScrollId != 0;
 
         if (hoveringWholeWindow && g_Ctx.MouseClicked) {
             g_Ctx.ActiveInputId = 0;
@@ -1175,7 +1256,19 @@ namespace Shadow {
         g_Ctx.ScrollY = std::clamp(g_Ctx.ScrollY, 0.f, maxScroll);
 
         bool hasPopupOpen = g_Ctx.ActiveDropdownId != 0 || g_Ctx.ActiveColorPickerId != 0;
-        if (hoveringWholeWindow && g_Ctx.MouseWheel != 0.f && !hasPopupOpen) {
+
+        // 修复：鼠标若悬停在（上一帧记录的）任意 TabBar 行/滚动条区域内，
+        // 窗口自身的垂直滚动条不应响应本次滚轮事件，避免与 TabBar 的横向滚动互相干扰
+        bool hoveringAnyTabBar = false;
+        for (auto& [rectPos, rectSize] : g_Ctx.TabBarHoverRects) {
+            if (IsMouseHoveringRaw(rectPos, rectSize)) {
+                hoveringAnyTabBar = true;
+                break;
+            }
+        }
+
+        // 注：即使 NoScrollbar，鼠标滚轮/代码依然可以滚动内容，只是不绘制/不可拖拽滚动条
+        if (hoveringWholeWindow && g_Ctx.MouseWheel != 0.f && !hasPopupOpen && !hoveringAnyTabBar) {
             g_Ctx.ScrollY -= g_Ctx.MouseWheel * 30.f;
             g_Ctx.ScrollY = std::clamp(g_Ctx.ScrollY, 0.f, maxScroll);
         }
@@ -1183,7 +1276,7 @@ namespace Shadow {
         bool hoveringScrollbar = false;
         float scrollbarWidth = g_Ctx.Style.ScrollbarSize;
         float scrollbarMarginRight = g_Ctx.Style.ScrollbarMargin;
-        if (g_Ctx.ContentHeight > viewHeight) {
+        if (!noScrollbar && g_Ctx.ContentHeight > viewHeight) {
             Vec2 trackPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - scrollbarWidth - scrollbarMarginRight, g_Ctx.ContentStartY };
             Vec2 trackSize = { scrollbarWidth, viewHeight };
 
@@ -1218,26 +1311,29 @@ namespace Shadow {
                 }
             }
         }
+        else {
+            g_Ctx.IsDraggingScrollbar = false;
+        }
 
-        if (!g_Ctx.IsDragging && hoveringWholeWindow && g_Ctx.MouseClicked && !g_Ctx.IsHoveringResize && !isOtherDragging && !hoveringScrollbar) {
+        if (!noMove && !g_Ctx.IsDragging && hoveringWholeWindow && g_Ctx.MouseClicked && !g_Ctx.IsHoveringResize && !isOtherDragging && !hoveringScrollbar) {
             g_Ctx.IsDragging = true;
             g_Ctx.DragOffset.x = g_Ctx.MousePos.x - g_Ctx.WindowPos.x;
             g_Ctx.DragOffset.y = g_Ctx.MousePos.y - g_Ctx.WindowPos.y;
         }
         if (g_Ctx.IsDragging && isOtherDragging) g_Ctx.IsDragging = false;
 
-        if (!g_Ctx.IsResizing && g_Ctx.IsHoveringResize && g_Ctx.MouseClicked && !isOtherDragging) {
+        if (!noResize && !g_Ctx.IsResizing && g_Ctx.IsHoveringResize && g_Ctx.MouseClicked && !isOtherDragging) {
             g_Ctx.IsResizing = true;
             g_Ctx.ResizeStartPos = g_Ctx.MousePos;
             g_Ctx.ResizeStartSize = g_Ctx.WindowSize;
         }
         if (g_Ctx.IsResizing && isOtherDragging) g_Ctx.IsResizing = false;
 
-        if (g_Ctx.IsDragging) {
+        if (!noMove && g_Ctx.IsDragging) {
             g_Ctx.WindowPos.x = g_Ctx.MousePos.x - g_Ctx.DragOffset.x;
             g_Ctx.WindowPos.y = g_Ctx.MousePos.y - g_Ctx.DragOffset.y;
         }
-        if (g_Ctx.IsResizing) {
+        if (!noResize && g_Ctx.IsResizing) {
             Vec2 delta = { g_Ctx.MousePos.x - g_Ctx.ResizeStartPos.x, g_Ctx.MousePos.y - g_Ctx.ResizeStartPos.y };
             g_Ctx.WindowSize.x = std::max(200.f, g_Ctx.ResizeStartSize.x + delta.x);
             g_Ctx.WindowSize.y = std::max(150.f, g_Ctx.ResizeStartSize.y + delta.y);
@@ -1246,7 +1342,20 @@ namespace Shadow {
 
         DrawRect(g_Ctx.WindowPos, g_Ctx.WindowSize, g_Ctx.Style.Colors[GuiCol_WindowBg]);
         DrawRect(g_Ctx.WindowPos, { g_Ctx.WindowSize.x, titleBarHeight }, g_Ctx.Style.Colors[GuiCol_TitleBarBg]);
-        DrawTextString(display, { g_Ctx.WindowPos.x + 10.f, g_Ctx.WindowPos.y + 7.f }, g_Ctx.Style.Colors[GuiCol_Text]);
+
+        // 问题4：标题文本对齐方式
+        {
+            float titleTextX = g_Ctx.WindowPos.x + 10.f;
+            if (flags & ShadowWindowFlags_TextAlignCenter) {
+                float textW = MeasureTextSize(display).x;
+                titleTextX = g_Ctx.WindowPos.x + (g_Ctx.WindowSize.x - textW) * 0.5f;
+            }
+            else if (flags & ShadowWindowFlags_TextAlignRight) {
+                float textW = MeasureTextSize(display).x;
+                titleTextX = g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - 10.f - textW;
+            }
+            DrawTextString(display, { titleTextX, g_Ctx.WindowPos.y + 7.f }, g_Ctx.Style.Colors[GuiCol_Text]);
+        }
 
         g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x, g_Ctx.WindowPos.y + titleBarHeight + g_Ctx.Style.WindowPadding.y };
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;
@@ -1266,10 +1375,14 @@ namespace Shadow {
 
         PopClipRect();
 
+        bool noResize = (g_Ctx.CurrentWindowFlags & ShadowWindowFlags_NoResize) != 0;
+        bool noScrollbar = (g_Ctx.CurrentWindowFlags & ShadowWindowFlags_NoScrollbar) != 0;
+
         float viewHeight = (g_Ctx.WindowPos.y + g_Ctx.WindowSize.y) - g_Ctx.ContentStartY - g_Ctx.Style.ResizeGripSize - 4.f;
         if (viewHeight < 10.f) viewHeight = 10.f;
 
-        if (g_Ctx.ContentHeight > viewHeight) {
+        // 问题3：ShadowWindowFlags_NoScrollbar 只隐藏滚动条的绘制/交互，滚动本身依然可用
+        if (!noScrollbar && g_Ctx.ContentHeight > viewHeight) {
             float maxScroll = g_Ctx.ContentHeight - viewHeight;
             float scrollbarWidth = g_Ctx.Style.ScrollbarSize;
             float scrollbarMarginRight = g_Ctx.Style.ScrollbarMargin;
@@ -1288,21 +1401,28 @@ namespace Shadow {
             DrawRect(thumbPos, thumbSize, thumbColor);
         }
 
-        float triSize = g_Ctx.Style.ResizeGripSize;
-        float x = g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - triSize;
-        float y = g_Ctx.WindowPos.y + g_Ctx.WindowSize.y - triSize;
-        Color triColor = (g_Ctx.IsHoveringResize || g_Ctx.IsResizing) ? g_Ctx.Style.Colors[GuiCol_ResizeGripHovered] : g_Ctx.Style.Colors[GuiCol_ResizeGrip];
+        // 问题3：ShadowWindowFlags_NoResize 时不绘制缩放手柄
+        if (!noResize) {
+            float triSize = g_Ctx.Style.ResizeGripSize;
+            float x = g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - triSize;
+            float y = g_Ctx.WindowPos.y + g_Ctx.WindowSize.y - triSize;
 
-        float pad = 3.f;
-        SDK::FLinearColor ueColor{ triColor.r, triColor.g, triColor.b, triColor.a };
-        SDK::FVector2D p1{ static_cast<double>(x + pad), static_cast<double>(y + triSize - pad) };
-        SDK::FVector2D p2{ static_cast<double>(x + triSize - pad), static_cast<double>(y + triSize - pad) };
-        SDK::FVector2D p3{ static_cast<double>(x + triSize - pad), static_cast<double>(y + pad) };
+            // 问题2：三态颜色 —— 默认 / 悬停(调暗) / 按住激活
+            Color triColor = g_Ctx.IsResizing
+                ? g_Ctx.Style.Colors[GuiCol_ResizeGripActive]
+                : (g_Ctx.IsHoveringResize ? g_Ctx.Style.Colors[GuiCol_ResizeGripHovered] : g_Ctx.Style.Colors[GuiCol_ResizeGrip]);
 
-        if (g_Ctx.Canvas) {
-            g_Ctx.Canvas->K2_DrawLine(p1, p2, 1.0f, ueColor);
-            g_Ctx.Canvas->K2_DrawLine(p2, p3, 1.0f, ueColor);
-            g_Ctx.Canvas->K2_DrawLine(p3, p1, 1.0f, ueColor);
+            float pad = 3.f;
+            SDK::FLinearColor ueColor{ triColor.r, triColor.g, triColor.b, triColor.a };
+            SDK::FVector2D p1{ static_cast<double>(x + pad), static_cast<double>(y + triSize - pad) };
+            SDK::FVector2D p2{ static_cast<double>(x + triSize - pad), static_cast<double>(y + triSize - pad) };
+            SDK::FVector2D p3{ static_cast<double>(x + triSize - pad), static_cast<double>(y + pad) };
+
+            if (g_Ctx.Canvas) {
+                g_Ctx.Canvas->K2_DrawLine(p1, p2, 1.0f, ueColor);
+                g_Ctx.Canvas->K2_DrawLine(p2, p3, 1.0f, ueColor);
+                g_Ctx.Canvas->K2_DrawLine(p3, p1, 1.0f, ueColor);
+            }
         }
 
         if (!g_Ctx.MouseDown) g_Ctx.IsResizing = false;
@@ -1316,11 +1436,53 @@ namespace Shadow {
         g_Ctx.MouseWheel = 0.f;
     }
 
-    inline bool BeginTabBar(std::string_view name) {
+    inline bool BeginTabBar(std::string_view name, ShadowTabBarFlags flags = ShadowTabBarFlags_None) {
         std::string_view display; size_t id; ParseLabel(name, display, id);
         g_Ctx.TabBarStack++;
+        g_Ctx.CurrentTabBarFlags = flags;
+        g_Ctx.CurrentTabBarId = id;
+
         g_Ctx.TabCursor = g_Ctx.Cursor;
+        g_Ctx.TabBarOrigin = g_Ctx.Cursor;
+
+        bool fittingScroll = (flags & ShadowTabBarFlags_FittingPolicyScroll) != 0;
+        bool noScrollbar = (flags & ShadowTabBarFlags_NoScrollbar) != 0;
+
+        // 根据上一帧记录的内容宽度，判断本帧是否需要为水平滚动条预留高度
+        float prevContentWidth = g_Ctx.TabBarContentWidth;
+        float viewWidth = g_Ctx.WindowSize.x - (g_Ctx.Style.WindowPadding.x * 2.f);
+        g_Ctx.TabBarViewWidth = viewWidth;
+        bool needsScrollbar = fittingScroll && !noScrollbar && (prevContentWidth > viewWidth);
+        g_Ctx.TabBarNeedsScrollbar = needsScrollbar;
+
+        // --- 关键修复：在清空显示缓存之前，先用“上一帧的 Tab 宽度缓存”重新计算本帧稳定布局表 ---
+        // 这样 BeginTabItem 内部就不再需要依赖“本帧尚未填充完的缓存”，从根本上消除重叠/坐标错乱问题。
+        {
+            auto& order = g_Ctx.TabOrderMap[id];
+            auto& layout = g_Ctx.TabBarLayoutX[id];
+            layout.clear();
+            float accum = 0.f;
+            for (size_t oid : order) {
+                layout[oid] = accum;
+                float w = 0.f;
+                auto itw = g_Ctx.TabWidthCache.find(oid);
+                if (itw != g_Ctx.TabWidthCache.end()) w = itw->second;
+                accum += w + 5.f;
+            }
+        }
+
+        // 本帧内容宽度重新累积（用于下一帧滚动条判断，与上面的布局表计算相互独立）
+        g_Ctx.TabBarContentWidthAccum = 0.f;
+
+        // 清空本帧显示信息缓存（仅用于可视裁剪/调试，不再参与位置计算）
+        g_Ctx.TabBarDisplayCache[id].clear();
+        g_Ctx.TabAppearedThisFrame[id].clear();
+
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+
+        // 若需要滚动条，为其预留空间
+        float scrollbarReserve = needsScrollbar ? (g_Ctx.Style.ScrollbarSize + 4.f) : 0.f;
+        g_Ctx.Cursor.y += scrollbarReserve;
 
         DrawRect({ g_Ctx.WindowPos.x, g_Ctx.Cursor.y }, { g_Ctx.WindowSize.x, 2.f }, g_Ctx.Style.Colors[GuiCol_Separator]);
         g_Ctx.Cursor.y += 2.f + g_Ctx.Style.WindowPadding.y;
@@ -1333,7 +1495,171 @@ namespace Shadow {
     }
 
     inline void EndTabBar() {
-        // 移除原有的 PopClipRect，保持堆栈平衡
+        size_t tabBarId = g_Ctx.CurrentTabBarId;
+        bool fittingScroll = (g_Ctx.CurrentTabBarFlags & ShadowTabBarFlags_FittingPolicyScroll) != 0;
+        bool reorderable = (g_Ctx.CurrentTabBarFlags & ShadowTabBarFlags_Reorderable) != 0;
+        bool noScrollbar = (g_Ctx.CurrentTabBarFlags & ShadowTabBarFlags_NoScrollbar) != 0;
+
+        g_Ctx.TabBarContentWidth = g_Ctx.TabBarContentWidthAccum;
+
+        float viewWidth = g_Ctx.TabBarViewWidth;
+        float maxScrollX = std::max(0.f, g_Ctx.TabBarContentWidth - viewWidth);
+        float& scrollX = g_Ctx.TabBarScrollX[tabBarId];
+        scrollX = std::clamp(scrollX, 0.f, maxScrollX);
+
+        Vec2 tabRowPos = g_Ctx.TabBarOrigin;
+        Vec2 tabRowSize = { viewWidth, g_Ctx.ItemHeight };
+        bool hoveringTabRow = IsMouseHovering(tabRowPos, tabRowSize);
+
+        // --- Reorderable：处理拖拽换序（使用稳定布局表 TabBarLayoutX，而非本帧显示缓存） ---
+        if (reorderable && g_Ctx.DraggingTabId != 0 && g_Ctx.DraggingTabBarId == tabBarId) {
+            if (g_Ctx.MouseDown) {
+                g_Ctx.DraggingTabCurrentX = g_Ctx.MousePos.x - g_Ctx.DraggingTabGrabOffsetX;
+
+                auto& order = g_Ctx.TabOrderMap[tabBarId];
+                auto& layout = g_Ctx.TabBarLayoutX[tabBarId];
+
+                auto itSelf = std::find(order.begin(), order.end(), g_Ctx.DraggingTabId);
+                if (itSelf != order.end()) {
+                    size_t selfIdx = static_cast<size_t>(itSelf - order.begin());
+
+                    float selfWidth = 0.f;
+                    auto itw = g_Ctx.TabWidthCache.find(g_Ctx.DraggingTabId);
+                    if (itw != g_Ctx.TabWidthCache.end()) selfWidth = itw->second;
+
+                    float draggedLogicalX = (g_Ctx.DraggingTabCurrentX - g_Ctx.TabBarOrigin.x) + scrollX;
+                    float draggedCenterX = draggedLogicalX + selfWidth * 0.5f;
+
+                    if (selfIdx > 0) {
+                        size_t leftId = order[selfIdx - 1];
+                        auto itL = layout.find(leftId);
+                        if (itL != layout.end()) {
+                            float leftWidth = 0.f;
+                            auto itlw = g_Ctx.TabWidthCache.find(leftId);
+                            if (itlw != g_Ctx.TabWidthCache.end()) leftWidth = itlw->second;
+                            float leftCenter = itL->second + leftWidth * 0.5f;
+                            if (draggedCenterX < leftCenter) {
+                                std::swap(order[selfIdx - 1], order[selfIdx]);
+                            }
+                        }
+                    }
+
+                    itSelf = std::find(order.begin(), order.end(), g_Ctx.DraggingTabId);
+                    selfIdx = static_cast<size_t>(itSelf - order.begin());
+                    if (selfIdx + 1 < order.size()) {
+                        size_t rightId = order[selfIdx + 1];
+                        auto itR = layout.find(rightId);
+                        if (itR != layout.end()) {
+                            float rightWidth = 0.f;
+                            auto itrw = g_Ctx.TabWidthCache.find(rightId);
+                            if (itrw != g_Ctx.TabWidthCache.end()) rightWidth = itrw->second;
+                            float rightCenter = itR->second + rightWidth * 0.5f;
+                            if (draggedCenterX > rightCenter) {
+                                std::swap(order[selfIdx], order[selfIdx + 1]);
+                            }
+                        }
+                    }
+                }
+            }
+            else {
+                g_Ctx.DraggingTabId = 0;
+                g_Ctx.DraggingTabBarId = 0;
+            }
+        }
+
+        // --- 修复问题2：在所有普通 Tab 绘制完成后，在最顶层绘制被拖拽的 Tab，确保它遮挡其他 Tab ---
+        if (reorderable && g_Ctx.DraggingTabId != 0 && g_Ctx.DraggingTabBarId == tabBarId) {
+            for (const auto& tabInfo : g_Ctx.TabBarDisplayCache[tabBarId]) {
+                if (tabInfo.id == g_Ctx.DraggingTabId) {
+                    Vec2 clipMin = g_Ctx.TabBarOrigin;
+                    Vec2 clipMax = { g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth, g_Ctx.TabBarOrigin.y + tabInfo.size.y };
+
+                    // 被拖拽的Tab总是使用活动/Hovered样式，视觉上凸显它
+                    Color bgColor = g_Ctx.Style.Colors[GuiCol_TabActive];
+                    Color textColor = g_Ctx.Style.Colors[GuiCol_TextHighlight];
+
+                    PushClipRect(clipMin, { g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth, clipMax.y });
+                    DrawRect(tabInfo.pos, tabInfo.size, bgColor);
+                    DrawTextString(tabInfo.display, { tabInfo.pos.x + g_Ctx.Style.TabExtraWidth / 2.f, tabInfo.pos.y + g_Ctx.Style.FramePadding.y }, textColor);
+                    PopClipRect();
+                    break;
+                }
+            }
+        }
+
+        // --- FittingPolicyScroll：绘制水平滚动条（仅 UI 受 NoScrollbar 抑制，scrollX 逻辑始终生效） ---
+        // 用于记录滚动条区域，以合并到最终的 TabBar 占用矩形中
+        float scrollBarTop = 0.f, scrollBarBottom = 0.f;
+        if (fittingScroll && !noScrollbar && g_Ctx.TabBarNeedsScrollbar) {
+            float barHeight = g_Ctx.Style.ScrollbarSize;
+            Vec2 trackPos = { tabRowPos.x, tabRowPos.y + g_Ctx.ItemHeight + 2.f };
+            Vec2 trackSize = { viewWidth, barHeight };
+
+            DrawRect(trackPos, trackSize, g_Ctx.Style.Colors[GuiCol_FrameBg]);
+
+            float thumbWidth = std::max(20.f, (viewWidth / g_Ctx.TabBarContentWidth) * trackSize.x);
+            float thumbX = trackPos.x + (maxScrollX > 0.f ? (scrollX / maxScrollX) * (trackSize.x - thumbWidth) : 0.f);
+            Vec2 thumbPos = { thumbX, trackPos.y };
+            Vec2 thumbSize = { thumbWidth, barHeight };
+
+            bool hoveringThumb = IsMouseHoveringRaw(thumbPos, thumbSize);
+            bool hoveringTrack = IsMouseHoveringRaw(trackPos, trackSize);
+
+            if (g_Ctx.MouseClicked && hoveringThumb) {
+                g_Ctx.DraggingTabBarScrollId = tabBarId;
+                g_Ctx.TabBarScrollDragOffset = g_Ctx.MousePos.x - thumbPos.x;
+                g_Ctx.MouseClicked = false;
+            }
+            else if (g_Ctx.MouseClicked && hoveringTrack) {
+                if (g_Ctx.MousePos.x < thumbPos.x) scrollX -= viewWidth * 0.5f;
+                else scrollX += viewWidth * 0.5f;
+                scrollX = std::clamp(scrollX, 0.f, maxScrollX);
+                g_Ctx.MouseClicked = false;
+            }
+
+            if (g_Ctx.DraggingTabBarScrollId == tabBarId) {
+                if (g_Ctx.MouseDown) {
+                    float newThumbX = g_Ctx.MousePos.x - g_Ctx.TabBarScrollDragOffset;
+                    float ratio = (newThumbX - trackPos.x) / std::max(1.f, trackSize.x - thumbWidth);
+                    scrollX = std::clamp(ratio * maxScrollX, 0.f, maxScrollX);
+                }
+                else {
+                    g_Ctx.DraggingTabBarScrollId = 0;
+                }
+            }
+
+            Color thumbColor = (g_Ctx.DraggingTabBarScrollId == tabBarId)
+                ? g_Ctx.Style.Colors[GuiCol_SliderGrab]
+                : (hoveringThumb ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_Border]);
+            DrawRect(thumbPos, thumbSize, thumbColor);
+
+            bool hoveringForWheel = hoveringTabRow || hoveringTrack;
+            if (hoveringForWheel && g_Ctx.MouseWheel != 0.f) {
+                scrollX -= g_Ctx.MouseWheel * 30.f;
+                scrollX = std::clamp(scrollX, 0.f, maxScrollX);
+                g_Ctx.MouseWheel = 0.f;
+            }
+
+            // 记录滚动条的垂直位置，用于合并矩形
+            scrollBarTop = trackPos.y;
+            scrollBarBottom = trackPos.y + trackSize.y;
+        }
+        else if (fittingScroll) {
+            if (hoveringTabRow && g_Ctx.MouseWheel != 0.f) {
+                scrollX -= g_Ctx.MouseWheel * 30.f;
+                scrollX = std::clamp(scrollX, 0.f, maxScrollX);
+                g_Ctx.MouseWheel = 0.f;
+            }
+            g_Ctx.DraggingTabBarScrollId = 0;
+        }
+
+        // --- 修复问题1：记录完整的 TabBar 占用矩形（标签行 + 水平滚动条），避免窗口垂直滚动响应 TabBar 区域的滚轮事件 ---
+        float unionTop = tabRowPos.y;
+        float unionBottom = (scrollBarBottom > 0) ? scrollBarBottom : (tabRowPos.y + g_Ctx.ItemHeight);
+        Vec2 fullTabBarRectPos = { tabRowPos.x, unionTop };
+        Vec2 fullTabBarRectSize = { viewWidth, unionBottom - unionTop };
+        g_Ctx.TabBarHoverRectsPending.push_back({ fullTabBarRectPos, fullTabBarRectSize });
+
         g_Ctx.TabBarStack--;
     }
 
@@ -1341,10 +1667,68 @@ namespace Shadow {
         std::string_view display; size_t id; ParseLabel(name, display, id);
         g_Ctx.TabItemStack++;
 
+        size_t tabBarId = g_Ctx.CurrentTabBarId;
+        bool reorderable = (g_Ctx.CurrentTabBarFlags & ShadowTabBarFlags_Reorderable) != 0;
+        bool fittingScroll = (g_Ctx.CurrentTabBarFlags & ShadowTabBarFlags_FittingPolicyScroll) != 0;
+
+        // 维护"显示顺序"数组：首次出现的 Tab 按代码调用顺序追加到末尾
+        auto& order = g_Ctx.TabOrderMap[tabBarId];
+        if (std::find(order.begin(), order.end(), id) == order.end()) {
+            order.push_back(id);
+        }
+        g_Ctx.TabAppearedThisFrame[tabBarId].push_back(id);
+
         Vec2 tabSize = MeasureTextSize(display);
         tabSize.x += g_Ctx.Style.TabExtraWidth; tabSize.y = g_Ctx.ItemHeight;
 
-        bool hovered = IsMouseHovering(g_Ctx.TabCursor, tabSize);
+        // 更新宽度缓存，供下一帧 BeginTabBar 计算稳定布局表使用
+        g_Ctx.TabWidthCache[id] = tabSize.x;
+
+        // --- 直接从 BeginTabBar 阶段算好的稳定布局表取横坐标偏移 ---
+        float offsetX;
+        auto& layout = g_Ctx.TabBarLayoutX[tabBarId];
+        auto itLayout = layout.find(id);
+        if (itLayout != layout.end()) {
+            offsetX = itLayout->second;
+        }
+        else {
+            // 新 Tab：追加到当前布局表已知的最大偏移之后
+            float maxEnd = 0.f;
+            for (auto& [oid, x] : layout) {
+                float w = 0.f;
+                auto itw = g_Ctx.TabWidthCache.find(oid);
+                if (itw != g_Ctx.TabWidthCache.end()) w = itw->second;
+                maxEnd = std::max(maxEnd, x + w + 5.f);
+            }
+            offsetX = maxEnd;
+            layout[id] = offsetX;
+        }
+
+        float scrollX = fittingScroll ? g_Ctx.TabBarScrollX[tabBarId] : 0.f;
+
+        bool isDraggingSelf = reorderable && g_Ctx.DraggingTabId == id && g_Ctx.DraggingTabBarId == tabBarId;
+
+        Vec2 tabPos;
+        if (isDraggingSelf) {
+            tabPos = { g_Ctx.DraggingTabCurrentX, g_Ctx.TabBarOrigin.y };
+        }
+        else {
+            tabPos = { g_Ctx.TabBarOrigin.x + offsetX - scrollX, g_Ctx.TabBarOrigin.y };
+        }
+
+        // 记录本帧显示信息（包括拖拽中的 Tab，用于命中测试和后续的顶层绘制）
+        g_Ctx.TabBarDisplayCache[tabBarId].push_back({ id, tabPos, tabSize, std::string(display) });
+
+        // 累积内容宽度（用于滚动条判断）
+        g_Ctx.TabBarContentWidthAccum += tabSize.x + 5.f;
+
+        // 裁剪：仅在 TabBar 可视区域内才响应交互与绘制
+        Vec2 clipMin = g_Ctx.TabBarOrigin;
+        Vec2 clipMax = { g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth, g_Ctx.TabBarOrigin.y + tabSize.y };
+        bool tabVisible = !(tabPos.x + tabSize.x < clipMin.x || tabPos.x > clipMax.x);
+
+        bool hovered = tabVisible && IsMouseHovering(tabPos, tabSize) && IsRectVisible(tabPos, tabSize);
+
         if (hovered && g_Ctx.MouseClicked) {
             if (g_Ctx.ActiveTabId != id) {
                 g_Ctx.FocusedSliderId = 0;
@@ -1352,19 +1736,32 @@ namespace Shadow {
                 g_Ctx.ScrollY = 0.f;
             }
             g_Ctx.ActiveTabId = id;
+
+            if (reorderable) {
+                g_Ctx.DraggingTabId = id;
+                g_Ctx.DraggingTabBarId = tabBarId;
+                g_Ctx.DraggingTabGrabOffsetX = g_Ctx.MousePos.x - tabPos.x;
+                g_Ctx.DraggingTabCurrentX = tabPos.x;
+            }
+            g_Ctx.MouseClicked = false;
         }
         if (g_Ctx.ActiveTabId == 0) g_Ctx.ActiveTabId = id;
 
         bool isActive = (g_Ctx.ActiveTabId == id);
         g_Ctx.InActiveTab = isActive;
 
-        Color bgColor = isActive ? g_Ctx.Style.Colors[GuiCol_TabActive] : (hovered ? g_Ctx.Style.Colors[GuiCol_TabHovered] : g_Ctx.Style.Colors[GuiCol_Tab]);
-        Color textColor = isActive ? g_Ctx.Style.Colors[GuiCol_TextHighlight] : g_Ctx.Style.Colors[GuiCol_TextDisabled];
+        // --- 修复问题2：被拖拽的 Tab 不在此处绘制，推迟到 EndTabBar 中作为最顶层元素绘制 ---
+        if (!isDraggingSelf) {
+            Color bgColor = isActive ? g_Ctx.Style.Colors[GuiCol_TabActive] : (hovered ? g_Ctx.Style.Colors[GuiCol_TabHovered] : g_Ctx.Style.Colors[GuiCol_Tab]);
+            Color textColor = isActive ? g_Ctx.Style.Colors[GuiCol_TextHighlight] : g_Ctx.Style.Colors[GuiCol_TextDisabled];
 
-        DrawRect(g_Ctx.TabCursor, tabSize, bgColor);
-        DrawTextString(display, { g_Ctx.TabCursor.x + g_Ctx.Style.TabExtraWidth / 2.f, g_Ctx.TabCursor.y + g_Ctx.Style.FramePadding.y }, textColor);
-
-        g_Ctx.TabCursor.x += tabSize.x + 5.f;
+            if (tabVisible) {
+                PushClipRect(clipMin, { g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth, clipMax.y });
+                DrawRect(tabPos, tabSize, bgColor);
+                DrawTextString(display, { tabPos.x + g_Ctx.Style.TabExtraWidth / 2.f, tabPos.y + g_Ctx.Style.FramePadding.y }, textColor);
+                PopClipRect();
+            }
+        }
 
         if (isActive) {
             float viewHeight = (g_Ctx.WindowPos.y + g_Ctx.WindowSize.y) - g_Ctx.ContentStartY - g_Ctx.Style.ResizeGripSize - 4.f;
@@ -1610,7 +2007,7 @@ namespace Shadow {
 
         float rightMargin = GetRightMargin();
         // 修复：改硬编码 40.f 为字体自适应高度倍数
-        Vec2 boxSize = { g_Ctx.ItemHeight * 2.0f, g_Ctx.ItemHeight };
+        Vec2 boxSize = { g_Ctx.ItemHeight, g_Ctx.ItemHeight };
         Vec2 boxPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - boxSize.x, g_Ctx.Cursor.y };
 
         bool hovered = IsMouseHovering(boxPos, boxSize);

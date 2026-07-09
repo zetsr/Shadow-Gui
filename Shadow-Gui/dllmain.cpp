@@ -121,13 +121,19 @@ namespace Hook {
 
                     // 修改 Combat 标签为中文
                     if (Shadow::BeginTabItem(U8("战斗##tab1"))) {
-                        Shadow::CheckBox(U8("无敌模式##checkbox_1"), &bGodMode);
+                        Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
                         Shadow::Slider(U8("移动速度##slider_1"), &fSpeed, 1.0f, 10.0f, 0.1f);
                         Shadow::HotKey(U8("自瞄按键##hotkey_1"), &keyAimbot, &bAimbotActive, &modeAimbot);
 
                         if (Shadow::Button(U8("重置速度##btn_1"))) {
                             fSpeed = 1.0f;
                         }
+                        Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
+                        Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
+                        Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
+                        Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
+                        Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
+                        Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
                     }
                     Shadow::EndTabItem();
 
@@ -136,24 +142,44 @@ namespace Hook {
                         Shadow::ColorPicker(U8("ESP颜色##cp_1"), &cESP.r, &cESP.g, &cESP.b, &cESP.a);
 
                         // 添加目标选择下拉框
-                        Shadow::ComboBox(U8("目标选择##target_combo"), &selectedTarget, targetOptions);
+                        Shadow::Combo(U8("目标选择##target_combo"), &selectedTarget, targetOptions);
 
                         // 根据选择的目标显示对应的选项
                         if (selectedTarget == 0) {
-                            Shadow::CheckBox(U8("敌人 - 血量##health_enemy"), &showHealth[0]);
-                            Shadow::CheckBox(U8("敌人 - 方框##box_enemy"), &showBox[0]);
-                            Shadow::CheckBox(U8("敌人 - 按钮##button_enemy"), &showButton[0]);
+                            Shadow::Checkbox(U8("敌人 - 血量##health_enemy"), &showHealth[0]);
+                            Shadow::Checkbox(U8("敌人 - 方框##box_enemy"), &showBox[0]);
+                            Shadow::Checkbox(U8("敌人 - 按钮##button_enemy"), &showButton[0]);
                         }
                         else if (selectedTarget == 1) {
-                            Shadow::CheckBox(U8("队友 - 血量##health_teammate"), &showHealth[1]);
-                            Shadow::CheckBox(U8("队友 - 方框##box_teammate"), &showBox[1]);
-                            Shadow::CheckBox(U8("队友 - 按钮##button_teammate"), &showButton[1]);
+                            Shadow::Checkbox(U8("队友 - 血量##health_teammate"), &showHealth[1]);
+                            Shadow::Checkbox(U8("队友 - 方框##box_teammate"), &showBox[1]);
+                            Shadow::Checkbox(U8("队友 - 按钮##button_teammate"), &showButton[1]);
                         }
                         else if (selectedTarget == 2) {
-                            Shadow::CheckBox(U8("AI - 血量##health_ai"), &showHealth[2]);
-                            Shadow::CheckBox(U8("AI - 方框##box_ai"), &showBox[2]);
-                            Shadow::CheckBox(U8("AI - 按钮##button_ai"), &showButton[2]);
+                            Shadow::Checkbox(U8("AI - 血量##health_ai"), &showHealth[2]);
+                            Shadow::Checkbox(U8("AI - 方框##box_ai"), &showBox[2]);
+                            Shadow::Checkbox(U8("AI - 按钮##button_ai"), &showButton[2]);
                         }
+                    }
+                    Shadow::EndTabItem();
+
+                    if (Shadow::BeginTabItem(U8("设置##tab1"))) {
+
+                    }
+                    Shadow::EndTabItem();
+
+                    if (Shadow::BeginTabItem(U8("设置##tab2"))) {
+
+                    }
+                    Shadow::EndTabItem();
+
+                    if (Shadow::BeginTabItem(U8("设置##tab3"))) {
+
+                    }
+                    Shadow::EndTabItem();
+
+                    if (Shadow::BeginTabItem(U8("设置##tab4"))) {
+
                     }
                     Shadow::EndTabItem();
                 }

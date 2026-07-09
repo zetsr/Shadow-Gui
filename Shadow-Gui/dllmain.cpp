@@ -68,7 +68,7 @@ namespace Hook {
     typedef void(__fastcall* tPostRender)(SDK::UGameViewportClient* _this, SDK::UCanvas* Canvas);
     tPostRender oPostRender = nullptr;
 
-    void __fastcall hkPostRender(SDK::UGameViewportClient* rcx, SDK::UCanvas* canvas, void* r8, void* r9) {
+    void __fastcall hkPostRender(SDK::UGameViewportClient* rcx, SDK::UCanvas* canvas) {
         if (!canvas) return oPostRender(rcx, canvas);
 
         static bool bGodMode = false;
@@ -87,9 +87,7 @@ namespace Hook {
         static    bool bAimbotActive = false;
         static   Shadow::HotkeyMode modeAimbot = Shadow::HotkeyMode::HoldOn;
 
-
         // Shadow Gui内部会自动获取引擎默认字体
-
         if (!Shadow::DefaultFont) {
             static SDK::UFont* OpenSansRegular12 = nullptr;
 
@@ -98,7 +96,6 @@ namespace Hook {
                 if (_Font && _Font->IsA(SDK::UFont::StaticClass())) OpenSansRegular12 = (SDK::UFont*)_Font; Shadow::DefaultFont = OpenSansRegular12;
             }
         }
-
 
         Shadow::SetAllowedKeys({ 'W', 'A', 'S', 'D', VK_SPACE }); // 放行常用移动按键
 
@@ -169,7 +166,12 @@ namespace Hook {
     }
 
     void FindPostRender() {
-        std::string pattern = "8B C2 35 ?? ?? ?? ?? 44";
+        std::string pattern = "8B C2 35 ?? ?? ?? ?? 44"; 
+
+        // ASA 8B C2 35 ?? ?? ?? ?? 44
+        // DRACONIA 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89
+        // DOD 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 48 89 5C 24 10 48 89 74 24 18 48 89 7C 24 20 55
+
         AOB::Result ok = AOB::Scan(pattern);
 
         if (ok && ok.size() > 0) {

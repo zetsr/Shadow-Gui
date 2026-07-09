@@ -951,12 +951,10 @@ namespace Shadow {
             if (!g_Ctx.MouseDown) g_Ctx.IsResizing = false;
         }
 
-        // --- 应用样式颜色 ---
         DrawRect(g_Ctx.WindowPos, g_Ctx.WindowSize, g_Ctx.Style.Colors[GuiCol_WindowBg]);
         DrawRect(g_Ctx.WindowPos, { g_Ctx.WindowSize.x, titleBarHeight }, g_Ctx.Style.Colors[GuiCol_TitleBarBg]);
         DrawTextString(display, { g_Ctx.WindowPos.x + 10.f, g_Ctx.WindowPos.y + 7.f }, g_Ctx.Style.Colors[GuiCol_Text]);
 
-        // 绘制调整大小的三角形
         {
             float x = g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - triSize;
             float y = g_Ctx.WindowPos.y + g_Ctx.WindowSize.y - triSize;
@@ -1000,7 +998,6 @@ namespace Shadow {
         g_Ctx.TabCursor = g_Ctx.Cursor;
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Padding;
 
-        // --- 分割线颜色 ---
         DrawRect({ g_Ctx.WindowPos.x, g_Ctx.Cursor.y }, { g_Ctx.WindowSize.x, 2.f }, g_Ctx.Style.Colors[GuiCol_Separator]);
         g_Ctx.Cursor.y += 2.f + g_Ctx.Padding;
         return true;
@@ -1027,7 +1024,6 @@ namespace Shadow {
         bool isActive = (g_Ctx.ActiveTabId == id);
         g_Ctx.InActiveTab = isActive;
 
-        // --- 应用样式颜色 ---
         Color bgColor = isActive ? g_Ctx.Style.Colors[GuiCol_TabActive] : (hovered ? g_Ctx.Style.Colors[GuiCol_TabHovered] : g_Ctx.Style.Colors[GuiCol_Tab]);
         Color textColor = isActive ? g_Ctx.Style.Colors[GuiCol_TextHighlight] : g_Ctx.Style.Colors[GuiCol_TextDisabled];
 
@@ -1054,8 +1050,13 @@ namespace Shadow {
 
         DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + 2.f }, g_Ctx.Style.Colors[GuiCol_Text]);
 
-        float controlOffsetX = GetControlOffsetX();
-        float boxWidth = std::max(100.f, g_Ctx.WindowSize.x - controlOffsetX - g_Ctx.Padding * 8.f);
+        float textWidth = MeasureTextSize(display).x;
+        float controlOffsetX = textWidth + g_Ctx.Padding;
+
+        std::string currentText = (*current_item >= 0 && *current_item < static_cast<int>(items.size())) ? items[*current_item] : "Unknown";
+        float currentTextWidth = MeasureTextSize(currentText).x;
+        float boxWidth = currentTextWidth + 30.f;
+
         Vec2 boxPos = { g_Ctx.Cursor.x + controlOffsetX, g_Ctx.Cursor.y };
         Vec2 boxSize = { boxWidth, g_Ctx.ItemHeight };
 
@@ -1074,7 +1075,6 @@ namespace Shadow {
 
         DrawRect(boxPos, boxSize, hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
 
-        std::string currentText = (*current_item >= 0 && *current_item < static_cast<int>(items.size())) ? items[*current_item] : "Unknown";
         DrawTextString(currentText, { boxPos.x + 8.f, boxPos.y + 2.f }, g_Ctx.Style.Colors[GuiCol_Text]);
 
         float triSize = 6.f;
@@ -1105,7 +1105,10 @@ namespace Shadow {
             return;
         }
 
-        bool hovered = IsMouseHovering(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight });
+        float textWidth = MeasureTextSize(display).x;
+        Vec2 interactSize = { boxSize.x + 10.f + textWidth, g_Ctx.ItemHeight };
+
+        bool hovered = IsMouseHovering(g_Ctx.Cursor, interactSize);
         if (hovered && g_Ctx.MouseClicked) { *value = !(*value); }
 
         DrawRect(g_Ctx.Cursor, boxSize, hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
@@ -1149,7 +1152,10 @@ namespace Shadow {
             return;
         }
 
-        float controlOffsetX = GetControlOffsetX();
+        // 修改：计算向左对齐控件文本的偏移量
+        float textWidth = MeasureTextSize(display).x;
+        float controlOffsetX = textWidth + g_Ctx.Padding;
+
         float sliderWidth = std::max(50.f, g_Ctx.WindowSize.x - controlOffsetX - g_Ctx.Padding * 8.f);
         Vec2 sliderPos = { g_Ctx.Cursor.x + controlOffsetX, g_Ctx.Cursor.y };
         Vec2 size = { sliderWidth, g_Ctx.ItemHeight };
@@ -1214,7 +1220,9 @@ namespace Shadow {
 
         DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + 2.f }, g_Ctx.Style.Colors[GuiCol_Text]);
 
-        float controlOffsetX = GetControlOffsetX();
+        float textWidth = MeasureTextSize(display).x;
+        float controlOffsetX = textWidth + g_Ctx.Padding;
+
         Vec2 boxPos = { g_Ctx.Cursor.x + controlOffsetX, g_Ctx.Cursor.y };
         Vec2 boxSize = { 40.f, g_Ctx.ItemHeight };
 
@@ -1254,12 +1262,13 @@ namespace Shadow {
 
         DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + 2.f }, g_Ctx.Style.Colors[GuiCol_Text]);
 
-        float controlOffsetX = GetControlOffsetX();
+        float textWidth = MeasureTextSize(display).x;
+        float controlOffsetX = textWidth + g_Ctx.Padding;
+
         bool isAssigning = (g_Ctx.AssigningHotkey == hotkey);
         std::string keyName = isAssigning ? "[Press Key]" : std::format("[{}]", GetKeyName(*hotkey));
 
         Vec2 btnSize = { MeasureTextSize(keyName).x + 16.f, g_Ctx.ItemHeight };
-        btnSize.x = std::max(btnSize.x, 80.f);
         Vec2 btnPos = { g_Ctx.Cursor.x + controlOffsetX, g_Ctx.Cursor.y };
 
         bool btnHovered = IsMouseHovering(btnPos, btnSize);
@@ -1286,14 +1295,15 @@ namespace Shadow {
 
         DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + 2.f }, g_Ctx.Style.Colors[GuiCol_Text]);
 
-        float controlOffsetX = GetControlOffsetX();
+        float textWidth = MeasureTextSize(display).x;
+        float controlOffsetX = textWidth + g_Ctx.Padding;
+
         bool isAssigning = (g_Ctx.AssigningHotkey == hotkey);
         std::vector<std::string> modeStrs = { "None", "Hold On", "Toggle On", "Hold Off", "Always On" };
 
         std::string keyName = isAssigning ? "[Press Key]" : std::format("[{}]", GetKeyName(*hotkey));
 
         Vec2 btnSize = { MeasureTextSize(keyName).x + 16.f, g_Ctx.ItemHeight };
-        btnSize.x = std::max(btnSize.x, 80.f);
         Vec2 btnPos = { g_Ctx.Cursor.x + controlOffsetX, g_Ctx.Cursor.y };
 
         bool btnHovered = IsMouseHovering(btnPos, btnSize);

@@ -122,7 +122,7 @@ namespace Hook {
                     // 修改 Combat 标签为中文
                     if (Shadow::BeginTabItem(U8("战斗##tab1"))) {
                         Shadow::CheckBox(U8("无敌模式##checkbox_1"), &bGodMode);
-                        Shadow::Slider(U8("移动速度##slider_1"), &fSpeed, 1.0f, 10.0f, 0.01f);
+                        Shadow::Slider(U8("移动速度##slider_1"), &fSpeed, 1.0f, 10.0f, 0.1f);
                         Shadow::HotKey(U8("自瞄按键##hotkey_1"), &keyAimbot, &bAimbotActive, &modeAimbot);
 
                         if (Shadow::Button(U8("重置速度##btn_1"))) {

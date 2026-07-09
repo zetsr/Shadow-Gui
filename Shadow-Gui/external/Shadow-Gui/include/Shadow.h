@@ -85,7 +85,7 @@ namespace Shadow {
         // 键盘与热键状态机
         bool KeyStates[256] = { false };
         bool HotkeyToggles[256] = { false };
-        bool KeyPressed[256] = { false }; // 单帧触发状态
+        bool KeyPressed[256] = { false };
         int* AssigningHotkey = nullptr;
 
         // ComboBox / Dropdown 状态
@@ -153,6 +153,18 @@ namespace Shadow {
         // Slider 状态
         size_t DraggingSliderId = 0;
         size_t FocusedSliderId = 0;
+
+        // InputBox 专用状态
+        size_t ActiveInputId = 0;
+        int InputCursorPos = 0;
+        int InputSelectionStart = -1;
+        int InputSelectionEnd = -1;
+        std::vector<char> InputChars;
+        std::unordered_map<size_t, std::string> InputBuffers;
+
+        // Slider 状态缓存，避免矩形宽度 jitter
+        std::unordered_map<size_t, float> SliderInputWidthCache;
+        std::unordered_map<size_t, size_t> SliderInputLengthCache;
     };
 
     inline GuiContext g_Ctx;
@@ -377,10 +389,13 @@ namespace Shadow {
         return false;
     }
 
-    inline bool HandleKeyDown(int vk) {
+    inline bool HandleKeyDown(int vk, bool isRepeat = false) {
         if (TryAssignKey(vk)) return true;
         if (!g_Ctx.KeyStates[vk]) {
             g_Ctx.HotkeyToggles[vk] = !g_Ctx.HotkeyToggles[vk];
+            g_Ctx.KeyPressed[vk] = true;
+        }
+        else if (isRepeat) {
             g_Ctx.KeyPressed[vk] = true;
         }
         g_Ctx.KeyStates[vk] = true;
@@ -405,9 +420,11 @@ namespace Shadow {
         }();
 
     inline void ApplyHexInput() {
-        if (g_Ctx.HexInputBuffer.size() < 6) return;
+        auto it = g_Ctx.InputBuffers.find(HashString("CPHexInput"));
+        if (it == g_Ctx.InputBuffers.end()) return;
+        std::string_view hex = it->second;
 
-        std::string_view hex = g_Ctx.HexInputBuffer;
+        if (hex.size() < 6) return;
         hex = hex.substr(0, std::min(hex.size(), size_t(8)));
 
         auto hexDigits = hex | std::views::transform([](char c) {
@@ -476,34 +493,29 @@ namespace Shadow {
             HandleKeyUp(vk);
             break;
         }
+        case WM_CHAR: {
+            if (g_Ctx.ActiveInputId != 0) {
+                if (wParam >= 32 && wParam < 127) { // 仅拦截可打印ASCII
+                    g_Ctx.InputChars.push_back(static_cast<char>(wParam));
+                }
+                return 0; // 阻止透传
+            }
+            break;
+        }
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN:
             if (wParam < 256) {
-                if (g_Ctx.IsTypingHex) {
-                    int vk = static_cast<int>(wParam);
-                    if (vk == VK_BACK && !g_Ctx.HexInputBuffer.empty()) {
-                        g_Ctx.HexInputBuffer.pop_back();
-                    }
-                    else if (vk == VK_RETURN || vk == VK_ESCAPE) {
-                        g_Ctx.IsTypingHex = false;
-                        if (vk == VK_RETURN) ApplyHexInput();
-                    }
-                    else if (g_Ctx.HexInputBuffer.size() < 8) {
-                        char c = 0;
-                        if (vk >= '0' && vk <= '9') c = vk;
-                        else if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9) c = vk - VK_NUMPAD0 + '0';
-                        else if (vk >= 'A' && vk <= 'F') c = vk;
-                        else if (vk >= 'a' && vk <= 'f') c = vk - 'a' + 'A';
-                        if (c != 0) g_Ctx.HexInputBuffer += c;
-                    }
-                    return 0;
-                }
-                if (HandleKeyDown(static_cast<int>(wParam))) return 0;
+                bool isRepeat = (lParam & (1 << 30)) != 0;
+                if (HandleKeyDown(static_cast<int>(wParam), isRepeat)) return 0;
+                if (g_Ctx.ActiveInputId != 0) return 0; // 如果有输入焦点，阻止透传给游戏
             }
             break;
         case WM_KEYUP:
         case WM_SYSKEYUP:
-            if (wParam < 256) HandleKeyUp(static_cast<int>(wParam));
+            if (wParam < 256) {
+                HandleKeyUp(static_cast<int>(wParam));
+                if (g_Ctx.ActiveInputId != 0) return 0;
+            }
             break;
         }
         return 0;
@@ -686,6 +698,214 @@ namespace Shadow {
         g_Ctx.Canvas->K2_DrawText(g_Ctx.DefaultFont, SDK::FString(wstr.c_str()), uePos, scale, ueColor, 0.f, shadow, shadowOff, false, false, false, outline);
     }
 
+    // --- 剪贴板操作 ---
+    inline void SetClipboardText(const std::string& text) {
+        if (OpenClipboard(nullptr)) {
+            EmptyClipboard();
+            HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, text.size() + 1);
+            if (hMem) {
+                memcpy(GlobalLock(hMem), text.c_str(), text.size() + 1);
+                GlobalUnlock(hMem);
+                SetClipboardData(CF_TEXT, hMem);
+            }
+            CloseClipboard();
+        }
+    }
+
+    inline std::string GetClipboardText() {
+        std::string result;
+        if (OpenClipboard(nullptr)) {
+            HANDLE hData = GetClipboardData(CF_TEXT);
+            if (hData) {
+                char* pszText = static_cast<char*>(GlobalLock(hData));
+                if (pszText) {
+                    result = pszText;
+                }
+                GlobalUnlock(hData);
+            }
+            CloseClipboard();
+        }
+        return result;
+    }
+
+    // --- 真正的输入框核心逻辑，不改变 Cursor 游标（供复用） ---
+    inline bool InputTextEx(size_t id, Vec2 pos, Vec2 size, std::string& text, bool is_popup = false) {
+        // 修复：针对弹出层（如 ColorPicker）内部的输入框，我们需要绕过顶层阻挡检测，强制使用 Raw 坐标判断
+        bool hovered = is_popup ? IsMouseHoveringRaw(pos, size) : IsMouseHovering(pos, size);
+
+        if (g_Ctx.MouseClicked) {
+            if (hovered) {
+                g_Ctx.ActiveInputId = id;
+                g_Ctx.InputCursorPos = static_cast<int>(text.size());
+                g_Ctx.InputSelectionStart = -1;
+                g_Ctx.InputSelectionEnd = -1;
+                g_Ctx.MouseClicked = false;
+            }
+            else if (g_Ctx.ActiveInputId == id) {
+                g_Ctx.ActiveInputId = 0;
+            }
+        }
+
+        bool isActive = (g_Ctx.ActiveInputId == id);
+        bool valueChanged = false;
+
+        if (isActive) {
+            g_Ctx.InputCursorPos = std::clamp(g_Ctx.InputCursorPos, 0, static_cast<int>(text.size()));
+            bool ctrlDown = g_Ctx.KeyStates[VK_CONTROL];
+            bool shiftDown = g_Ctx.KeyStates[VK_SHIFT];
+
+            auto DeleteSelection = [&]() {
+                if (g_Ctx.InputSelectionStart != -1 && g_Ctx.InputSelectionEnd != -1 && g_Ctx.InputSelectionStart != g_Ctx.InputSelectionEnd) {
+                    int s = std::clamp(std::min(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)text.size());
+                    int e = std::clamp(std::max(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)text.size());
+                    text.erase(s, e - s);
+                    g_Ctx.InputCursorPos = s;
+                    g_Ctx.InputSelectionStart = g_Ctx.InputSelectionEnd = -1;
+                    valueChanged = true;
+                    return true;
+                }
+                return false;
+                };
+
+            // 处理字符输入
+            for (char c : g_Ctx.InputChars) {
+                DeleteSelection();
+                text.insert(text.begin() + g_Ctx.InputCursorPos, c);
+                g_Ctx.InputCursorPos++;
+                valueChanged = true;
+            }
+
+            // 处理快捷键
+            if (ctrlDown) {
+                if (g_Ctx.KeyPressed['A']) {
+                    g_Ctx.InputSelectionStart = 0;
+                    g_Ctx.InputSelectionEnd = static_cast<int>(text.size());
+                    g_Ctx.InputCursorPos = static_cast<int>(text.size());
+                }
+                if (g_Ctx.KeyPressed['C'] || g_Ctx.KeyPressed['X']) {
+                    if (g_Ctx.InputSelectionStart != -1 && g_Ctx.InputSelectionEnd != -1 && g_Ctx.InputSelectionStart != g_Ctx.InputSelectionEnd) {
+                        int s = std::clamp(std::min(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)text.size());
+                        int e = std::clamp(std::max(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)text.size());
+                        SetClipboardText(text.substr(s, e - s));
+                        if (g_Ctx.KeyPressed['X']) DeleteSelection();
+                    }
+                    else if (g_Ctx.KeyPressed['C']) {
+                        SetClipboardText(text);
+                    }
+                }
+                if (g_Ctx.KeyPressed['V']) {
+                    std::string clip = GetClipboardText();
+                    if (!clip.empty()) {
+                        clip.erase(std::remove_if(clip.begin(), clip.end(), [](char c) { return c < 32 || c >= 127; }), clip.end());
+                        DeleteSelection();
+                        text.insert(g_Ctx.InputCursorPos, clip);
+                        g_Ctx.InputCursorPos += static_cast<int>(clip.size());
+                        valueChanged = true;
+                    }
+                }
+            }
+            else {
+                if (g_Ctx.KeyPressed[VK_LEFT]) {
+                    if (shiftDown) { if (g_Ctx.InputSelectionStart == -1) g_Ctx.InputSelectionStart = g_Ctx.InputCursorPos; }
+                    else { g_Ctx.InputSelectionStart = g_Ctx.InputSelectionEnd = -1; }
+                    if (g_Ctx.InputCursorPos > 0) g_Ctx.InputCursorPos--;
+                    if (shiftDown) g_Ctx.InputSelectionEnd = g_Ctx.InputCursorPos;
+                }
+                if (g_Ctx.KeyPressed[VK_RIGHT]) {
+                    if (shiftDown) { if (g_Ctx.InputSelectionStart == -1) g_Ctx.InputSelectionStart = g_Ctx.InputCursorPos; }
+                    else { g_Ctx.InputSelectionStart = g_Ctx.InputSelectionEnd = -1; }
+                    if (g_Ctx.InputCursorPos < static_cast<int>(text.size())) g_Ctx.InputCursorPos++;
+                    if (shiftDown) g_Ctx.InputSelectionEnd = g_Ctx.InputCursorPos;
+                }
+                if (g_Ctx.KeyPressed[VK_BACK]) {
+                    if (!DeleteSelection() && g_Ctx.InputCursorPos > 0) {
+                        text.erase(g_Ctx.InputCursorPos - 1, 1);
+                        g_Ctx.InputCursorPos--;
+                        valueChanged = true;
+                    }
+                }
+                if (g_Ctx.KeyPressed[VK_DELETE]) {
+                    if (!DeleteSelection() && g_Ctx.InputCursorPos < static_cast<int>(text.size())) {
+                        text.erase(g_Ctx.InputCursorPos, 1);
+                        valueChanged = true;
+                    }
+                }
+                if (g_Ctx.KeyPressed[VK_HOME]) {
+                    if (shiftDown) { if (g_Ctx.InputSelectionStart == -1) g_Ctx.InputSelectionStart = g_Ctx.InputCursorPos; }
+                    else { g_Ctx.InputSelectionStart = g_Ctx.InputSelectionEnd = -1; }
+                    g_Ctx.InputCursorPos = 0;
+                    if (shiftDown) g_Ctx.InputSelectionEnd = g_Ctx.InputCursorPos;
+                }
+                if (g_Ctx.KeyPressed[VK_END]) {
+                    if (shiftDown) { if (g_Ctx.InputSelectionStart == -1) g_Ctx.InputSelectionStart = g_Ctx.InputCursorPos; }
+                    else { g_Ctx.InputSelectionStart = g_Ctx.InputSelectionEnd = -1; }
+                    g_Ctx.InputCursorPos = static_cast<int>(text.size());
+                    if (shiftDown) g_Ctx.InputSelectionEnd = g_Ctx.InputCursorPos;
+                }
+                if (g_Ctx.KeyPressed[VK_RETURN] || g_Ctx.KeyPressed[VK_ESCAPE]) {
+                    g_Ctx.ActiveInputId = 0;
+                }
+            }
+        }
+
+        // 绘制外观
+        DrawRect(pos, size, isActive ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : (hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]));
+        PushClipRect(pos, { pos.x + size.x, pos.y + size.y });
+
+        float textX = pos.x + 4.f;
+        float textY = pos.y + 2.f;
+
+        if (isActive && g_Ctx.InputSelectionStart != -1 && g_Ctx.InputSelectionEnd != -1 && g_Ctx.InputSelectionStart != g_Ctx.InputSelectionEnd) {
+            int s = std::clamp(std::min(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)text.size());
+            int e = std::clamp(std::max(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)text.size());
+            std::string preStr = text.substr(0, s);
+            std::string selStr = text.substr(s, e - s);
+            float preW = MeasureTextSize(preStr).x;
+            float selW = MeasureTextSize(selStr).x;
+            DrawRect({ textX + preW, pos.y + 2.f }, { selW, size.y - 4.f }, g_Ctx.Style.Colors[GuiCol_SliderGrab]);
+        }
+
+        DrawTextString(text, { textX, textY }, g_Ctx.Style.Colors[GuiCol_Text]);
+
+        if (isActive) {
+            std::string preCursor = text.substr(0, g_Ctx.InputCursorPos);
+            float curW = MeasureTextSize(preCursor).x;
+            if ((GetTickCount64() / 500) % 2 == 0) {
+                DrawRect({ textX + curW, textY }, { 2.f, size.y - 4.f }, g_Ctx.Style.Colors[GuiCol_Text]);
+            }
+        }
+        PopClipRect();
+
+        return valueChanged;
+    }
+
+    // --- 标准 InputBox 布局组件 ---
+    inline bool InputBox(std::string_view name, std::string& text) {
+        if (!g_Ctx.InActiveTab) return false;
+        std::string_view display; size_t id; ParseLabel(name, display, id);
+
+        if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Padding;
+            return false;
+        }
+
+        float textWidth = MeasureTextSize(display).x;
+        float controlOffsetX = display.empty() ? 0.f : textWidth + g_Ctx.Padding;
+
+        float boxWidth = std::max(100.f, g_Ctx.WindowSize.x - controlOffsetX - g_Ctx.Padding * 8.f);
+        Vec2 boxPos = { g_Ctx.Cursor.x + controlOffsetX, g_Ctx.Cursor.y };
+        Vec2 boxSize = { boxWidth, g_Ctx.ItemHeight };
+
+        bool changed = InputTextEx(id, boxPos, boxSize, text);
+
+        if (!display.empty()) {
+            DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + 2.f }, g_Ctx.Style.Colors[GuiCol_Text]);
+        }
+
+        g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Padding;
+        return changed;
+    }
+
     inline float GetControlOffsetX() {
         return std::max(120.f, g_Ctx.WindowSize.x * 0.4f);
     }
@@ -713,7 +933,6 @@ namespace Shadow {
             if (SDK::UEngine::GetEngine()) { g_Ctx.DefaultFont = SDK::UEngine::GetEngine()->LargeFont; }
         }
 
-        // --- 初始化主题 ---
         if (!g_Ctx.StyleInitialized) {
             StyleColorsOcean();
             g_Ctx.StyleInitialized = true;
@@ -772,143 +991,130 @@ namespace Shadow {
             float popupWidth = padding + svSize + spacing + hueWidth + spacing + alphaWidth + padding;
             float popupHeight = padding + svSize + spacing + hexBoxHeight + padding;
 
-            Vec2 svPos = { popupPos.x + padding, popupPos.y + padding };
-            Vec2 huePos = { svPos.x + svSize + spacing, svPos.y };
-            Vec2 alphaPos = { huePos.x + hueWidth + spacing, svPos.y };
-            Vec2 hexPos = { svPos.x, svPos.y + svSize + spacing };
-            Vec2 hexSize = { popupWidth - padding * 2.f, hexBoxHeight };
-
             bool popupHovered = IsMouseHoveringRaw({ popupPos.x - 2.f, popupPos.y - 2.f }, { popupWidth + 4.f, popupHeight + 4.f });
-            bool svHovered = IsMouseHoveringRaw(svPos, { svSize, svSize });
-            bool hueHovered = IsMouseHoveringRaw(huePos, { hueWidth, svSize });
-            bool alphaHovered = IsMouseHoveringRaw(alphaPos, { alphaWidth, svSize });
-            bool hexHovered = IsMouseHoveringRaw(hexPos, hexSize);
+            if (g_Ctx.MouseClicked && !popupHovered) {
+                g_Ctx.ActiveColorPickerId = 0;
+                g_Ctx.ActiveInputId = 0; // --- 新增：点击弹出层外关闭面板时，强制解绑HEX文本输入框焦点
+            }
 
-            if (g_Ctx.MouseDown) {
-                if (!g_Ctx.IsDraggingSV && !g_Ctx.IsDraggingHue && !g_Ctx.IsDraggingAlpha && !g_Ctx.IsDraggingColorPicker) {
-                    if (svHovered) g_Ctx.IsDraggingSV = true;
-                    else if (hueHovered) g_Ctx.IsDraggingHue = true;
-                    else if (alphaHovered) g_Ctx.IsDraggingAlpha = true;
-                    else if (popupHovered && !hexHovered) {
-                        if (g_Ctx.MouseClicked) {
-                            g_Ctx.IsDraggingColorPicker = true;
-                            g_Ctx.ColorPickerDragOffset.x = g_Ctx.MousePos.x - popupPos.x;
-                            g_Ctx.ColorPickerDragOffset.y = g_Ctx.MousePos.y - popupPos.y;
-                            g_Ctx.MouseClicked = false;
+            if (g_Ctx.ActiveColorPickerId != 0) {
+                Vec2 svPos = { popupPos.x + padding, popupPos.y + padding };
+                Vec2 huePos = { svPos.x + svSize + spacing, svPos.y };
+                Vec2 alphaPos = { huePos.x + hueWidth + spacing, svPos.y };
+                Vec2 hexPos = { svPos.x, svPos.y + svSize + spacing };
+                Vec2 hexSize = { popupWidth - padding * 2.f, hexBoxHeight };
+
+                bool svHovered = IsMouseHoveringRaw(svPos, { svSize, svSize });
+                bool hueHovered = IsMouseHoveringRaw(huePos, { hueWidth, svSize });
+                bool alphaHovered = IsMouseHoveringRaw(alphaPos, { alphaWidth, svSize });
+                bool hexHovered = IsMouseHoveringRaw(hexPos, hexSize);
+
+                if (g_Ctx.MouseDown) {
+                    if (!g_Ctx.IsDraggingSV && !g_Ctx.IsDraggingHue && !g_Ctx.IsDraggingAlpha && !g_Ctx.IsDraggingColorPicker) {
+                        if (svHovered) g_Ctx.IsDraggingSV = true;
+                        else if (hueHovered) g_Ctx.IsDraggingHue = true;
+                        else if (alphaHovered) g_Ctx.IsDraggingAlpha = true;
+                        else if (popupHovered && !hexHovered) {
+                            if (g_Ctx.MouseClicked) {
+                                g_Ctx.IsDraggingColorPicker = true;
+                                g_Ctx.ColorPickerDragOffset.x = g_Ctx.MousePos.x - popupPos.x;
+                                g_Ctx.ColorPickerDragOffset.y = g_Ctx.MousePos.y - popupPos.y;
+                                g_Ctx.MouseClicked = false;
+                            }
                         }
+                    }
+
+                    if (g_Ctx.IsDraggingSV) {
+                        g_Ctx.ColorPickerS = std::clamp((g_Ctx.MousePos.x - svPos.x) / svSize, 0.f, 1.f);
+                        g_Ctx.ColorPickerV = 1.0f - std::clamp((g_Ctx.MousePos.y - svPos.y) / svSize, 0.f, 1.f);
+                        HSVtoRGB(g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV, *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB);
+                    }
+                    else if (g_Ctx.IsDraggingHue) {
+                        g_Ctx.ColorPickerH = std::clamp((g_Ctx.MousePos.y - huePos.y) / svSize, 0.f, 1.f);
+                        HSVtoRGB(g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV, *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB);
+                    }
+                    else if (g_Ctx.IsDraggingAlpha) {
+                        *g_Ctx.ColorPickerA = 1.0f - std::clamp((g_Ctx.MousePos.y - alphaPos.y) / svSize, 0.f, 1.f);
+                    }
+                    else if (g_Ctx.IsDraggingColorPicker) {
+                        g_Ctx.ColorPickerPos.x = g_Ctx.MousePos.x - g_Ctx.ColorPickerDragOffset.x;
+                        g_Ctx.ColorPickerPos.y = g_Ctx.MousePos.y - g_Ctx.ColorPickerDragOffset.y;
+                        popupPos = g_Ctx.ColorPickerPos;
+
+                        svPos = { popupPos.x + padding, popupPos.y + padding };
+                        huePos = { svPos.x + svSize + spacing, svPos.y };
+                        alphaPos = { huePos.x + hueWidth + spacing, svPos.y };
+                        hexPos = { svPos.x, svPos.y + svSize + spacing };
+                        popupHovered = IsMouseHoveringRaw({ popupPos.x - 2.f, popupPos.y - 2.f }, { popupWidth + 4.f, popupHeight + 4.f });
+                    }
+                }
+                else {
+                    g_Ctx.IsDraggingSV = false;
+                    g_Ctx.IsDraggingHue = false;
+                    g_Ctx.IsDraggingAlpha = false;
+                    g_Ctx.IsDraggingColorPicker = false;
+                }
+
+                DrawRect({ popupPos.x - 2.f, popupPos.y - 2.f }, { popupWidth + 4.f, popupHeight + 4.f }, g_Ctx.Style.Colors[GuiCol_PopupBorder]);
+                DrawRect(popupPos, { popupWidth, popupHeight }, g_Ctx.Style.Colors[GuiCol_PopupBg]);
+
+                int svSteps = 40;
+                float svStepSize = svSize / svSteps;
+                for (int i = 0; i < svSteps; ++i) {
+                    for (int j = 0; j < svSteps; ++j) {
+                        float s = (float)i / (svSteps - 1);
+                        float v = 1.0f - (float)j / (svSteps - 1);
+                        float r, g, b;
+                        HSVtoRGB(g_Ctx.ColorPickerH, s, v, r, g, b);
+                        DrawRect({ svPos.x + i * svStepSize, svPos.y + j * svStepSize }, { svStepSize + 0.5f, svStepSize + 0.5f }, { r, g, b, 1.f });
                     }
                 }
 
-                if (g_Ctx.IsDraggingSV) {
-                    g_Ctx.ColorPickerS = std::clamp((g_Ctx.MousePos.x - svPos.x) / svSize, 0.f, 1.f);
-                    g_Ctx.ColorPickerV = 1.0f - std::clamp((g_Ctx.MousePos.y - svPos.y) / svSize, 0.f, 1.f);
-                    HSVtoRGB(g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV, *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB);
-                }
-                else if (g_Ctx.IsDraggingHue) {
-                    g_Ctx.ColorPickerH = std::clamp((g_Ctx.MousePos.y - huePos.y) / svSize, 0.f, 1.f);
-                    HSVtoRGB(g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV, *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB);
-                }
-                else if (g_Ctx.IsDraggingAlpha) {
-                    *g_Ctx.ColorPickerA = 1.0f - std::clamp((g_Ctx.MousePos.y - alphaPos.y) / svSize, 0.f, 1.f);
-                }
-                else if (g_Ctx.IsDraggingColorPicker) {
-                    g_Ctx.ColorPickerPos.x = g_Ctx.MousePos.x - g_Ctx.ColorPickerDragOffset.x;
-                    g_Ctx.ColorPickerPos.y = g_Ctx.MousePos.y - g_Ctx.ColorPickerDragOffset.y;
-                    popupPos = g_Ctx.ColorPickerPos;
-
-                    svPos = { popupPos.x + padding, popupPos.y + padding };
-                    huePos = { svPos.x + svSize + spacing, svPos.y };
-                    alphaPos = { huePos.x + hueWidth + spacing, svPos.y };
-                    hexPos = { svPos.x, svPos.y + svSize + spacing };
-                    popupHovered = IsMouseHoveringRaw({ popupPos.x - 2.f, popupPos.y - 2.f }, { popupWidth + 4.f, popupHeight + 4.f });
-                }
-            }
-            else {
-                g_Ctx.IsDraggingSV = false;
-                g_Ctx.IsDraggingHue = false;
-                g_Ctx.IsDraggingAlpha = false;
-                g_Ctx.IsDraggingColorPicker = false;
-            }
-
-            DrawRect({ popupPos.x - 2.f, popupPos.y - 2.f }, { popupWidth + 4.f, popupHeight + 4.f }, g_Ctx.Style.Colors[GuiCol_PopupBorder]);
-            DrawRect(popupPos, { popupWidth, popupHeight }, g_Ctx.Style.Colors[GuiCol_PopupBg]);
-
-            if (g_Ctx.MouseClicked && hexHovered) {
-                g_Ctx.IsTypingHex = true;
-                g_Ctx.MouseClicked = false;
-                uint8_t r8 = static_cast<uint8_t>(*g_Ctx.ColorPickerR * 255.f);
-                uint8_t g8 = static_cast<uint8_t>(*g_Ctx.ColorPickerG * 255.f);
-                uint8_t b8 = static_cast<uint8_t>(*g_Ctx.ColorPickerB * 255.f);
-                uint8_t a8 = static_cast<uint8_t>(*g_Ctx.ColorPickerA * 255.f);
-                g_Ctx.HexInputBuffer = std::format("{:02X}{:02X}{:02X}{:02X}", r8, g8, b8, a8);
-            }
-            else if (g_Ctx.MouseDown && !hexHovered && g_Ctx.IsTypingHex) {
-                g_Ctx.IsTypingHex = false;
-                ApplyHexInput();
-            }
-
-            int svSteps = 40;
-            float svStepSize = svSize / svSteps;
-            for (int i = 0; i < svSteps; ++i) {
-                for (int j = 0; j < svSteps; ++j) {
-                    float s = (float)i / (svSteps - 1);
-                    float v = 1.0f - (float)j / (svSteps - 1);
+                int hueSteps = 40;
+                float hueStepSize = svSize / hueSteps;
+                for (int i = 0; i < hueSteps; ++i) {
+                    float h = (float)i / (hueSteps - 1);
                     float r, g, b;
-                    HSVtoRGB(g_Ctx.ColorPickerH, s, v, r, g, b);
-                    DrawRect({ svPos.x + i * svStepSize, svPos.y + j * svStepSize }, { svStepSize + 0.5f, svStepSize + 0.5f }, { r, g, b, 1.f });
+                    HSVtoRGB(h, 1.f, 1.f, r, g, b);
+                    DrawRect({ huePos.x, huePos.y + i * hueStepSize }, { hueWidth, hueStepSize + 0.5f }, { r, g, b, 1.f });
                 }
+
+                int alphaSteps = 40;
+                float alphaStepSize = svSize / alphaSteps;
+                for (int i = 0; i < alphaSteps; ++i) {
+                    float a = 1.0f - (float)i / (alphaSteps - 1);
+                    DrawRect({ alphaPos.x, alphaPos.y + i * alphaStepSize }, { alphaWidth, alphaStepSize + 0.5f }, { *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB, a });
+                }
+
+                size_t hexId = HashString("CPHexInput");
+                if (g_Ctx.ActiveInputId != hexId) {
+                    uint8_t r8 = static_cast<uint8_t>(*g_Ctx.ColorPickerR * 255.f);
+                    uint8_t g8 = static_cast<uint8_t>(*g_Ctx.ColorPickerG * 255.f);
+                    uint8_t b8 = static_cast<uint8_t>(*g_Ctx.ColorPickerB * 255.f);
+                    uint8_t a8 = static_cast<uint8_t>(*g_Ctx.ColorPickerA * 255.f);
+                    g_Ctx.InputBuffers[hexId] = std::format("{:02X}{:02X}{:02X}{:02X}", r8, g8, b8, a8);
+                }
+
+                bool hexChanged = InputTextEx(hexId, hexPos, hexSize, g_Ctx.InputBuffers[hexId], true);
+                if (hexChanged) {
+                    ApplyHexInput();
+                }
+
+                Vec2 cursorSV = { svPos.x + g_Ctx.ColorPickerS * svSize, svPos.y + (1.f - g_Ctx.ColorPickerV) * svSize };
+                DrawRect({ cursorSV.x - 4.f, cursorSV.y - 4.f }, { 8.f, 8.f }, { 0.f, 0.f, 0.f, 1.f });
+                DrawRect({ cursorSV.x - 3.f, cursorSV.y - 3.f }, { 6.f, 6.f }, { 1.f, 1.f, 1.f, 1.f });
+                DrawRect({ cursorSV.x - 2.f, cursorSV.y - 2.f }, { 4.f, 4.f }, { *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB, 1.f });
+
+                Vec2 cursorHue = { huePos.x - 2.f, huePos.y + g_Ctx.ColorPickerH * svSize - 2.f };
+                DrawRect(cursorHue, { hueWidth + 4.f, 4.f }, { 0.f, 0.f, 0.f, 1.f });
+                DrawRect({ cursorHue.x + 1.f, cursorHue.y + 1.f }, { hueWidth + 2.f, 2.f }, { 1.f, 1.f, 1.f, 1.f });
+
+                Vec2 cursorAlpha = { alphaPos.x - 2.f, alphaPos.y + (1.f - *g_Ctx.ColorPickerA) * svSize - 2.f };
+                DrawRect(cursorAlpha, { alphaWidth + 4.f, 4.f }, { 0.f, 0.f, 0.f, 1.f });
+                DrawRect({ cursorAlpha.x + 1.f, cursorAlpha.y + 1.f }, { alphaWidth + 2.f, 2.f }, { 1.f, 1.f, 1.f, 1.f });
+
+                if (popupHovered) g_Ctx.MouseClicked = false;
             }
-
-            int hueSteps = 40;
-            float hueStepSize = svSize / hueSteps;
-            for (int i = 0; i < hueSteps; ++i) {
-                float h = (float)i / (hueSteps - 1);
-                float r, g, b;
-                HSVtoRGB(h, 1.f, 1.f, r, g, b);
-                DrawRect({ huePos.x, huePos.y + i * hueStepSize }, { hueWidth, hueStepSize + 0.5f }, { r, g, b, 1.f });
-            }
-
-            int alphaSteps = 40;
-            float alphaStepSize = svSize / alphaSteps;
-            for (int i = 0; i < alphaSteps; ++i) {
-                float a = 1.0f - (float)i / (alphaSteps - 1);
-                DrawRect({ alphaPos.x, alphaPos.y + i * alphaStepSize }, { alphaWidth, alphaStepSize + 0.5f }, { *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB, a });
-            }
-
-            DrawRect(hexPos, hexSize, g_Ctx.Style.Colors[GuiCol_FrameBg]);
-
-            std::string displayHex;
-            if (g_Ctx.IsTypingHex) displayHex = "#" + g_Ctx.HexInputBuffer + "_";
-            else {
-                uint8_t r8 = static_cast<uint8_t>(*g_Ctx.ColorPickerR * 255.f);
-                uint8_t g8 = static_cast<uint8_t>(*g_Ctx.ColorPickerG * 255.f);
-                uint8_t b8 = static_cast<uint8_t>(*g_Ctx.ColorPickerB * 255.f);
-                uint8_t a8 = static_cast<uint8_t>(*g_Ctx.ColorPickerA * 255.f);
-                displayHex = std::format("#{:02X}{:02X}{:02X}{:02X}", r8, g8, b8, a8);
-            }
-
-            Vec2 textSize = MeasureTextSize(displayHex);
-            float textY = hexPos.y + (hexBoxHeight - textSize.y) / 2.f;
-            DrawTextString(displayHex, { hexPos.x + 8.f, textY }, g_Ctx.Style.Colors[GuiCol_Text]);
-
-            Vec2 cursorSV = { svPos.x + g_Ctx.ColorPickerS * svSize, svPos.y + (1.f - g_Ctx.ColorPickerV) * svSize };
-            DrawRect({ cursorSV.x - 4.f, cursorSV.y - 4.f }, { 8.f, 8.f }, { 0.f, 0.f, 0.f, 1.f });
-            DrawRect({ cursorSV.x - 3.f, cursorSV.y - 3.f }, { 6.f, 6.f }, { 1.f, 1.f, 1.f, 1.f });
-            DrawRect({ cursorSV.x - 2.f, cursorSV.y - 2.f }, { 4.f, 4.f }, { *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB, 1.f });
-
-            Vec2 cursorHue = { huePos.x - 2.f, huePos.y + g_Ctx.ColorPickerH * svSize - 2.f };
-            DrawRect(cursorHue, { hueWidth + 4.f, 4.f }, { 0.f, 0.f, 0.f, 1.f });
-            DrawRect({ cursorHue.x + 1.f, cursorHue.y + 1.f }, { hueWidth + 2.f, 2.f }, { 1.f, 1.f, 1.f, 1.f });
-
-            Vec2 cursorAlpha = { alphaPos.x - 2.f, alphaPos.y + (1.f - *g_Ctx.ColorPickerA) * svSize - 2.f };
-            DrawRect(cursorAlpha, { alphaWidth + 4.f, 4.f }, { 0.f, 0.f, 0.f, 1.f });
-            DrawRect({ cursorAlpha.x + 1.f, cursorAlpha.y + 1.f }, { alphaWidth + 2.f, 2.f }, { 1.f, 1.f, 1.f, 1.f });
-
-            if (g_Ctx.MouseClicked && !popupHovered) {
-                g_Ctx.ActiveColorPickerId = 0;
-                g_Ctx.IsTypingHex = false;
-            }
-            if (popupHovered) g_Ctx.MouseClicked = false;
         }
     }
 
@@ -925,6 +1131,12 @@ namespace Shadow {
         g_Ctx.IsHoveringResize = IsMouseHoveringRaw(triPos, { triSize, triSize });
 
         bool isOtherDragging = (g_Ctx.DraggingSliderId != 0) || g_Ctx.IsDraggingSV || g_Ctx.IsDraggingHue || g_Ctx.IsDraggingAlpha || g_Ctx.IsDraggingColorPicker;
+
+        // --- 新增：只要鼠标在任何窗口内发生了点击，先清空全局的输入焦点。
+        // --- 如果真正被点击的是某个输入框，后续同帧内执行的 InputTextEx 会重新将自己的ID赋给 ActiveInputId 获取焦点
+        if (hoveringWholeWindow && g_Ctx.MouseClicked) {
+            g_Ctx.ActiveInputId = 0;
+        }
 
         if (!g_Ctx.IsDragging && hoveringWholeWindow && g_Ctx.MouseClicked && !g_Ctx.IsHoveringResize && !isOtherDragging) {
             g_Ctx.IsDragging = true;
@@ -990,6 +1202,7 @@ namespace Shadow {
         g_Ctx.RightMouseClicked = false;
         memset(g_Ctx.KeyPressed, 0, sizeof(g_Ctx.KeyPressed));
         CheckAndDrawErrors();
+        g_Ctx.InputChars.clear();
     }
 
     inline bool BeginTabBar(std::string_view name) {
@@ -1016,7 +1229,10 @@ namespace Shadow {
 
         bool hovered = IsMouseHovering(g_Ctx.TabCursor, tabSize);
         if (hovered && g_Ctx.MouseClicked) {
-            if (g_Ctx.ActiveTabId != id) g_Ctx.FocusedSliderId = 0;
+            if (g_Ctx.ActiveTabId != id) {
+                g_Ctx.FocusedSliderId = 0;
+                g_Ctx.ActiveInputId = 0; // --- 新增：发生页面切换时安全释放焦点
+            }
             g_Ctx.ActiveTabId = id;
         }
         if (g_Ctx.ActiveTabId == 0) g_Ctx.ActiveTabId = id;
@@ -1152,13 +1368,44 @@ namespace Shadow {
             return;
         }
 
-        // 修改：计算向左对齐控件文本的偏移量
+        size_t sliderInputId = id ^ HashString("_sliderInput");
+        if (g_Ctx.ActiveInputId != sliderInputId) {
+            int prec = 3;
+            if (step > 0.f) {
+                prec = 0;
+                float temp = step;
+                while (temp < 0.999f && prec < 5) {
+                    temp *= 10.0f;
+                    prec++;
+                }
+            }
+            g_Ctx.InputBuffers[sliderInputId] = std::format("{:.{}f}", *value, prec);
+        }
+
         float textWidth = MeasureTextSize(display).x;
         float controlOffsetX = textWidth + g_Ctx.Padding;
 
-        float sliderWidth = std::max(50.f, g_Ctx.WindowSize.x - controlOffsetX - g_Ctx.Padding * 8.f);
+        // --- 新增：利用字符串长度缓存宽度，不产生字符内容的 jitter 闪动 ---
+        std::string& inputStr = g_Ctx.InputBuffers[sliderInputId];
+        size_t currentLen = inputStr.length();
+
+        auto it_width = g_Ctx.SliderInputWidthCache.find(sliderInputId);
+        auto it_len = g_Ctx.SliderInputLengthCache.find(sliderInputId);
+
+        if (it_len == g_Ctx.SliderInputLengthCache.end() || it_len->second != currentLen || it_width == g_Ctx.SliderInputWidthCache.end()) {
+            g_Ctx.SliderInputWidthCache[sliderInputId] = MeasureTextSize(inputStr).x + 10.f;
+            g_Ctx.SliderInputLengthCache[sliderInputId] = currentLen;
+        }
+        float valBoxWidth = g_Ctx.SliderInputWidthCache[sliderInputId];
+
+        float rightPadding = g_Ctx.Padding * 2.f;
+        float sliderWidth = std::max(50.f, g_Ctx.WindowSize.x - controlOffsetX - valBoxWidth - 10.f - rightPadding);
+
         Vec2 sliderPos = { g_Ctx.Cursor.x + controlOffsetX, g_Ctx.Cursor.y };
         Vec2 size = { sliderWidth, g_Ctx.ItemHeight };
+
+        Vec2 valBoxPos = { sliderPos.x + sliderWidth + 10.f, sliderPos.y };
+        Vec2 valBoxSize = { valBoxWidth, g_Ctx.ItemHeight };
 
         bool hovered = IsMouseHovering(sliderPos, size);
 
@@ -1203,8 +1450,19 @@ namespace Shadow {
             DrawRect({ sliderPos.x + size.x, sliderPos.y }, { 1.f, size.y }, border);
         }
 
-        std::string valStr = std::format("{:.2f}", *value);
-        DrawTextString(valStr, { sliderPos.x + sliderWidth + 10.f, sliderPos.y + 2.f }, g_Ctx.Style.Colors[GuiCol_Text]);
+        bool changed = InputTextEx(sliderInputId, valBoxPos, valBoxSize, g_Ctx.InputBuffers[sliderInputId]);
+
+        if (changed) {
+            try {
+                size_t processed = 0;
+                float newVal = std::stof(g_Ctx.InputBuffers[sliderInputId], &processed);
+                if (processed > 0) {
+                    if (step > 0.f) newVal = std::round(newVal / step) * step;
+                    *value = std::clamp(newVal, min_val, max_val);
+                }
+            }
+            catch (...) {}
+        }
 
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Padding;
     }

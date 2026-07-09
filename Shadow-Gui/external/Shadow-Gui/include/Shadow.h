@@ -1619,9 +1619,9 @@ namespace Shadow {
             else {
                 g_Ctx.ActiveColorPickerId = id;
                 g_Ctx.ColorPickerR = r; g_Ctx.ColorPickerG = g; g_Ctx.ColorPickerB = b; g_Ctx.ColorPickerA = a;
-                // 修复：动态计算弹出层宽度，利用偏移算法自适应避开屏幕或右侧边缘阻挡
+
                 float popupWidth = g_Ctx.Style.CPPadding * 2.f + g_Ctx.Style.CPSVSize + g_Ctx.Style.CPSpacing * 2.f + g_Ctx.Style.CPHueWidth + g_Ctx.Style.CPAlphaWidth;
-                g_Ctx.ColorPickerPos = { boxPos.x - popupWidth - g_Ctx.Style.ItemSpacing.x, boxPos.y + g_Ctx.ItemHeight + 4.f };
+                g_Ctx.ColorPickerPos = { boxPos.x + boxSize.x + g_Ctx.Style.ItemSpacing.x, boxPos.y + g_Ctx.ItemHeight + 4.f };
                 RGBtoHSV(*r, *g, *b, g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV);
             }
             g_Ctx.MouseClicked = false;

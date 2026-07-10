@@ -113,6 +113,10 @@ namespace Shadow {
         float CPHueWidth = 20.f;
         float CPAlphaWidth = 20.f;
         float CPSpacing = 8.f;
+
+        // 窗口最小尺寸 和 FontScaleDpi
+        Vec2 WindowMinSize = { 200.f, 150.f };
+        float FontScaleDpi = 1.0f;           // 默认 1.0，用于文本与菜单自适应
     };
 
     struct TabDisplayInfo {
@@ -120,6 +124,13 @@ namespace Shadow {
         Vec2 pos;
         Vec2 size;
         std::string display;
+        SDK::UFont* font = nullptr; 
+        float fontScale = 1.0f;
+    };
+
+    struct FontContext {
+        SDK::UFont* Font;
+        float Scale;
     };
 
     struct GuiContext {
@@ -151,6 +162,14 @@ namespace Shadow {
         Vec2 WindowSize = { 500.f, 400.f };
         bool IsDragging = false;
         Vec2 DragOffset = { 0.f, 0.f };
+
+        // --- 第五个问题：窗口尺寸约束状态 ---
+        bool HasWindowSizeConstraints = false;
+        Vec2 WindowSizeConstraintMin = { 0.f, 0.f };
+        Vec2 WindowSizeConstraintMax = { 10000.f, 10000.f };
+
+        // --- 第八个问题：Font 栈 ---
+        std::vector<FontContext> FontStack;
 
         int BeginStack = 0;
         int TabBarStack = 0;
@@ -362,6 +381,24 @@ namespace Shadow {
         colors[GuiCol_ColorPickerShadow] = { 0.000f, 0.000f, 0.000f, 1.000f };
 
         colors[GuiCol_ControlDisabled] = { 0.100f, 0.075f, 0.135f, 0.450f };
+    }
+
+    inline Vec2 GetWindowSize() {
+        return g_Ctx.WindowSize;
+    }
+
+    inline Vec2 GetWindowPos() {
+        return g_Ctx.WindowPos;
+    }
+
+    inline void SetWindowPos(Vec2 pos) {
+        g_Ctx.WindowPos = pos;
+    }
+
+    inline void SetNextWindowSizeConstraints(Vec2 min_size, Vec2 max_size) {
+        g_Ctx.HasWindowSizeConstraints = true;
+        g_Ctx.WindowSizeConstraintMin = min_size;
+        g_Ctx.WindowSizeConstraintMax = max_size;
     }
 
     // 允许放行透传给游戏的按键列表
@@ -954,18 +991,36 @@ namespace Shadow {
     }
 
     inline Vec2 MeasureTextSize(std::string_view text) {
-        if (!g_Ctx.Canvas || !g_Ctx.DefaultFont) return { 0.f, 0.f };
-        SDK::FVector2D scale{ 1.0, 1.0 };
+        SDK::UFont* font = g_Ctx.DefaultFont;
+        float scaleVal = 1.0f;
+        if (!g_Ctx.FontStack.empty()) {
+            font = g_Ctx.FontStack.back().Font;
+            scaleVal = g_Ctx.FontStack.back().Scale;
+        }
+        if (!g_Ctx.Canvas || !font) return { 0.f, 0.f };
+
+        float finalScale = scaleVal * g_Ctx.Style.FontScaleDpi;
+        SDK::FVector2D scale{ static_cast<double>(finalScale), static_cast<double>(finalScale) };
+
         std::wstring wstr = ToWString(text);
-        SDK::FVector2D size = g_Ctx.Canvas->K2_TextSize(g_Ctx.DefaultFont, SDK::FString(wstr.c_str()), scale);
+        SDK::FVector2D size = g_Ctx.Canvas->K2_TextSize(font, SDK::FString(wstr.c_str()), scale);
         return { static_cast<float>(size.X), static_cast<float>(size.Y) };
     }
 
     inline float MeasureCharWidth(wchar_t ch) {
-        if (!g_Ctx.Canvas || !g_Ctx.DefaultFont) return 0.f;
+        SDK::UFont* font = g_Ctx.DefaultFont;
+        float scaleVal = 1.0f;
+        if (!g_Ctx.FontStack.empty()) {
+            font = g_Ctx.FontStack.back().Font;
+            scaleVal = g_Ctx.FontStack.back().Scale;
+        }
+        if (!g_Ctx.Canvas || !font) return 0.f;
+
+        float finalScale = scaleVal * g_Ctx.Style.FontScaleDpi;
+        SDK::FVector2D scale{ static_cast<double>(finalScale), static_cast<double>(finalScale) };
+
         std::wstring single(1, ch);
-        SDK::FVector2D scale{ 1.0, 1.0 };
-        SDK::FVector2D size = g_Ctx.Canvas->K2_TextSize(g_Ctx.DefaultFont, SDK::FString(single.c_str()), scale);
+        SDK::FVector2D size = g_Ctx.Canvas->K2_TextSize(font, SDK::FString(single.c_str()), scale);
         return static_cast<float>(size.X);
     }
 
@@ -973,6 +1028,25 @@ namespace Shadow {
         if (!g_Ctx.Canvas || !g_Ctx.DefaultFont || text.empty()) return 0.f;
         Vec2 size = MeasureTextSize(text);
         return size.y;
+    }
+
+    inline void UpdateItemHeight() {
+        Vec2 charSize = MeasureTextSize("A");
+        g_Ctx.ItemHeight = charSize.y > 0.f ? charSize.y + g_Ctx.Style.FramePadding.y * 2.f : 20.f;
+        g_Ctx.SliderInputWidthCache.clear();
+        g_Ctx.SliderInputLengthCache.clear();
+    }
+
+    inline void PushFont(SDK::UFont* font, float scale = 1.0f) {
+        g_Ctx.FontStack.push_back({ font, scale });
+        UpdateItemHeight();
+    }
+
+    inline void PopFont() {
+        if (!g_Ctx.FontStack.empty()) {
+            g_Ctx.FontStack.pop_back();
+            UpdateItemHeight();
+        }
     }
 
     inline std::string ClipTextString(std::string_view text, Vec2 pos, Vec2& outPos, bool& shouldDraw) {
@@ -1040,25 +1114,35 @@ namespace Shadow {
     }
 
     inline void DrawTextString(std::string_view text, Vec2 pos, Color color) {
-        if (!g_Ctx.Canvas || !g_Ctx.DefaultFont) return;
+        SDK::UFont* font = g_Ctx.DefaultFont;
+        float scaleVal = 1.0f;
+        if (!g_Ctx.FontStack.empty()) {
+            font = g_Ctx.FontStack.back().Font;
+            scaleVal = g_Ctx.FontStack.back().Scale;
+        }
+        if (!g_Ctx.Canvas || !font) return;
+
         Vec2 clippedPos = pos;
         bool shouldDraw = true;
         std::string clippedText = ClipTextString(text, pos, clippedPos, shouldDraw);
         if (!shouldDraw || clippedText.empty()) return;
 
+        float finalScale = scaleVal * g_Ctx.Style.FontScaleDpi;
+        SDK::FVector2D scale{ static_cast<double>(finalScale), static_cast<double>(finalScale) };
+
         SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
         SDK::FVector2D uePos{ static_cast<double>(clippedPos.x), static_cast<double>(clippedPos.y) };
-        SDK::FVector2D scale{ 1.0, 1.0 };
 
-        // 使用 Style 的阴影和描边颜色替代硬编码
         Color sCol = g_Ctx.Style.Colors[GuiCol_TextShadow];
         Color oCol = g_Ctx.Style.Colors[GuiCol_TextOutline];
         SDK::FLinearColor shadow{ sCol.r, sCol.g, sCol.b, sCol.a };
+        SDK::FLinearColor outline{ oCol.r, oCol.g, oCol.b, oCol.a }; 
         SDK::FVector2D shadowOff{ 1.0, 1.0 };
-        SDK::FLinearColor outline{ oCol.r, oCol.g, oCol.b, oCol.a };
 
         std::wstring wstr = ToWString(clippedText);
-        g_Ctx.Canvas->K2_DrawText(g_Ctx.DefaultFont, SDK::FString(wstr.c_str()), uePos, scale, ueColor, 0.f, shadow, shadowOff, false, false, false, outline);
+        g_Ctx.Canvas->K2_DrawText(font, SDK::FString(wstr.c_str()), uePos, scale, ueColor,
+            0.0f, shadow, shadowOff,
+            false, false, false, outline);
     }
 
     // --- 剪贴板操作 ---
@@ -1355,14 +1439,14 @@ namespace Shadow {
             g_Ctx.StyleInitialized = true;
         }
 
-        Vec2 charSize = MeasureTextSize("A");
-        g_Ctx.ItemHeight = charSize.y > 0.f ? charSize.y + g_Ctx.Style.FramePadding.y * 2.f : 20.f;
+        g_Ctx.FontStack.clear();
+        UpdateItemHeight();
+
         g_Ctx.InActiveTab = true;
         g_Ctx.BeginStack = 0;
         g_Ctx.TabBarStack = 0;
         g_Ctx.TabItemStack = 0;
 
-        // [修改] 每一帧清空禁用堆栈，防止因为代码异常导致的堆栈外溢
         g_Ctx.DisabledStack.clear();
 
         g_Ctx.TabBarHoverRects = std::move(g_Ctx.TabBarHoverRectsPending);
@@ -1585,6 +1669,23 @@ namespace Shadow {
         g_Ctx.IsScrollApplied = false;
         g_Ctx.CurrentWindowFlags = flags;
 
+        // --- 应用窗口约束和最小尺寸设置 ---
+        float min_x = g_Ctx.Style.WindowMinSize.x;
+        float min_y = g_Ctx.Style.WindowMinSize.y;
+        float max_x = FLT_MAX;
+        float max_y = FLT_MAX;
+
+        if (g_Ctx.HasWindowSizeConstraints) {
+            min_x = std::max(min_x, g_Ctx.WindowSizeConstraintMin.x);
+            min_y = std::max(min_y, g_Ctx.WindowSizeConstraintMin.y);
+            max_x = std::max(min_x, g_Ctx.WindowSizeConstraintMax.x); // 确保 max >= min
+            max_y = std::max(min_y, g_Ctx.WindowSizeConstraintMax.y);
+            g_Ctx.HasWindowSizeConstraints = false; // 当前帧应用后立刻重置
+        }
+
+        g_Ctx.WindowSize.x = std::clamp(g_Ctx.WindowSize.x, min_x, max_x);
+        g_Ctx.WindowSize.y = std::clamp(g_Ctx.WindowSize.y, min_y, max_y);
+
         bool noResize = (flags & ShadowWindowFlags_NoResize) != 0;
         bool noMove = (flags & ShadowWindowFlags_NoMove) != 0;
         bool noScrollbar = (flags & ShadowWindowFlags_NoScrollbar) != 0;
@@ -1686,10 +1787,14 @@ namespace Shadow {
             g_Ctx.WindowPos.x = g_Ctx.MousePos.x - g_Ctx.DragOffset.x;
             g_Ctx.WindowPos.y = g_Ctx.MousePos.y - g_Ctx.DragOffset.y;
         }
+
+        // --- 处理缩放拖拽时同样遵循最新设定的限制 ---
         if (!noResize && g_Ctx.IsResizing) {
             Vec2 delta = { g_Ctx.MousePos.x - g_Ctx.ResizeStartPos.x, g_Ctx.MousePos.y - g_Ctx.ResizeStartPos.y };
-            g_Ctx.WindowSize.x = std::max(200.f, g_Ctx.ResizeStartSize.x + delta.x);
-            g_Ctx.WindowSize.y = std::max(150.f, g_Ctx.ResizeStartSize.y + delta.y);
+
+            g_Ctx.WindowSize.x = std::clamp(g_Ctx.ResizeStartSize.x + delta.x, min_x, max_x);
+            g_Ctx.WindowSize.y = std::clamp(g_Ctx.ResizeStartSize.y + delta.y, min_y, max_y);
+
             if (!g_Ctx.MouseDown) g_Ctx.IsResizing = false;
         }
 
@@ -1861,7 +1966,6 @@ namespace Shadow {
         Vec2 tabRowSize = { viewWidth, g_Ctx.ItemHeight };
         bool hoveringTabRow = IsMouseHovering(tabRowPos, tabRowSize);
 
-        // --- Reorderable：处理拖拽换序（使用稳定布局表 TabBarLayoutX，而非本帧显示缓存） ---
         if (reorderable && g_Ctx.DraggingTabId != 0 && g_Ctx.DraggingTabBarId == tabBarId) {
             if (g_Ctx.MouseDown) {
                 g_Ctx.DraggingTabCurrentX = g_Ctx.MousePos.x - g_Ctx.DraggingTabGrabOffsetX;
@@ -1917,28 +2021,30 @@ namespace Shadow {
             }
         }
 
-        // --- 修复问题2：在所有普通 Tab 绘制完成后，在最顶层绘制被拖拽的 Tab，确保它遮挡其他 Tab ---
         if (reorderable && g_Ctx.DraggingTabId != 0 && g_Ctx.DraggingTabBarId == tabBarId) {
             for (const auto& tabInfo : g_Ctx.TabBarDisplayCache[tabBarId]) {
                 if (tabInfo.id == g_Ctx.DraggingTabId) {
                     Vec2 clipMin = g_Ctx.TabBarOrigin;
                     Vec2 clipMax = { g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth, g_Ctx.TabBarOrigin.y + tabInfo.size.y };
 
-                    // 被拖拽的Tab总是使用活动/Hovered样式，视觉上凸显它
                     Color bgColor = g_Ctx.Style.Colors[GuiCol_TabActive];
                     Color textColor = g_Ctx.Style.Colors[GuiCol_TextHighlight];
+
+                    // [修改] 挂载拖拽 Tab 本身的字体上下文
+                    if (tabInfo.font) { PushFont(tabInfo.font, tabInfo.fontScale); }
 
                     PushClipRect(clipMin, { g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth, clipMax.y });
                     DrawRect(tabInfo.pos, tabInfo.size, bgColor);
                     DrawTextString(tabInfo.display, { tabInfo.pos.x + g_Ctx.Style.TabExtraWidth / 2.f, tabInfo.pos.y + g_Ctx.Style.FramePadding.y }, textColor);
                     PopClipRect();
+
+                    // [修改] 解除挂载
+                    if (tabInfo.font) { PopFont(); }
                     break;
                 }
             }
         }
 
-        // --- FittingPolicyScroll：绘制水平滚动条（仅 UI 受 NoScrollbar 抑制，scrollX 逻辑始终生效） ---
-        // 用于记录滚动条区域，以合并到最终的 TabBar 占用矩形中
         float scrollBarTop = 0.f, scrollBarBottom = 0.f;
         if (fittingScroll && !noScrollbar && g_Ctx.TabBarNeedsScrollbar) {
             float barHeight = g_Ctx.Style.ScrollbarSize;
@@ -1990,7 +2096,6 @@ namespace Shadow {
                 g_Ctx.MouseWheel = 0.f;
             }
 
-            // 记录滚动条的垂直位置，用于合并矩形
             scrollBarTop = trackPos.y;
             scrollBarBottom = trackPos.y + trackSize.y;
         }
@@ -2003,7 +2108,6 @@ namespace Shadow {
             g_Ctx.DraggingTabBarScrollId = 0;
         }
 
-        // --- 修复问题1：记录完整的 TabBar 占用矩形（标签行 + 水平滚动条），避免窗口垂直滚动响应 TabBar 区域的滚轮事件 ---
         float unionTop = tabRowPos.y;
         float unionBottom = (scrollBarBottom > 0) ? scrollBarBottom : (tabRowPos.y + g_Ctx.ItemHeight);
         Vec2 fullTabBarRectPos = { tabRowPos.x, unionTop };
@@ -2021,7 +2125,6 @@ namespace Shadow {
         bool reorderable = (g_Ctx.CurrentTabBarFlags & ShadowTabBarFlags_Reorderable) != 0;
         bool fittingScroll = (g_Ctx.CurrentTabBarFlags & ShadowTabBarFlags_FittingPolicyScroll) != 0;
 
-        // 维护"显示顺序"数组：首次出现的 Tab 按代码调用顺序追加到末尾
         auto& order = g_Ctx.TabOrderMap[tabBarId];
         if (std::find(order.begin(), order.end(), id) == order.end()) {
             order.push_back(id);
@@ -2031,10 +2134,8 @@ namespace Shadow {
         Vec2 tabSize = MeasureTextSize(display);
         tabSize.x += g_Ctx.Style.TabExtraWidth; tabSize.y = g_Ctx.ItemHeight;
 
-        // 更新宽度缓存，供下一帧 BeginTabBar 计算稳定布局表使用
         g_Ctx.TabWidthCache[id] = tabSize.x;
 
-        // --- 直接从 BeginTabBar 阶段算好的稳定布局表取横坐标偏移 ---
         float offsetX;
         auto& layout = g_Ctx.TabBarLayoutX[tabBarId];
         auto itLayout = layout.find(id);
@@ -2042,7 +2143,6 @@ namespace Shadow {
             offsetX = itLayout->second;
         }
         else {
-            // 新 Tab：追加到当前布局表已知的最大偏移之后
             float maxEnd = 0.f;
             for (auto& [oid, x] : layout) {
                 float w = 0.f;
@@ -2066,13 +2166,18 @@ namespace Shadow {
             tabPos = { g_Ctx.TabBarOrigin.x + offsetX - scrollX, g_Ctx.TabBarOrigin.y };
         }
 
-        // 记录本帧显示信息（包括拖拽中的 Tab，用于命中测试和后续的顶层绘制）
-        g_Ctx.TabBarDisplayCache[tabBarId].push_back({ id, tabPos, tabSize, std::string(display) });
+        // [修改] 记录当前标签生成时的字体和缩放上下文
+        SDK::UFont* currentFont = g_Ctx.DefaultFont;
+        float currentScale = 1.0f;
+        if (!g_Ctx.FontStack.empty()) {
+            currentFont = g_Ctx.FontStack.back().Font;
+            currentScale = g_Ctx.FontStack.back().Scale;
+        }
 
-        // 累积内容宽度（用于滚动条判断）
+        g_Ctx.TabBarDisplayCache[tabBarId].push_back({ id, tabPos, tabSize, std::string(display), currentFont, currentScale });
+
         g_Ctx.TabBarContentWidthAccum += tabSize.x + 5.f;
 
-        // 裁剪：仅在 TabBar 可视区域内才响应交互与绘制
         Vec2 clipMin = g_Ctx.TabBarOrigin;
         Vec2 clipMax = { g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth, g_Ctx.TabBarOrigin.y + tabSize.y };
         bool tabVisible = !(tabPos.x + tabSize.x < clipMin.x || tabPos.x > clipMax.x);
@@ -2100,7 +2205,6 @@ namespace Shadow {
         bool isActive = (g_Ctx.ActiveTabId == id);
         g_Ctx.InActiveTab = isActive;
 
-        // --- 修复问题2：被拖拽的 Tab 不在此处绘制，推迟到 EndTabBar 中作为最顶层元素绘制 ---
         if (!isDraggingSelf) {
             Color bgColor = isActive ? g_Ctx.Style.Colors[GuiCol_TabActive] : (hovered ? g_Ctx.Style.Colors[GuiCol_TabHovered] : g_Ctx.Style.Colors[GuiCol_Tab]);
             Color textColor = isActive ? g_Ctx.Style.Colors[GuiCol_TextHighlight] : g_Ctx.Style.Colors[GuiCol_TextDisabled];

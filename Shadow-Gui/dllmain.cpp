@@ -84,7 +84,7 @@ namespace Hook {
     tPostRender oPostRender = nullptr;
 
     void __fastcall hkPostRender(SDK::UGameViewportClient* rcx, SDK::UCanvas* canvas) {
-        if (!canvas) return oPostRender(rcx, canvas);
+        oPostRender(rcx, canvas);
 
         static bool bGodMode = false;
         static  float fSpeed = 1.0f;
@@ -102,14 +102,26 @@ namespace Hook {
         static    bool bAimbotActive = false;
         static   Shadow::HotkeyMode modeAimbot = Shadow::HotkeyMode::HoldOn;
 
+        static SDK::UFont* OpenSansRegular12 = nullptr;
+        // static SDK::UFont* SansationBold18 = nullptr;
+
         // Shadow Gui内部会自动获取引擎默认字体
         if (!Shadow::DefaultFont) {
-            static SDK::UFont* OpenSansRegular12 = nullptr;
-
+            /*
             if (!OpenSansRegular12) {
                 SDK::UObject* _Font = SDK::UObject::FindObject("Font OpenSansRegular12.OpenSansRegular12");
-                if (_Font && _Font->IsA(SDK::UFont::StaticClass())) OpenSansRegular12 = (SDK::UFont*)_Font; Shadow::DefaultFont = OpenSansRegular12;
+                if (_Font && _Font->IsA(SDK::UFont::StaticClass())) OpenSansRegular12 = (SDK::UFont*)_Font; // Shadow::DefaultFont = OpenSansRegular12;
             }
+            */
+
+            /*
+            if (!SansationBold18) {
+                SDK::UObject* _Font = SDK::UObject::FindObject("Font SansationBold18.SansationBold18");
+                if (_Font && _Font->IsA(SDK::UFont::StaticClass())) SansationBold18 = (SDK::UFont*)_Font; // Shadow::DefaultFont = OpenSansRegular12;
+            }
+             */
+
+            if (SDK::UEngine::GetEngine()) { OpenSansRegular12 = SDK::UEngine::GetEngine()->MediumFont; }
         }
 
         Shadow::SetAllowedKeys({ 'W', 'A', 'S', 'D', VK_SPACE }); // 放行常用移动按键
@@ -146,8 +158,11 @@ namespace Hook {
         Shadow::UpdateAllHotkeyStates();
 
         Shadow::StyleColorsAmethyst();
+        // Shadow::GetStyle().WindowMinSize = { 200, 150 };
 
-        for (auto& color : Shadow::g_Ctx.Style.Colors) {
+        Shadow::SetNextWindowSizeConstraints({ static_cast<float>(canvas->SizeX * 0.3), static_cast<float>(canvas->SizeY * 0.4) },  { static_cast<float>(canvas->SizeX), static_cast<float>(canvas->SizeY) });
+
+        for (auto& color : Shadow::GetStyle().Colors) {
             color.a *= currentAlpha; // 仅修改或叠加当前的 Alpha 动画系数
         }
 
@@ -167,6 +182,16 @@ namespace Hook {
             static int selectedTextAlign = 1;
             static const std::vector<std::string> alignOptions = { U8("左对齐"), U8("居中对齐"), U8("右对齐") };
 
+            static int selecteddpiO = 1;
+            static const std::vector<std::string> dpiO = { U8("75%"), U8("100%"), U8("125%"), U8("150%")};
+
+            switch (selecteddpiO) {
+            case 0: Shadow::GetStyle().FontScaleDpi = 0.75f; break;
+			case 1: Shadow::GetStyle().FontScaleDpi = 1.0f; break;
+            case 2: Shadow::GetStyle().FontScaleDpi = 1.25f; break;
+            case 3: Shadow::GetStyle().FontScaleDpi = 1.5f; break;
+            }
+
             int currentWindowFlags = 0;
             if (bWindowNoResize)    currentWindowFlags |= Shadow::ShadowWindowFlags_NoResize;
             if (bWindowNoMove)      currentWindowFlags |= Shadow::ShadowWindowFlags_NoMove;
@@ -181,12 +206,15 @@ namespace Hook {
             if (bTabFittingScroll) currentTabBarFlags |= Shadow::ShadowTabBarFlags_FittingPolicyScroll;
             if (bTabNoScrollbar)   currentTabBarFlags |= Shadow::ShadowTabBarFlags_NoScrollbar;
 
+            Shadow::PushFont(OpenSansRegular12, Shadow::GetStyle().FontScaleDpi);
             if (Shadow::Begin(U8("测试菜单##main_window"), currentWindowFlags)) {
+                Shadow::PopFont();
 
                 if (Shadow::BeginTabBar("MainTabs##tabs", currentTabBarFlags)) {
-
                     if (Shadow::BeginTabItem(U8("设置##tab0"))) {
+                        Shadow::PushFont(OpenSansRegular12, Shadow::GetStyle().FontScaleDpi);
                         Shadow::HotKey(U8("菜单按键##menu_key"), &keyMenu);
+                        Shadow::PopFont();
                     }
                     Shadow::EndTabItem();
 
@@ -225,6 +253,7 @@ namespace Hook {
                         Shadow::Checkbox(U8("禁用窗口滚动条##flag_w_no_scroll"), &bWindowNoScrollbar);
 
                         Shadow::Combo(U8("标题对齐方式##flag_w_align_combo"), &selectedTextAlign, alignOptions);
+                        Shadow::Combo(U8("缩放DPI##dpiscale_combo"), &selecteddpiO, dpiO);
 
                         Shadow::Checkbox(U8("启用标签拖拽##flag_t_reorder"), &bTabReorderable);
                         Shadow::Checkbox(U8("标签溢出滚动##flag_t_fit_scroll"), &bTabFittingScroll);
@@ -282,8 +311,6 @@ namespace Hook {
             }
             Shadow::End();
         }
-
-        return oPostRender(rcx, canvas);
     }
 
     void FindPostRender() {
@@ -316,7 +343,7 @@ namespace Hook {
         while (!pWorld) {
             pWorld = SDK::UWorld::GetWorld();
             if (pWorld && pWorld->OwningGameInstance) break;
-            Sleep(100);
+            Sleep(1000);
         }
 
         if (pWorld) {

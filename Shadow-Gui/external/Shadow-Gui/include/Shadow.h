@@ -1,4 +1,10 @@
-﻿#pragma once
+﻿/*
+Credit:
+    https://github.com/ocornut/imgui
+    https://aistudio.google.com/
+*/
+
+#pragma once
 #include <windows.h>
 #include <string>
 #include <string_view>

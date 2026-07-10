@@ -72,7 +72,7 @@ void __fastcall hkPostRender(SDK::UGameViewportClient* rcx, SDK::UCanvas* canvas
 	// 更新所有热键状态
     Shadow::UpdateAllHotkeyStates();
 
-	if (Shadow::Begin("Main Menu##main_window"), Shadow::ShadowWindowFlags_NoResize) {
+	if (Shadow::Begin("Main Menu##main_window", Shadow::ShadowWindowFlags_NoResize)) {
         if (Shadow::BeginTabBar("MainTabs##tabs", Shadow::ShadowTabBarFlags_Reorderable)) {
             if (Shadow::BeginTabItem(U8("Misc##tab0"))) {
                 Shadow::TextColored({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("你好！"));

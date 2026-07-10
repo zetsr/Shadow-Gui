@@ -10,6 +10,9 @@ namespace Hook {
     bool bShowMenu = true;
     int keyMenu = VK_F1;
 
+    float currentAlpha = 1.0f;
+    const float fadeSpeed = 5.0f;
+
     HWND g_hwnd = NULL;
     WNDPROC oWndProc = NULL;
 
@@ -54,7 +57,7 @@ namespace Hook {
             }
         }
 
-        if (bShowMenu) {
+        if (bShowMenu || currentAlpha > 0.001f) {
             // 如果是鼠标消息，且不在白名单里，直接阻塞
             if (!Shadow::IsMouseMsgAllowed(uMsg)) {
                 return 1;
@@ -111,23 +114,48 @@ namespace Hook {
 
         Shadow::SetAllowedKeys({ 'W', 'A', 'S', 'D', VK_SPACE }); // 放行常用移动按键
 
-        static bool bWasMenuOpen = false;
-        if (bShowMenu != bWasMenuOpen) {
-            SetMouseCursorVisible(bShowMenu);
-            bWasMenuOpen = bShowMenu;
+        // 1. 使用 C++20/23 chrono 库计算每帧的 Delta Time
+        static auto lastTime = std::chrono::steady_clock::now();
+        auto currentTime = std::chrono::steady_clock::now();
+        std::chrono::duration<float> deltaTime = currentTime - lastTime;
+        lastTime = currentTime;
+        float dt = deltaTime.count();
+
+        // 2. 根据 bShowMenu 目标状态平滑计算 currentAlpha
+        if (bShowMenu) {
+            currentAlpha += fadeSpeed * dt;
+            if (currentAlpha > 1.0f) currentAlpha = 1.0f;
         }
-        else if (bShowMenu) {
+        else {
+            currentAlpha -= fadeSpeed * dt;
+            if (currentAlpha < 0.0f) currentAlpha = 0.0f;
+        }
+
+        // 3. 鼠标显示逻辑切换（只要还在显示或淡出，就应显示鼠标并保持同步）
+        static bool bWasAnimating = false;
+        bool isAnimating = (bShowMenu || currentAlpha > 0.001f);
+        if (isAnimating != bWasAnimating) {
+            SetMouseCursorVisible(isAnimating);
+            bWasAnimating = isAnimating;
+        }
+        else if (isAnimating) {
             SetMouseCursorVisible(true);
         }
 
         Shadow::NewFrame(canvas);
         Shadow::UpdateAllHotkeyStates();
 
+        Shadow::StyleColorsAmethyst();
+
+        for (auto& color : Shadow::g_Ctx.Style.Colors) {
+            color.a *= currentAlpha; // 仅修改或叠加当前的 Alpha 动画系数
+        }
+
         if (bAimbotActive) {
             canvas->K2_DrawBox({ 10, 10 }, { 20, 20 }, 1.0f, { 0.0f, 1.0f, 0.0f, 1.0f });
         }
 
-        if (bShowMenu) {
+        if (currentAlpha > 0.001f) {
             static bool bWindowNoResize = true;
             static bool bWindowNoMove = false;
             static bool bWindowNoScrollbar = true;

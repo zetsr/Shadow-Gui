@@ -295,6 +295,49 @@ namespace Shadow {
         colors[GuiCol_ColorPickerLight] = { 1.000f, 1.000f, 1.000f, 1.000f };
     }
 
+    // 紫曜主题
+    inline void StyleColorsAmethyst() {
+        auto& colors = g_Ctx.Style.Colors;
+
+        colors[GuiCol_WindowBg] = { 0.058f, 0.042f, 0.078f, 0.940f };
+        colors[GuiCol_PopupBg] = { 0.070f, 0.050f, 0.095f, 0.970f };
+        colors[GuiCol_TitleBarBg] = { 0.040f, 0.028f, 0.058f, 1.000f };
+
+        colors[GuiCol_Text] = { 0.860f, 0.830f, 0.900f, 1.000f };
+        colors[GuiCol_TextHighlight] = { 0.960f, 0.940f, 0.980f, 1.000f };
+        colors[GuiCol_TextDisabled] = { 0.400f, 0.370f, 0.440f, 1.000f };
+
+        colors[GuiCol_FrameBg] = { 0.100f, 0.075f, 0.135f, 0.850f };
+        colors[GuiCol_FrameBgHovered] = { 0.140f, 0.100f, 0.185f, 0.900f };
+
+        colors[GuiCol_Button] = { 0.115f, 0.085f, 0.155f, 0.880f };
+        colors[GuiCol_ButtonHovered] = { 0.165f, 0.120f, 0.220f, 0.920f };
+
+        colors[GuiCol_Tab] = { 0.048f, 0.034f, 0.068f, 1.000f };
+        colors[GuiCol_TabHovered] = { 0.135f, 0.098f, 0.185f, 0.900f };
+        colors[GuiCol_TabActive] = { 0.090f, 0.065f, 0.125f, 1.000f };
+
+        colors[GuiCol_SliderGrab] = { 0.430f, 0.280f, 0.620f, 1.000f };
+
+        colors[GuiCol_CheckMark] = { 0.560f, 0.360f, 0.780f, 1.000f };
+        colors[GuiCol_ActiveIndicator] = { 0.560f, 0.360f, 0.780f, 1.000f };
+        colors[GuiCol_InactiveIndicator] = { 0.130f, 0.095f, 0.175f, 1.000f };
+
+        colors[GuiCol_Border] = { 0.220f, 0.160f, 0.310f, 0.450f };
+        colors[GuiCol_PopupBorder] = { 0.260f, 0.190f, 0.360f, 0.700f };
+        colors[GuiCol_Separator] = { 0.115f, 0.085f, 0.155f, 0.600f };
+
+        colors[GuiCol_ResizeGrip] = { 0.115f, 0.085f, 0.155f, 0.500f };
+        colors[GuiCol_ResizeGripActive] = { 0.560f, 0.360f, 0.780f, 1.000f };
+        colors[GuiCol_ResizeGripHovered] = { 0.400f, 0.260f, 0.560f, 0.850f };
+
+        colors[GuiCol_ErrorText] = { 1.000f, 0.196f, 0.196f, 1.000f };
+        colors[GuiCol_TextShadow] = { 0.000f, 0.000f, 0.000f, 1.000f };
+        colors[GuiCol_TextOutline] = { 0.000f, 0.000f, 0.000f, 0.000f };
+        colors[GuiCol_ColorPickerDark] = { 0.000f, 0.000f, 0.000f, 1.000f };
+        colors[GuiCol_ColorPickerLight] = { 1.000f, 1.000f, 1.000f, 1.000f };
+    }
+
     // 允许放行透传给游戏的按键列表
     inline std::vector<int> AllowedKeys;
     inline void SetAllowedKeys(const std::vector<int>& keys) {
@@ -2189,10 +2232,10 @@ namespace Shadow {
 
         if (hovered || g_Ctx.ActiveColorPickerId == id) {
             Color border = g_Ctx.Style.Colors[GuiCol_Border];
-            DrawRect({ boxPos.x - 1.f, boxPos.y - 1.f }, { boxSize.x + 2.f, 1.f }, border);
-            DrawRect({ boxPos.x - 1.f, boxPos.y + boxSize.y }, { boxSize.x + 2.f, 1.f }, border);
-            DrawRect({ boxPos.x - 1.f, boxPos.y }, { 1.f, boxSize.y }, border);
-            DrawRect({ boxPos.x + boxSize.x, boxPos.y }, { 1.f, boxSize.y }, border);
+            DrawRect({ boxPos.x, boxPos.y }, { boxSize.x, 1.f }, border);                               // 上
+            DrawRect({ boxPos.x, boxPos.y + boxSize.y - 1.f }, { boxSize.x, 1.f }, border);             // 下
+            DrawRect({ boxPos.x, boxPos.y }, { 1.f, boxSize.y }, border);                               // 左
+            DrawRect({ boxPos.x + boxSize.x - 1.f, boxPos.y }, { 1.f, boxSize.y }, border);             // 右
         }
 
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;

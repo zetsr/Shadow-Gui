@@ -160,7 +160,7 @@ namespace Hook {
         Shadow::StyleColorsAmethyst();
         // Shadow::GetStyle().WindowMinSize = { 200, 150 };
 
-        Shadow::SetNextWindowSizeConstraints({ static_cast<float>(canvas->SizeX * 0.3), static_cast<float>(canvas->SizeY * 0.4) },  { static_cast<float>(canvas->SizeX), static_cast<float>(canvas->SizeY) });
+        Shadow::SetNextWindowSizeConstraints({ static_cast<float>(canvas->SizeX * 0.3), static_cast<float>(canvas->SizeY * 0.4) }, { static_cast<float>(canvas->SizeX), static_cast<float>(canvas->SizeY) });
 
         for (auto& color : Shadow::GetStyle().Colors) {
             color.a *= currentAlpha; // 仅修改或叠加当前的 Alpha 动画系数
@@ -183,11 +183,11 @@ namespace Hook {
             static const std::vector<std::string> alignOptions = { U8("左对齐"), U8("居中对齐"), U8("右对齐") };
 
             static int selecteddpiO = 1;
-            static const std::vector<std::string> dpiO = { U8("75%"), U8("100%"), U8("125%"), U8("150%")};
+            static const std::vector<std::string> dpiO = { U8("75%"), U8("100%"), U8("125%"), U8("150%") };
 
             switch (selecteddpiO) {
             case 0: Shadow::GetStyle().FontScaleDpi = 0.75f; break;
-			case 1: Shadow::GetStyle().FontScaleDpi = 1.0f; break;
+            case 1: Shadow::GetStyle().FontScaleDpi = 1.0f; break;
             case 2: Shadow::GetStyle().FontScaleDpi = 1.25f; break;
             case 3: Shadow::GetStyle().FontScaleDpi = 1.5f; break;
             }
@@ -228,7 +228,7 @@ namespace Hook {
                         if (Shadow::Button(U8("重置速度##btn_1"))) {
                             fSpeed = 1.0f;
                         }
-						Shadow::SameLine();
+                        Shadow::SameLine();
                         Shadow::Button(U8("重置速度2##btn_2"));
                         Shadow::SameLine();
                         Shadow::Button(U8("重置速度3##btn_3"));
@@ -237,6 +237,12 @@ namespace Hook {
                         Shadow::Spacing();
                         Shadow::Spacing();
                         Shadow::Button(U8("重置速度4##btn_4"));
+
+                        static bool testswitchcb = false;
+                        Shadow::Checkbox(U8("测试开关##testswitchcb"), &testswitchcb);
+                        if (testswitchcb) {
+                            Shadow::TextColored({ 1.0f, 0.0f, 0.0f, 1.0f }, U8("测试开关已开启"));
+                        }
 
                         static bool btestdisabled = false;
                         Shadow::Checkbox(U8("测试禁用开关##test_disabled_cb1"), &btestdisabled);
@@ -314,7 +320,7 @@ namespace Hook {
     }
 
     void FindPostRender() {
-        std::string pattern = "48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89"; 
+        std::string pattern = "48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89";
 
         // ASA 8B C2 35 ?? ?? ?? ?? 44
         // DRACONIA 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89

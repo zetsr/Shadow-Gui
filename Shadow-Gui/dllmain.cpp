@@ -46,11 +46,12 @@ namespace Hook {
         }
 
         if (bShowMenu) {
-            if (uMsg == WM_LBUTTONDOWN || uMsg == WM_LBUTTONUP || uMsg == WM_RBUTTONDOWN ||
-                uMsg == WM_RBUTTONUP || uMsg == WM_MOUSEWHEEL || uMsg == WM_LBUTTONDBLCLK || uMsg == WM_RBUTTONDBLCLK) {
+            // 如果是鼠标消息，且不在白名单里，直接阻塞
+            if (!Shadow::IsMouseMsgAllowed(uMsg)) {
                 return 1;
             }
 
+            // 键盘消息处理
             if (uMsg == WM_KEYDOWN || uMsg == WM_KEYUP || uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP || uMsg == WM_CHAR) {
                 if (wParam == keyMenu) {
                     return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
@@ -111,28 +112,22 @@ namespace Hook {
         Shadow::NewFrame(canvas);
 
         if (bShowMenu) {
-            // --- 1. 静态状态变量定义 ---
-            // 普通 Flag 开关
             static bool bWindowNoResize = true;
-            static bool bWindowNoMove = false;          // 新增：禁止移动
+            static bool bWindowNoMove = false;
             static bool bWindowNoScrollbar = true;
 
             static bool bTabReorderable = true;
             static bool bTabFittingScroll = true;
             static bool bTabNoScrollbar = true;
 
-            // 互斥 Flag：文字对齐方式 (0 = 左对齐, 1 = 居中对齐, 2 = 右对齐)
-            static int selectedTextAlign = 1; // 默认 1 (居中)
-            // 严格配合 Combo 使用的选项文本（利用 C++ 字符串数组）
+            static int selectedTextAlign = 1;
             static const std::vector<std::string> alignOptions = { U8("左对齐"), U8("居中对齐"), U8("右对齐") };
 
-            // --- 2. 动态按位组合 Flags ---
             int currentWindowFlags = 0;
             if (bWindowNoResize)    currentWindowFlags |= Shadow::ShadowWindowFlags_NoResize;
             if (bWindowNoMove)      currentWindowFlags |= Shadow::ShadowWindowFlags_NoMove;
             if (bWindowNoScrollbar) currentWindowFlags |= Shadow::ShadowWindowFlags_NoScrollbar;
 
-            // 处理互斥的对齐 Flag
             if (selectedTextAlign == 0)      currentWindowFlags |= Shadow::ShadowWindowFlags_TextAlignLeft;
             else if (selectedTextAlign == 1) currentWindowFlags |= Shadow::ShadowWindowFlags_TextAlignCenter;
             else if (selectedTextAlign == 2) currentWindowFlags |= Shadow::ShadowWindowFlags_TextAlignRight;
@@ -142,7 +137,6 @@ namespace Hook {
             if (bTabFittingScroll) currentTabBarFlags |= Shadow::ShadowTabBarFlags_FittingPolicyScroll;
             if (bTabNoScrollbar)   currentTabBarFlags |= Shadow::ShadowTabBarFlags_NoScrollbar;
 
-            // --- 3. UI 渲染 ---
             if (Shadow::Begin(U8("测试菜单##main_window"), currentWindowFlags)) {
 
                 if (Shadow::BeginTabBar("MainTabs##tabs", currentTabBarFlags)) {
@@ -152,7 +146,6 @@ namespace Hook {
                     }
                     Shadow::EndTabItem();
 
-                    // 修改 Combat 标签为中文
                     if (Shadow::BeginTabItem(U8("战斗##tab1"))) {
                         Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
                         Shadow::Slider(U8("移动速度##slider_1"), &fSpeed, 1.0f, 10.0f, 0.1f);
@@ -162,15 +155,12 @@ namespace Hook {
                             fSpeed = 1.0f;
                         }
 
-                        // 窗口通用 Flags 开关
                         Shadow::Checkbox(U8("禁用窗口缩放##flag_w_no_resize"), &bWindowNoResize);
                         Shadow::Checkbox(U8("禁用窗口移动##flag_w_no_move"), &bWindowNoMove);
                         Shadow::Checkbox(U8("禁用窗口滚动条##flag_w_no_scroll"), &bWindowNoScrollbar);
 
-                        // 互斥使用 Combo 下拉框选择对齐方式
                         Shadow::Combo(U8("标题对齐方式##flag_w_align_combo"), &selectedTextAlign, alignOptions);
 
-                        // 标签页 Flags 开关
                         Shadow::Checkbox(U8("启用标签拖拽##flag_t_reorder"), &bTabReorderable);
                         Shadow::Checkbox(U8("标签溢出滚动##flag_t_fit_scroll"), &bTabFittingScroll);
                         Shadow::Checkbox(U8("禁用标签滚动条##flag_t_no_scroll"), &bTabNoScrollbar);
@@ -232,7 +222,7 @@ namespace Hook {
     }
 
     void FindPostRender() {
-        std::string pattern = "8B C2 35 ?? ?? ?? ?? 44"; 
+        std::string pattern = "48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 48 89 5C 24 10 48 89 74 24 18 48 89 7C 24 20 55"; 
 
         // ASA 8B C2 35 ?? ?? ?? ?? 44
         // DRACONIA 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89

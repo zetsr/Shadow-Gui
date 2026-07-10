@@ -300,8 +300,27 @@ namespace Shadow {
     inline void SetAllowedKeys(const std::vector<int>& keys) {
         AllowedKeys = keys;
     }
+
+    // 允许放行透传给游戏的鼠标消息列表
+    inline std::vector<UINT> AllowedMouseMsgs;
+    inline void SetAllowedMouseMsgs(const std::vector<UINT>& msgs) {
+        AllowedMouseMsgs = msgs;
+    }
+
     inline bool IsKeyAllowed(int key) {
         return std::find(AllowedKeys.begin(), AllowedKeys.end(), key) != AllowedKeys.end();
+    }
+
+    inline bool IsMouseMsgAllowed(UINT uMsg) {
+        // 先判断它到底是不是鼠标相关消息
+        bool isMouseMsg = (uMsg >= WM_MOUSEFIRST && uMsg <= WM_MOUSELAST) || (uMsg == WM_INPUT);
+
+        // 如果不是鼠标消息，直接返回 false
+        if (!isMouseMsg) {
+            return false;
+        }
+
+        return std::find(AllowedMouseMsgs.begin(), AllowedMouseMsgs.end(), uMsg) != AllowedMouseMsgs.end();
     }
 
     inline constexpr size_t HashString(std::string_view str) noexcept {

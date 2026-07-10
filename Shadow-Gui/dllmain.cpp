@@ -192,12 +192,30 @@ namespace Hook {
 
                     if (Shadow::BeginTabItem(U8("战斗##tab1"))) {
                         Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
+                        Shadow::SameLine();
                         Shadow::Slider(U8("移动速度##slider_1"), &fSpeed, 1.0f, 10.0f, 0.1f);
+
                         Shadow::HotKey(U8("自瞄按键##hotkey_1"), &keyAimbot, &bAimbotActive, &modeAimbot);
 
                         if (Shadow::Button(U8("重置速度##btn_1"))) {
                             fSpeed = 1.0f;
                         }
+						Shadow::SameLine();
+                        Shadow::Button(U8("重置速度2##btn_2"));
+                        Shadow::SameLine();
+                        Shadow::Button(U8("重置速度3##btn_3"));
+                        Shadow::Spacing();
+                        Shadow::Spacing();
+                        Shadow::Spacing();
+                        Shadow::Spacing();
+                        Shadow::Button(U8("重置速度4##btn_4"));
+
+						Shadow::TextColored({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("第一个测试文本"));
+
+                        Shadow::BeginDisabled();
+                        Shadow::TextColored({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("第二个测试文本"));
+                        Shadow::Checkbox(U8("测试开关##test_cb_1"), &bWindowNoResize);
+                        Shadow::EndDisabled();
 
                         Shadow::Checkbox(U8("禁用窗口缩放##flag_w_no_resize"), &bWindowNoResize);
                         Shadow::Checkbox(U8("禁用窗口移动##flag_w_no_move"), &bWindowNoMove);

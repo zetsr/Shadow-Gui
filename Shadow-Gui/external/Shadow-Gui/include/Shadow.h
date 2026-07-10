@@ -57,6 +57,9 @@ namespace Shadow {
         GuiCol_TextOutline,
         GuiCol_ColorPickerDark,
         GuiCol_ColorPickerLight,
+        GuiCol_CheckerboardLight,
+        GuiCol_CheckerboardDark,
+        GuiCol_ColorPickerShadow,
         GuiCol_COUNT
     };
 
@@ -285,7 +288,7 @@ namespace Shadow {
         colors[GuiCol_Separator] = { 0.025f, 0.032f, 0.045f, 1.000f };
 
         colors[GuiCol_ResizeGrip] = { 0.025f, 0.032f, 0.045f, 1.000f };
-        colors[GuiCol_ResizeGripActive] = { 0.520f, 0.220f, 0.220f, 1.000f }; 
+        colors[GuiCol_ResizeGripActive] = { 0.520f, 0.220f, 0.220f, 1.000f };
         colors[GuiCol_ResizeGripHovered] = { 0.300f, 0.130f, 0.130f, 1.000f };
 
         colors[GuiCol_ErrorText] = { 1.000f, 0.196f, 0.196f, 1.000f };
@@ -293,6 +296,10 @@ namespace Shadow {
         colors[GuiCol_TextOutline] = { 0.000f, 0.000f, 0.000f, 0.000f };
         colors[GuiCol_ColorPickerDark] = { 0.000f, 0.000f, 0.000f, 1.000f };
         colors[GuiCol_ColorPickerLight] = { 1.000f, 1.000f, 1.000f, 1.000f };
+
+        colors[GuiCol_CheckerboardLight] = { 1.000f, 1.000f, 1.000f, 1.000f };
+        colors[GuiCol_CheckerboardDark] = { 0.700f, 0.700f, 0.700f, 1.000f };
+        colors[GuiCol_ColorPickerShadow] = { 0.000f, 0.000f, 0.000f, 1.000f };
     }
 
     // 紫曜主题
@@ -336,6 +343,10 @@ namespace Shadow {
         colors[GuiCol_TextOutline] = { 0.000f, 0.000f, 0.000f, 0.000f };
         colors[GuiCol_ColorPickerDark] = { 0.000f, 0.000f, 0.000f, 1.000f };
         colors[GuiCol_ColorPickerLight] = { 1.000f, 1.000f, 1.000f, 1.000f };
+
+        colors[GuiCol_CheckerboardLight] = { 1.000f, 1.000f, 1.000f, 1.000f };
+        colors[GuiCol_CheckerboardDark] = { 0.700f, 0.700f, 0.700f, 1.000f };
+        colors[GuiCol_ColorPickerShadow] = { 0.000f, 0.000f, 0.000f, 1.000f };
     }
 
     // 允许放行透传给游戏的按键列表
@@ -845,6 +856,33 @@ namespace Shadow {
         if (size.y < 0.f) size.y = 0.f;
     }
 
+    inline void DrawLine(Vec2 start, Vec2 end, Color color, float thickness = 1.0f) {
+        if (!g_Ctx.Canvas || !g_Ctx.Canvas->DefaultTexture) return;
+
+        float dx = end.x - start.x;
+        float dy = end.y - start.y;
+        float length = std::sqrt(dx * dx + dy * dy);
+        if (length <= 0.0f) return;
+
+        float angle = std::atan2(dy, dx) * (180.0f / 3.14159265358979323846f);
+
+        SDK::FVector2D uePos{ static_cast<double>(start.x), static_cast<double>(start.y) };
+        SDK::FVector2D ueSize{ static_cast<double>(length), static_cast<double>(thickness) };
+        SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
+
+        g_Ctx.Canvas->K2_DrawTexture(
+            g_Ctx.Canvas->DefaultTexture,
+            uePos,
+            ueSize,
+            SDK::FVector2D{ 0.0, 0.0 },
+            SDK::FVector2D{ 1.0, 1.0 },
+            ueColor,
+            SDK::EBlendMode::BLEND_Translucent,
+            angle,
+            SDK::FVector2D{ 0.0, 0.5 }
+        );
+    }
+
     inline void DrawRect(Vec2 pos, Vec2 size, Color color) {
         if (!g_Ctx.Canvas) return;
         if (!IsRectVisible(pos, size)) return;
@@ -869,7 +907,10 @@ namespace Shadow {
             );
         }
 
-        g_Ctx.Canvas->K2_DrawBox(uePos, ueSize, 1.0f, ueColor);
+        DrawLine({ pos.x, pos.y }, { pos.x + size.x, pos.y }, color);
+        DrawLine({ pos.x + size.x, pos.y }, { pos.x + size.x, pos.y + size.y }, color);
+        DrawLine({ pos.x + size.x, pos.y + size.y }, { pos.x, pos.y + size.y }, color);
+        DrawLine({ pos.x, pos.y + size.y }, { pos.x, pos.y }, color);
     }
 
     inline void DrawRectFilled(Vec2 pos, Vec2 size, Color color) {
@@ -1160,7 +1201,7 @@ namespace Shadow {
             }
         }
 
-        DrawRect(pos, size, isActive ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : (hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]));
+        DrawRectFilled(pos, size, isActive ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : (hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]));
         PushClipRect(pos, { pos.x + size.x, pos.y + size.y });
 
         // 使用 Style 自适应文本边距
@@ -1174,7 +1215,7 @@ namespace Shadow {
             std::string selStr = text.substr(s, e - s);
             float preW = MeasureTextSize(preStr).x;
             float selW = MeasureTextSize(selStr).x;
-            DrawRect({ textX + preW, pos.y + 2.f }, { selW, size.y - 4.f }, g_Ctx.Style.Colors[GuiCol_SliderGrab]);
+            DrawRectFilled({ textX + preW, pos.y + 2.f }, { selW, size.y - 4.f }, g_Ctx.Style.Colors[GuiCol_SliderGrab]);
         }
 
         DrawTextString(text, { textX, textY }, g_Ctx.Style.Colors[GuiCol_Text]);
@@ -1183,7 +1224,7 @@ namespace Shadow {
             std::string preCursor = text.substr(0, g_Ctx.InputCursorPos);
             float curW = MeasureTextSize(preCursor).x;
             if ((GetTickCount64() / 500) % 2 == 0) {
-                DrawRect({ textX + curW, textY }, { 2.f, size.y - 4.f }, g_Ctx.Style.Colors[GuiCol_Text]);
+                DrawRectFilled({ textX + curW, textY }, { 2.f, size.y - 4.f }, g_Ctx.Style.Colors[GuiCol_Text]);
             }
         }
         PopClipRect();
@@ -1322,7 +1363,9 @@ namespace Shadow {
                         HSVtoRGB(g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV, *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB);
                     }
                     else if (g_Ctx.IsDraggingAlpha) {
-                        *g_Ctx.ColorPickerA = 1.0f - std::clamp((g_Ctx.MousePos.y - alphaPos.y) / svSize, 0.f, 1.f);
+                        if (g_Ctx.ColorPickerA) {
+                            *g_Ctx.ColorPickerA = 1.0f - std::clamp((g_Ctx.MousePos.y - alphaPos.y) / svSize, 0.f, 1.f);
+                        }
                     }
                     else if (g_Ctx.IsDraggingColorPicker) {
                         g_Ctx.ColorPickerPos.x = g_Ctx.MousePos.x - g_Ctx.ColorPickerDragOffset.x;
@@ -1346,23 +1389,27 @@ namespace Shadow {
                 DrawRect({ popupPos.x - 2.f, popupPos.y - 2.f }, { popupWidth + 4.f, popupHeight + 4.f }, g_Ctx.Style.Colors[GuiCol_PopupBorder]);
                 DrawRect(popupPos, { popupWidth, popupHeight }, g_Ctx.Style.Colors[GuiCol_PopupBg]);
 
-                // 高密度采样与性能优化替代原始嵌套网格
+                // 提取各样式颜色，消除硬编码
+                float pickerAlpha = g_Ctx.Style.Colors[GuiCol_ColorPickerLight].a; // 全局 Alpha 参考
+                Color shadowCol = g_Ctx.Style.Colors[GuiCol_ColorPickerShadow];
+                Color cbLight = g_Ctx.Style.Colors[GuiCol_CheckerboardLight];
+                Color cbDark = g_Ctx.Style.Colors[GuiCol_CheckerboardDark];
+
                 int svSteps = std::max(2, static_cast<int>(svSize));
                 float svStepSize = svSize / svSteps;
 
-                // 1. 绘制调色SV面板 (使用两层正交的1D渐变，大幅减少DrawCall，实现肉眼无锯齿)
-                // 底层：水平方向 白 -> 当前Hue颜色 渐变
+                // 1. 绘制调色SV面板
                 for (int i = 0; i < svSteps; ++i) {
                     float s = (float)i / (svSteps - 1);
                     float r, g, b;
                     HSVtoRGB(g_Ctx.ColorPickerH, s, 1.0f, r, g, b);
-                    DrawRectFilled({ svPos.x + i * svStepSize, svPos.y }, { svStepSize, svSize }, { r, g, b, 1.f });
+                    DrawRectFilled({ svPos.x + i * svStepSize, svPos.y }, { svStepSize, svSize }, { r, g, b, pickerAlpha });
                 }
-                // 顶层：垂直方向 透明 -> 黑色 渐变 (利用AlphaBlend直接完成明度运算)
                 for (int j = 0; j < svSteps; ++j) {
                     float v = 1.0f - (float)j / (svSteps - 1);
                     float alpha = 1.0f - v;
-                    DrawRectFilled({ svPos.x, svPos.y + j * svStepSize }, { svSize, svStepSize }, { 0.f, 0.f, 0.f, alpha });
+                    // 使用 shadowCol 代替硬编码的黑块渐变层
+                    DrawRectFilled({ svPos.x, svPos.y + j * svStepSize }, { svSize, svStepSize }, { shadowCol.r, shadowCol.g, shadowCol.b, alpha * shadowCol.a });
                 }
 
                 // 2. 绘制色相(Hue)长条
@@ -1372,29 +1419,33 @@ namespace Shadow {
                     float h = (float)i / (hueSteps - 1);
                     float r, g, b;
                     HSVtoRGB(h, 1.f, 1.f, r, g, b);
-                    DrawRectFilled({ huePos.x, huePos.y + i * hueStepSize }, { hueWidth, hueStepSize }, { r, g, b, 1.f });
+                    DrawRectFilled({ huePos.x, huePos.y + i * hueStepSize }, { hueWidth, hueStepSize }, { r, g, b, pickerAlpha });
                 }
 
                 // 3. 绘制透明度(Alpha)长条
-                // 3.1 绘制交替灰白格子背景
-                int checkerSize = 5;
-                for (int y = 0; y < svSize; y += checkerSize) {
-                    for (int x = 0; x < alphaWidth; x += checkerSize) {
-                        bool isWhite = ((x / checkerSize) + (y / checkerSize)) % 2 == 0;
-                        Color checkerCol = isWhite ? Color{ 1.0f, 1.0f, 1.0f, 1.0f } : Color{ 0.7f, 0.7f, 0.7f, 1.0f };
-                        float drawX = alphaPos.x + x;
-                        float drawY = alphaPos.y + y;
-                        float w = std::min((float)checkerSize, alphaWidth - x);
-                        float h = std::min((float)checkerSize, svSize - y);
-                        DrawRectFilled({ drawX, drawY }, { w, h }, checkerCol);
-                    }
-                }
-                // 3.2 叠加带有透明度渐变的当前颜色
                 int alphaSteps = std::max(2, static_cast<int>(svSize));
                 float alphaStepSize = svSize / alphaSteps;
+                int checkerSize = 5;
+
                 for (int i = 0; i < alphaSteps; ++i) {
                     float a = 1.0f - (float)i / (alphaSteps - 1);
-                    DrawRectFilled({ alphaPos.x, alphaPos.y + i * alphaStepSize }, { alphaWidth, alphaStepSize }, { *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB, a });
+                    float drawY = alphaPos.y + i * alphaStepSize;
+
+                    for (int x = 0; x < alphaWidth; x += checkerSize) {
+                        float drawX = alphaPos.x + x;
+                        float w = std::min((float)checkerSize, alphaWidth - x);
+
+                        int checkY = static_cast<int>((drawY - alphaPos.y) / checkerSize);
+                        int checkX = x / checkerSize;
+                        bool isWhite = (checkX + checkY) % 2 == 0;
+                        Color bgCol = isWhite ? cbLight : cbDark;
+
+                        float finalR = *g_Ctx.ColorPickerR * a + bgCol.r * (1.f - a);
+                        float finalG = *g_Ctx.ColorPickerG * a + bgCol.g * (1.f - a);
+                        float finalB = *g_Ctx.ColorPickerB * a + bgCol.b * (1.f - a);
+
+                        DrawRectFilled({ drawX, drawY }, { w, alphaStepSize }, { finalR, finalG, finalB, pickerAlpha });
+                    }
                 }
 
                 size_t hexId = HashString("CPHexInput");
@@ -1402,7 +1453,7 @@ namespace Shadow {
                     uint8_t r8 = static_cast<uint8_t>(*g_Ctx.ColorPickerR * 255.f);
                     uint8_t g8 = static_cast<uint8_t>(*g_Ctx.ColorPickerG * 255.f);
                     uint8_t b8 = static_cast<uint8_t>(*g_Ctx.ColorPickerB * 255.f);
-                    uint8_t a8 = static_cast<uint8_t>(*g_Ctx.ColorPickerA * 255.f);
+                    uint8_t a8 = g_Ctx.ColorPickerA ? static_cast<uint8_t>(*g_Ctx.ColorPickerA * 255.f) : 255;
                     g_Ctx.InputBuffers[hexId] = std::format("{:02X}{:02X}{:02X}{:02X}", r8, g8, b8, a8);
                 }
 
@@ -1414,15 +1465,19 @@ namespace Shadow {
                 Vec2 cursorSV = { svPos.x + g_Ctx.ColorPickerS * svSize, svPos.y + (1.f - g_Ctx.ColorPickerV) * svSize };
                 DrawRect({ cursorSV.x - 4.f, cursorSV.y - 4.f }, { 8.f, 8.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
                 DrawRect({ cursorSV.x - 3.f, cursorSV.y - 3.f }, { 6.f, 6.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
-                DrawRect({ cursorSV.x - 2.f, cursorSV.y - 2.f }, { 4.f, 4.f }, { *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB, 1.f });
+
+                // 修复3：将吸管内部颜色块由 DrawRect (线框) 改为 DrawRectFilled (实心块)，并将写死的 Alpha 替换为具有动画效果的 pickerAlpha
+                DrawRectFilled({ cursorSV.x - 2.f, cursorSV.y - 2.f }, { 4.f, 4.f }, { *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB, pickerAlpha });
 
                 Vec2 cursorHue = { huePos.x - 2.f, huePos.y + g_Ctx.ColorPickerH * svSize - 2.f };
                 DrawRect(cursorHue, { hueWidth + 4.f, 4.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
                 DrawRect({ cursorHue.x + 1.f, cursorHue.y + 1.f }, { hueWidth + 2.f, 2.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
 
-                Vec2 cursorAlpha = { alphaPos.x - 2.f, alphaPos.y + (1.f - *g_Ctx.ColorPickerA) * svSize - 2.f };
-                DrawRect(cursorAlpha, { alphaWidth + 4.f, 4.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
-                DrawRect({ cursorAlpha.x + 1.f, cursorAlpha.y + 1.f }, { alphaWidth + 2.f, 2.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
+                if (g_Ctx.ColorPickerA) {
+                    Vec2 cursorAlpha = { alphaPos.x - 2.f, alphaPos.y + (1.f - *g_Ctx.ColorPickerA) * svSize - 2.f };
+                    DrawRect(cursorAlpha, { alphaWidth + 4.f, 4.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
+                    DrawRect({ cursorAlpha.x + 1.f, cursorAlpha.y + 1.f }, { alphaWidth + 2.f, 2.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
+                }
 
                 if (popupHovered) g_Ctx.MouseClicked = false;
             }
@@ -1617,16 +1672,13 @@ namespace Shadow {
                 : (g_Ctx.IsHoveringResize ? g_Ctx.Style.Colors[GuiCol_ResizeGripHovered] : g_Ctx.Style.Colors[GuiCol_ResizeGrip]);
 
             float pad = 3.f;
-            SDK::FLinearColor ueColor{ triColor.r, triColor.g, triColor.b, triColor.a };
-            SDK::FVector2D p1{ static_cast<double>(x + pad), static_cast<double>(y + triSize - pad) };
-            SDK::FVector2D p2{ static_cast<double>(x + triSize - pad), static_cast<double>(y + triSize - pad) };
-            SDK::FVector2D p3{ static_cast<double>(x + triSize - pad), static_cast<double>(y + pad) };
+            Vec2 p1 = { x + pad, y + triSize - pad };
+            Vec2 p2 = { x + triSize - pad, y + triSize - pad };
+            Vec2 p3 = { x + triSize - pad, y + pad };
 
-            if (g_Ctx.Canvas) {
-                g_Ctx.Canvas->K2_DrawLine(p1, p2, 1.0f, ueColor);
-                g_Ctx.Canvas->K2_DrawLine(p2, p3, 1.0f, ueColor);
-                g_Ctx.Canvas->K2_DrawLine(p3, p1, 1.0f, ueColor);
-            }
+            DrawLine(p1, p2, triColor);
+            DrawLine(p2, p3, triColor);
+            DrawLine(p3, p1, triColor);
         }
 
         if (!g_Ctx.MouseDown) g_Ctx.IsResizing = false;
@@ -2019,23 +2071,23 @@ namespace Shadow {
             g_Ctx.MouseClicked = false;
         }
 
-        DrawRect(boxPos, boxSize, hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
+        DrawRectFilled(boxPos, boxSize, hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
 
         std::string currentText = (*current_item >= 0 && *current_item < static_cast<int>(items.size())) ? items[*current_item] : "Unknown";
         DrawTextString(currentText, { boxPos.x + g_Ctx.Style.FramePadding.x, boxPos.y + g_Ctx.Style.FramePadding.y }, g_Ctx.Style.Colors[GuiCol_Text]);
 
-        // 修复：自适应计算下拉三角尺寸
+        // 修复：自适应计算下拉三角尺寸，并使用 DrawLine 支持 Alpha
         float triSize = g_Ctx.ItemHeight * 0.4f;
         Vec2 triPos = { boxPos.x + boxSize.x - g_Ctx.Style.FramePadding.x - triSize, boxPos.y + boxSize.y / 2.f - triSize / 2.f };
         if (g_Ctx.Canvas && IsRectFullyVisible(triPos, { triSize, triSize })) {
             Color dtCol = g_Ctx.Style.Colors[GuiCol_TextDisabled];
-            SDK::FLinearColor ueColor{ dtCol.r, dtCol.g, dtCol.b, dtCol.a };
-            SDK::FVector2D p1{ static_cast<double>(triPos.x), static_cast<double>(triPos.y) };
-            SDK::FVector2D p2{ static_cast<double>(triPos.x + triSize), static_cast<double>(triPos.y) };
-            SDK::FVector2D p3{ static_cast<double>(triPos.x + triSize / 2.f), static_cast<double>(triPos.y + triSize) };
-            g_Ctx.Canvas->K2_DrawLine(p1, p2, 1.0f, ueColor);
-            g_Ctx.Canvas->K2_DrawLine(p2, p3, 1.0f, ueColor);
-            g_Ctx.Canvas->K2_DrawLine(p3, p1, 1.0f, ueColor);
+            Vec2 p1 = { triPos.x, triPos.y };
+            Vec2 p2 = { triPos.x + triSize, triPos.y };
+            Vec2 p3 = { triPos.x + triSize / 2.f, triPos.y + triSize };
+
+            DrawLine(p1, p2, dtCol);
+            DrawLine(p2, p3, dtCol);
+            DrawLine(p3, p1, dtCol);
         }
 
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
@@ -2059,11 +2111,11 @@ namespace Shadow {
         bool hovered = IsMouseHovering(g_Ctx.Cursor, interactSize);
         if (hovered && g_Ctx.MouseClicked) { *value = !(*value); }
 
-        DrawRect(g_Ctx.Cursor, boxSize, hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
+        DrawRectFilled(g_Ctx.Cursor, boxSize, hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
         if (*value) {
-            // 修复：不再强求 4.f，保证内嵌框在各种字体下等比例居中
             float checkPad = boxSize.x * 0.2f;
-            DrawRect({ g_Ctx.Cursor.x + checkPad, g_Ctx.Cursor.y + checkPad }, { boxSize.x - checkPad * 2.f, boxSize.y - checkPad * 2.f }, g_Ctx.Style.Colors[GuiCol_CheckMark]);
+            // 修复2：改为 DrawRectFilled，使用实心矩形代替线框矩形
+            DrawRectFilled({ g_Ctx.Cursor.x + checkPad, g_Ctx.Cursor.y + checkPad }, { boxSize.x - checkPad * 2.f, boxSize.y - checkPad * 2.f }, g_Ctx.Style.Colors[GuiCol_CheckMark]);
         }
 
         DrawTextString(display, { g_Ctx.Cursor.x + boxSize.x + 10.f, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, g_Ctx.Style.Colors[GuiCol_Text]);
@@ -2085,7 +2137,7 @@ namespace Shadow {
         bool hovered = IsMouseHovering(g_Ctx.Cursor, size);
         bool clicked = hovered && g_Ctx.MouseClicked;
 
-        DrawRect(g_Ctx.Cursor, size, hovered ? g_Ctx.Style.Colors[GuiCol_ButtonHovered] : g_Ctx.Style.Colors[GuiCol_Button]);
+        DrawRectFilled(g_Ctx.Cursor, size, hovered ? g_Ctx.Style.Colors[GuiCol_ButtonHovered] : g_Ctx.Style.Colors[GuiCol_Button]);
         DrawTextString(display, { g_Ctx.Cursor.x + g_Ctx.Style.FramePadding.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, g_Ctx.Style.Colors[GuiCol_Text]);
 
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
@@ -2168,17 +2220,17 @@ namespace Shadow {
         }
 
         DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, g_Ctx.Style.Colors[GuiCol_Text]);
-        DrawRect(sliderPos, size, hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
+        DrawRectFilled(sliderPos, size, hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
 
         float fillWidth = std::clamp((*value - min_val) / (max_val - min_val), 0.f, 1.f) * sliderWidth;
-        DrawRect(sliderPos, { fillWidth, size.y }, g_Ctx.Style.Colors[GuiCol_SliderGrab]);
+        DrawRectFilled(sliderPos, { fillWidth, size.y }, g_Ctx.Style.Colors[GuiCol_SliderGrab]);
 
         if (g_Ctx.FocusedSliderId == id) {
             Color border = g_Ctx.Style.Colors[GuiCol_Border];
-            DrawRect({ sliderPos.x - 1.f, sliderPos.y - 1.f }, { size.x + 2.f, 1.f }, border);
-            DrawRect({ sliderPos.x - 1.f, sliderPos.y + size.y }, { size.x + 2.f, 1.f }, border);
-            DrawRect({ sliderPos.x - 1.f, sliderPos.y }, { 1.f, size.y }, border);
-            DrawRect({ sliderPos.x + size.x, sliderPos.y }, { 1.f, size.y }, border);
+            DrawRectFilled({ sliderPos.x - 1.f, sliderPos.y - 1.f }, { size.x + 2.f, 1.f }, border);
+            DrawRectFilled({ sliderPos.x - 1.f, sliderPos.y + size.y }, { size.x + 2.f, 1.f }, border);
+            DrawRectFilled({ sliderPos.x - 1.f, sliderPos.y }, { 1.f, size.y }, border);
+            DrawRectFilled({ sliderPos.x + size.x, sliderPos.y }, { 1.f, size.y }, border);
         }
 
         bool changed = InputTextEx(sliderInputId, valBoxPos, valBoxSize, g_Ctx.InputBuffers[sliderInputId]);
@@ -2210,7 +2262,6 @@ namespace Shadow {
         DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, g_Ctx.Style.Colors[GuiCol_Text]);
 
         float rightMargin = GetRightMargin();
-        // 修复：改硬编码 40.f 为字体自适应高度倍数
         Vec2 boxSize = { g_Ctx.ItemHeight, g_Ctx.ItemHeight };
         Vec2 boxPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - boxSize.x, g_Ctx.Cursor.y };
 
@@ -2228,14 +2279,40 @@ namespace Shadow {
             g_Ctx.MouseClicked = false;
         }
 
-        DrawRectFilled(boxPos, boxSize, { *r, *g, *b, *a });
+        float globalAlpha = g_Ctx.Style.Colors[GuiCol_ColorPickerLight].a;
+
+        // 修复1：使用主题色代替硬编码棋盘格颜色
+        Color cbLight = g_Ctx.Style.Colors[GuiCol_CheckerboardLight];
+        Color cbDark = g_Ctx.Style.Colors[GuiCol_CheckerboardDark];
+
+        float currentA = a ? *a : 1.0f;
+        int checkerSize = 5;
+
+        for (int y = 0; y < boxSize.y; y += checkerSize) {
+            for (int x = 0; x < boxSize.x; x += checkerSize) {
+                bool isWhite = ((x / checkerSize) + (y / checkerSize)) % 2 == 0;
+                Color bgCol = isWhite ? cbLight : cbDark;
+
+                // 提取 bgCol 原始 RGB 属性进行预混合
+                float finalR = *r * currentA + bgCol.r * (1.f - currentA);
+                float finalG = *g * currentA + bgCol.g * (1.f - currentA);
+                float finalB = *b * currentA + bgCol.b * (1.f - currentA);
+
+                float drawX = boxPos.x + x;
+                float drawY = boxPos.y + y;
+                float w = std::min((float)checkerSize, boxSize.x - x);
+                float h = std::min((float)checkerSize, boxSize.y - y);
+
+                DrawRectFilled({ drawX, drawY }, { w, h }, { finalR, finalG, finalB, globalAlpha });
+            }
+        }
 
         if (hovered || g_Ctx.ActiveColorPickerId == id) {
             Color border = g_Ctx.Style.Colors[GuiCol_Border];
-            DrawRect({ boxPos.x, boxPos.y }, { boxSize.x, 1.f }, border);                               // 上
-            DrawRect({ boxPos.x, boxPos.y + boxSize.y - 1.f }, { boxSize.x, 1.f }, border);             // 下
-            DrawRect({ boxPos.x, boxPos.y }, { 1.f, boxSize.y }, border);                               // 左
-            DrawRect({ boxPos.x + boxSize.x - 1.f, boxPos.y }, { 1.f, boxSize.y }, border);             // 右
+            DrawLine({ boxPos.x, boxPos.y }, { boxPos.x + boxSize.x, boxPos.y }, border);
+            DrawLine({ boxPos.x + boxSize.x, boxPos.y }, { boxPos.x + boxSize.x, boxPos.y + boxSize.y }, border);
+            DrawLine({ boxPos.x + boxSize.x, boxPos.y + boxSize.y }, { boxPos.x, boxPos.y + boxSize.y }, border);
+            DrawLine({ boxPos.x, boxPos.y + boxSize.y }, { boxPos.x, boxPos.y }, border);
         }
 
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
@@ -2269,7 +2346,7 @@ namespace Shadow {
             g_Ctx.MouseClicked = false;
         }
 
-        DrawRect(btnPos, btnSize, btnHovered ? g_Ctx.Style.Colors[GuiCol_ButtonHovered] : g_Ctx.Style.Colors[GuiCol_Button]);
+        DrawRectFilled(btnPos, btnSize, btnHovered ? g_Ctx.Style.Colors[GuiCol_ButtonHovered] : g_Ctx.Style.Colors[GuiCol_Button]);
         DrawTextString(keyName, { btnPos.x + g_Ctx.Style.FramePadding.x, btnPos.y + g_Ctx.Style.FramePadding.y }, g_Ctx.Style.Colors[GuiCol_Text]);
 
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
@@ -2320,7 +2397,7 @@ namespace Shadow {
             }
         }
 
-        DrawRect(btnPos, btnSize, btnHovered ? g_Ctx.Style.Colors[GuiCol_ButtonHovered] : g_Ctx.Style.Colors[GuiCol_Button]);
+        DrawRectFilled(btnPos, btnSize, btnHovered ? g_Ctx.Style.Colors[GuiCol_ButtonHovered] : g_Ctx.Style.Colors[GuiCol_Button]);
         DrawTextString(keyName, { btnPos.x + g_Ctx.Style.FramePadding.x, btnPos.y + g_Ctx.Style.FramePadding.y }, g_Ctx.Style.Colors[GuiCol_Text]);
 
         // 注意：is_active 的状态更新已移至 UpdateAllHotkeyStates()，此处不再重复处理
@@ -2337,7 +2414,7 @@ namespace Shadow {
         float dotOffset = (g_Ctx.ItemHeight - dotSize) / 2.f;
 
         Color indicatorColor = *is_active ? g_Ctx.Style.Colors[GuiCol_ActiveIndicator] : g_Ctx.Style.Colors[GuiCol_InactiveIndicator];
-        DrawRect({ btnPos.x + btnSize.x + g_Ctx.Style.ItemSpacing.x, g_Ctx.Cursor.y + dotOffset }, { dotSize, dotSize }, indicatorColor);
+        DrawRectFilled({ btnPos.x + btnSize.x + g_Ctx.Style.ItemSpacing.x, g_Ctx.Cursor.y + dotOffset }, { dotSize, dotSize }, indicatorColor);
 
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
     }

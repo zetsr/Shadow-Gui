@@ -829,6 +829,31 @@ namespace Shadow {
         g_Ctx.Canvas->K2_DrawBox(uePos, ueSize, 1.0f, ueColor);
     }
 
+    inline void DrawRectFilled(Vec2 pos, Vec2 size, Color color) {
+        if (!g_Ctx.Canvas) return;
+        if (!IsRectVisible(pos, size)) return;
+        ClipRect(pos, size);
+        if (size.x <= 0.f || size.y <= 0.f) return;
+
+        SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
+        SDK::FVector2D uePos{ static_cast<double>(pos.x), static_cast<double>(pos.y) };
+        SDK::FVector2D ueSize{ static_cast<double>(size.x), static_cast<double>(size.y) };
+
+        if (g_Ctx.Canvas->DefaultTexture) {
+            g_Ctx.Canvas->K2_DrawTexture(
+                g_Ctx.Canvas->DefaultTexture,
+                uePos,
+                ueSize,
+                SDK::FVector2D{ 0.0, 0.0 },
+                SDK::FVector2D{ 1.0, 1.0 },
+                ueColor,
+                SDK::EBlendMode::BLEND_Translucent,
+                0.0f,
+                SDK::FVector2D{ 0.0, 0.0 }
+            );
+        }
+    }
+
     inline Vec2 MeasureTextSize(std::string_view text) {
         if (!g_Ctx.Canvas || !g_Ctx.DefaultFont) return { 0.f, 0.f };
         SDK::FVector2D scale{ 1.0, 1.0 };
@@ -1201,7 +1226,6 @@ namespace Shadow {
         if (g_Ctx.ActiveColorPickerId != 0 && g_Ctx.ColorPickerR) {
             Vec2 popupPos = g_Ctx.ColorPickerPos;
 
-            // 修复：全面使用 Style 替换原 CPConfig
             float padding = g_Ctx.Style.CPPadding;
             float svSize = g_Ctx.Style.CPSVSize;
             float hueWidth = g_Ctx.Style.CPHueWidth;
@@ -1279,32 +1303,55 @@ namespace Shadow {
                 DrawRect({ popupPos.x - 2.f, popupPos.y - 2.f }, { popupWidth + 4.f, popupHeight + 4.f }, g_Ctx.Style.Colors[GuiCol_PopupBorder]);
                 DrawRect(popupPos, { popupWidth, popupHeight }, g_Ctx.Style.Colors[GuiCol_PopupBg]);
 
-                int svSteps = 40;
+                // 高密度采样与性能优化替代原始嵌套网格
+                int svSteps = std::max(2, static_cast<int>(svSize));
                 float svStepSize = svSize / svSteps;
+
+                // 1. 绘制调色SV面板 (使用两层正交的1D渐变，大幅减少DrawCall，实现肉眼无锯齿)
+                // 底层：水平方向 白 -> 当前Hue颜色 渐变
                 for (int i = 0; i < svSteps; ++i) {
-                    for (int j = 0; j < svSteps; ++j) {
-                        float s = (float)i / (svSteps - 1);
-                        float v = 1.0f - (float)j / (svSteps - 1);
-                        float r, g, b;
-                        HSVtoRGB(g_Ctx.ColorPickerH, s, v, r, g, b);
-                        DrawRect({ svPos.x + i * svStepSize, svPos.y + j * svStepSize }, { svStepSize + 0.5f, svStepSize + 0.5f }, { r, g, b, 1.f });
-                    }
+                    float s = (float)i / (svSteps - 1);
+                    float r, g, b;
+                    HSVtoRGB(g_Ctx.ColorPickerH, s, 1.0f, r, g, b);
+                    DrawRectFilled({ svPos.x + i * svStepSize, svPos.y }, { svStepSize, svSize }, { r, g, b, 1.f });
+                }
+                // 顶层：垂直方向 透明 -> 黑色 渐变 (利用AlphaBlend直接完成明度运算)
+                for (int j = 0; j < svSteps; ++j) {
+                    float v = 1.0f - (float)j / (svSteps - 1);
+                    float alpha = 1.0f - v;
+                    DrawRectFilled({ svPos.x, svPos.y + j * svStepSize }, { svSize, svStepSize }, { 0.f, 0.f, 0.f, alpha });
                 }
 
-                int hueSteps = 40;
+                // 2. 绘制色相(Hue)长条
+                int hueSteps = std::max(2, static_cast<int>(svSize));
                 float hueStepSize = svSize / hueSteps;
                 for (int i = 0; i < hueSteps; ++i) {
                     float h = (float)i / (hueSteps - 1);
                     float r, g, b;
                     HSVtoRGB(h, 1.f, 1.f, r, g, b);
-                    DrawRect({ huePos.x, huePos.y + i * hueStepSize }, { hueWidth, hueStepSize + 0.5f }, { r, g, b, 1.f });
+                    DrawRectFilled({ huePos.x, huePos.y + i * hueStepSize }, { hueWidth, hueStepSize }, { r, g, b, 1.f });
                 }
 
-                int alphaSteps = 40;
+                // 3. 绘制透明度(Alpha)长条
+                // 3.1 绘制交替灰白格子背景
+                int checkerSize = 5;
+                for (int y = 0; y < svSize; y += checkerSize) {
+                    for (int x = 0; x < alphaWidth; x += checkerSize) {
+                        bool isWhite = ((x / checkerSize) + (y / checkerSize)) % 2 == 0;
+                        Color checkerCol = isWhite ? Color{ 1.0f, 1.0f, 1.0f, 1.0f } : Color{ 0.7f, 0.7f, 0.7f, 1.0f };
+                        float drawX = alphaPos.x + x;
+                        float drawY = alphaPos.y + y;
+                        float w = std::min((float)checkerSize, alphaWidth - x);
+                        float h = std::min((float)checkerSize, svSize - y);
+                        DrawRectFilled({ drawX, drawY }, { w, h }, checkerCol);
+                    }
+                }
+                // 3.2 叠加带有透明度渐变的当前颜色
+                int alphaSteps = std::max(2, static_cast<int>(svSize));
                 float alphaStepSize = svSize / alphaSteps;
                 for (int i = 0; i < alphaSteps; ++i) {
                     float a = 1.0f - (float)i / (alphaSteps - 1);
-                    DrawRect({ alphaPos.x, alphaPos.y + i * alphaStepSize }, { alphaWidth, alphaStepSize + 0.5f }, { *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB, a });
+                    DrawRectFilled({ alphaPos.x, alphaPos.y + i * alphaStepSize }, { alphaWidth, alphaStepSize }, { *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB, a });
                 }
 
                 size_t hexId = HashString("CPHexInput");
@@ -1322,7 +1369,6 @@ namespace Shadow {
                 }
 
                 Vec2 cursorSV = { svPos.x + g_Ctx.ColorPickerS * svSize, svPos.y + (1.f - g_Ctx.ColorPickerV) * svSize };
-                // 修复：原先的准星硬编码已使用 Style 系统取代
                 DrawRect({ cursorSV.x - 4.f, cursorSV.y - 4.f }, { 8.f, 8.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
                 DrawRect({ cursorSV.x - 3.f, cursorSV.y - 3.f }, { 6.f, 6.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
                 DrawRect({ cursorSV.x - 2.f, cursorSV.y - 2.f }, { 4.f, 4.f }, { *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB, 1.f });
@@ -2139,7 +2185,7 @@ namespace Shadow {
             g_Ctx.MouseClicked = false;
         }
 
-        DrawRect(boxPos, boxSize, { *r, *g, *b, *a });
+        DrawRectFilled(boxPos, boxSize, { *r, *g, *b, *a });
 
         if (hovered || g_Ctx.ActiveColorPickerId == id) {
             Color border = g_Ctx.Style.Colors[GuiCol_Border];

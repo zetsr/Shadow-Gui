@@ -47,7 +47,11 @@ namespace Hook {
 
         // 菜单切换键处理（如果正在分配热键，则不切换菜单）
         if (uMsg == WM_KEYDOWN && wParam == keyMenu && !Shadow::g_Ctx.AssigningHotkey) {
-            bShowMenu = !bShowMenu;
+            bool isFirstPress = ((lParam & (1 << 30)) == 0);
+
+            if (isFirstPress) {
+                bShowMenu = !bShowMenu;
+            }
         }
 
         if (bShowMenu) {
@@ -234,7 +238,7 @@ namespace Hook {
     }
 
     void FindPostRender() {
-        std::string pattern = "48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 48 89 5C 24 10 48 89 74 24 18 48 89 7C 24 20 55"; 
+        std::string pattern = "48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89"; 
 
         // ASA 8B C2 35 ?? ?? ?? ?? 44
         // DRACONIA 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89

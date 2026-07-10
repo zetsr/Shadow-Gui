@@ -559,6 +559,94 @@ namespace Shadow {
             g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV);
     }
 
+    // 新增：存储热键的完整信息（包括模式指针和is_active指针）
+    struct RegisteredHotkeyInfo {
+        int* hotkey;
+        HotkeyMode* mode;
+        bool* is_active;
+    };
+
+    // 替换原来的简单vector为带完整信息的vector
+    inline std::vector<RegisteredHotkeyInfo> g_RegisteredHotkeyInfos;
+
+    // 新增：检查某个按键是否是已注册的热键
+    inline bool IsHotkeyRegistered(int vk) {
+        for (auto& info : g_RegisteredHotkeyInfos) {
+            if (*info.hotkey == vk && vk != 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // 新增：更新所有已注册热键的 is_active 状态（每帧调用，无论菜单是否打开）
+    inline void UpdateAllHotkeyStates() {
+        for (auto& info : g_RegisteredHotkeyInfos) {
+            if (info.is_active && info.mode) {
+                switch (*info.mode) {
+                case HotkeyMode::None:
+                    *info.is_active = false;
+                    break;
+                case HotkeyMode::HoldOn:
+                    *info.is_active = g_Ctx.KeyStates[*info.hotkey];
+                    break;
+                case HotkeyMode::HoldOff:
+                    *info.is_active = !g_Ctx.KeyStates[*info.hotkey];
+                    break;
+                case HotkeyMode::ToggleOn:
+                    *info.is_active = g_Ctx.HotkeyToggles[*info.hotkey];
+                    break;
+                case HotkeyMode::AlwaysOn:
+                    *info.is_active = true;
+                    break;
+                }
+            }
+            else if (info.is_active) {
+                // 没有模式指针（简单版本的HotKey），is_active 就是 hotkey 是否被按下
+                *info.is_active = g_Ctx.KeyStates[*info.hotkey];
+            }
+        }
+    }
+
+    // 新增：处理全局热键输入（菜单关闭时也需要调用）
+    inline bool ProcessGlobalHotkeys(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+        if (uMsg == WM_KEYDOWN || uMsg == WM_SYSKEYDOWN) {
+            if (wParam < 256) {
+                int vk = static_cast<int>(wParam);
+                if (IsHotkeyRegistered(vk)) {
+                    bool isRepeat = (lParam & (1 << 30)) != 0;
+                    HandleKeyDown(vk, isRepeat);
+                    return true;
+                }
+            }
+        }
+        else if (uMsg == WM_KEYUP || uMsg == WM_SYSKEYUP) {
+            if (wParam < 256) {
+                int vk = static_cast<int>(wParam);
+                if (IsHotkeyRegistered(vk)) {
+                    HandleKeyUp(vk);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // 修改注册函数，现在需要提供完整信息
+    inline void RegisterHotkey(int* hotkey, HotkeyMode* mode, bool* is_active) {
+        // 检查是否已注册（通过hotkey指针判断）
+        for (auto& info : g_RegisteredHotkeyInfos) {
+            if (info.hotkey == hotkey) {
+                // 已注册，更新信息
+                info.mode = mode;
+                info.is_active = is_active;
+                return;
+            }
+        }
+        // 未注册，添加新条目
+        g_RegisteredHotkeyInfos.push_back({ hotkey, mode, is_active });
+    }
+
     inline LRESULT Input(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
         switch (uMsg) {
         case WM_MOUSEWHEEL: {
@@ -614,15 +702,23 @@ namespace Shadow {
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN:
             if (wParam < 256) {
-                bool isRepeat = (lParam & (1 << 30)) != 0;
-                if (HandleKeyDown(static_cast<int>(wParam), isRepeat)) return 0;
+                int vk = static_cast<int>(wParam);
+                // 如果该按键是已注册的热键，跳过 Input 处理（已在 ProcessGlobalHotkeys 中处理）
+                if (!IsHotkeyRegistered(vk)) {
+                    bool isRepeat = (lParam & (1 << 30)) != 0;
+                    if (HandleKeyDown(vk, isRepeat)) return 0;
+                }
                 if (g_Ctx.ActiveInputId != 0) return 0;
             }
             break;
         case WM_KEYUP:
         case WM_SYSKEYUP:
             if (wParam < 256) {
-                HandleKeyUp(static_cast<int>(wParam));
+                int vk = static_cast<int>(wParam);
+                // 如果该按键是已注册的热键，跳过 Input 处理（已在 ProcessGlobalHotkeys 中处理）
+                if (!IsHotkeyRegistered(vk)) {
+                    HandleKeyUp(vk);
+                }
                 if (g_Ctx.ActiveInputId != 0) return 0;
             }
             break;
@@ -2057,6 +2153,9 @@ namespace Shadow {
     }
 
     inline bool HotKey(std::string_view name, int* hotkey) {
+        // 注册热键（使用新的注册函数，简单版本没有mode和is_active，传nullptr）
+        RegisterHotkey(hotkey, nullptr, nullptr);
+
         if (!g_Ctx.InActiveTab) return false;
         std::string_view display; size_t id; ParseLabel(name, display, id);
 
@@ -2089,6 +2188,9 @@ namespace Shadow {
     }
 
     inline void HotKey(std::string_view name, int* hotkey, bool* is_active, HotkeyMode* hotkey_mode) {
+        // 注册热键（使用新的注册函数，提供完整信息）
+        RegisterHotkey(hotkey, hotkey_mode, is_active);
+
         if (!g_Ctx.InActiveTab) return;
         std::string_view display; size_t id; ParseLabel(name, display, id);
 
@@ -2132,6 +2234,8 @@ namespace Shadow {
         DrawRect(btnPos, btnSize, btnHovered ? g_Ctx.Style.Colors[GuiCol_ButtonHovered] : g_Ctx.Style.Colors[GuiCol_Button]);
         DrawTextString(keyName, { btnPos.x + g_Ctx.Style.FramePadding.x, btnPos.y + g_Ctx.Style.FramePadding.y }, g_Ctx.Style.Colors[GuiCol_Text]);
 
+        // 注意：is_active 的状态更新已移至 UpdateAllHotkeyStates()，此处不再重复处理
+        // 但为了菜单打开时的即时反馈，这里保留状态更新逻辑
         switch (*hotkey_mode) {
         case HotkeyMode::None:      *is_active = false; break;
         case HotkeyMode::HoldOn:    *is_active = g_Ctx.KeyStates[*hotkey]; break;

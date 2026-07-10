@@ -39,8 +39,13 @@ namespace Hook {
     }
 
     LRESULT APIENTRY WndProcHook(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+        // 始终处理全局热键（菜单打开或关闭都需要）
+        Shadow::ProcessGlobalHotkeys(hwnd, uMsg, wParam, lParam);
+
+        // 处理输入（鼠标坐标、点击等，菜单打开时需要）
         Shadow::Input(hwnd, uMsg, wParam, lParam);
 
+        // 菜单切换键处理（如果正在分配热键，则不切换菜单）
         if (uMsg == WM_KEYDOWN && wParam == keyMenu && !Shadow::g_Ctx.AssigningHotkey) {
             bShowMenu = !bShowMenu;
         }
@@ -53,10 +58,12 @@ namespace Hook {
 
             // 键盘消息处理
             if (uMsg == WM_KEYDOWN || uMsg == WM_KEYUP || uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP || uMsg == WM_CHAR) {
-                if (wParam == keyMenu) {
+                // 如果是已注册的全局热键，放行给游戏（热键状态已在 ProcessGlobalHotkeys 中更新）
+                if (Shadow::IsHotkeyRegistered(static_cast<int>(wParam))) {
                     return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
                 }
 
+                // 如果不在允许列表中，阻塞该按键
                 if (!Shadow::IsKeyAllowed(static_cast<int>(wParam))) {
                     return 1;
                 }
@@ -110,6 +117,11 @@ namespace Hook {
         }
 
         Shadow::NewFrame(canvas);
+        Shadow::UpdateAllHotkeyStates();
+
+        if (bAimbotActive) {
+            canvas->K2_DrawBox({ 10, 10 }, { 20, 20 }, 1.0f, { 0.0f, 1.0f, 0.0f, 1.0f });
+        }
 
         if (bShowMenu) {
             static bool bWindowNoResize = true;

@@ -1,5 +1,7 @@
 # ✨ Shadow Gui
 
+<img width="1059" height="701" alt="QQ20260710-205858" src="https://github.com/user-attachments/assets/2853dbf8-210c-4189-82eb-c9635ca197b0" />
+
 ## Credits
 
 - [ocornut/imgui](https://github.com/ocornut/imgui)

@@ -210,9 +210,12 @@ namespace Hook {
                         Shadow::Spacing();
                         Shadow::Button(U8("重置速度4##btn_4"));
 
-						Shadow::TextColored({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("第一个测试文本"));
+                        static bool btestdisabled = false;
+                        Shadow::Checkbox(U8("测试禁用开关##test_disabled_cb1"), &btestdisabled);
+                        Shadow::SameLine();
+                        Shadow::TextColored({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("第一个测试文本"));
 
-                        Shadow::BeginDisabled();
+                        Shadow::BeginDisabled(btestdisabled);
                         Shadow::TextColored({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("第二个测试文本"));
                         Shadow::Checkbox(U8("测试开关##test_cb_1"), &bWindowNoResize);
                         Shadow::EndDisabled();

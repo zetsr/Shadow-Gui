@@ -1,6 +1,7 @@
 ﻿/*
 Credit:
     https://github.com/ocornut/imgui
+    https://github.com/Encryqed/Dumper-7
     https://aistudio.google.com/
 */
 

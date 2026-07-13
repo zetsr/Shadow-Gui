@@ -109,12 +109,12 @@ namespace Hook {
         if (!Shadow::DefaultFont) {
             if (!OpenSansRegular12) {
                 SDK::UObject* _Font = SDK::UObject::FindObject("Font OpenSansRegular12.OpenSansRegular12");
-                if (_Font && _Font->IsA(SDK::UFont::StaticClass())) OpenSansRegular12 = (SDK::UFont*)_Font; Shadow::DefaultFont = OpenSansRegular12;
+                if (_Font && _Font->IsA(SDK::UFont::StaticClass())) OpenSansRegular12 = (SDK::UFont*)_Font; // Shadow::DefaultFont = OpenSansRegular12;
             }
 
             if (!SansationBold18) {
                 SDK::UObject* _Font = SDK::UObject::FindObject("Font SansationBold18.SansationBold18");
-                if (_Font && _Font->IsA(SDK::UFont::StaticClass())) SansationBold18 = (SDK::UFont*)_Font; // Shadow::DefaultFont = OpenSansRegular12;
+                if (_Font && _Font->IsA(SDK::UFont::StaticClass())) SansationBold18 = (SDK::UFont*)_Font; // Shadow::DefaultFont = SansationBold18;
             }
 
             // if (SDK::UEngine::GetEngine()) { OpenSansRegular12 = SDK::UEngine::GetEngine()->MediumFont; }

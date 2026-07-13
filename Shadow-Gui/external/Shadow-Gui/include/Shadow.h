@@ -46,6 +46,7 @@ namespace Shadow {
         GuiCol_FrameBg,
         GuiCol_FrameBgHovered,
         GuiCol_SliderGrab,
+        GuiCol_SliderKnob,
         GuiCol_CheckMark,
         GuiCol_Separator,
         GuiCol_PopupBg,
@@ -314,6 +315,7 @@ namespace Shadow {
         colors[GuiCol_TabActive] = { 0.015f, 0.020f, 0.028f, 1.000f };
 
         colors[GuiCol_SliderGrab] = { 0.140f, 0.185f, 0.250f, 1.000f };
+        colors[GuiCol_SliderKnob] = { 0.860f, 0.860f, 0.860f, 1.000f };
 
         colors[GuiCol_CheckMark] = { 0.520f, 0.220f, 0.220f, 1.000f };
         colors[GuiCol_ActiveIndicator] = { 0.520f, 0.220f, 0.220f, 1.000f };
@@ -369,6 +371,7 @@ namespace Shadow {
         colors[GuiCol_TabActive] = { 0.090f, 0.065f, 0.125f, 1.000f };
 
         colors[GuiCol_SliderGrab] = { 0.430f, 0.280f, 0.620f, 1.000f };
+        colors[GuiCol_SliderKnob] = { 0.860f, 0.860f, 0.860f, 1.000f };
 
         colors[GuiCol_CheckMark] = { 0.560f, 0.360f, 0.780f, 1.000f };
         colors[GuiCol_ActiveIndicator] = { 0.560f, 0.360f, 0.780f, 1.000f };
@@ -2531,6 +2534,17 @@ namespace Shadow {
         Color grabCol = g_Ctx.Style.Colors[GuiCol_SliderGrab];
         if (disabled) grabCol.a *= 0.5f;
         DrawRectFilled(sliderPos, { fillWidth, size.y }, grabCol);
+
+        // ---> 新增：渲染把手 (Knob) 控件
+        float knobWidth = 4.0f; // 定义把手的宽度
+        float knobX = sliderPos.x + fillWidth - knobWidth * 0.5f;
+        // 限制把手绘制不超出滑块边界
+        knobX = std::clamp(knobX, sliderPos.x, sliderPos.x + sliderWidth - knobWidth);
+
+        Color knobCol = g_Ctx.Style.Colors[GuiCol_SliderKnob];
+        if (disabled) knobCol.a *= 0.5f;
+        DrawRectFilled({ knobX, sliderPos.y }, { knobWidth, size.y }, knobCol);
+        // <--- 结束
 
         if (g_Ctx.FocusedSliderId == id) {
             Color border = g_Ctx.Style.Colors[GuiCol_Border];

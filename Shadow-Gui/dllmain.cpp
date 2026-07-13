@@ -7,10 +7,10 @@
 #include "external/Shadow-Gui/include/Shadow.h"
 
 namespace Hook {
-    bool bShowMenu = true;
+    bool bShowMenu = false;
     int keyMenu = VK_F1;
 
-    float currentAlpha = 1.0f;
+    float currentAlpha = 0.0f;
     const float fadeSpeed = 5.0f;
 
     HWND g_hwnd = NULL;
@@ -29,6 +29,17 @@ namespace Hook {
             }
         }
         return TRUE;
+    }
+
+    bool GetMouseCursorVisible() {
+        if (auto world = SDK::UWorld::GetWorld()) {
+            if (world->OwningGameInstance && world->OwningGameInstance->LocalPlayers.IsValidIndex(0)) {
+                if (auto pc = world->OwningGameInstance->LocalPlayers[0]->PlayerController) {
+                    return pc->bShowMouseCursor;
+                }
+            }
+        }
+        return false;
     }
 
     void SetMouseCursorVisible(bool visible) {
@@ -104,6 +115,7 @@ namespace Hook {
 
         static SDK::UFont* OpenSansRegular12 = nullptr;
         static SDK::UFont* SansationBold18 = nullptr;
+        static SDK::UFont* NotoSansSC = nullptr;
 
         // Shadow Gui内部会自动获取引擎默认字体
         if (!Shadow::DefaultFont) {
@@ -115,6 +127,11 @@ namespace Hook {
             if (!SansationBold18) {
                 SDK::UObject* _Font = SDK::UObject::FindObject("Font SansationBold18.SansationBold18");
                 if (_Font && _Font->IsA(SDK::UFont::StaticClass())) SansationBold18 = (SDK::UFont*)_Font; // Shadow::DefaultFont = SansationBold18;
+            }
+
+            if (!NotoSansSC) {
+                SDK::UObject* _Font = SDK::UObject::FindObject("Font NotoSansSC-Regular_Font.NotoSansSC-Regular_Font");
+                if (_Font && _Font->IsA(SDK::UFont::StaticClass())) NotoSansSC = (SDK::UFont*)_Font; Shadow::DefaultFont = NotoSansSC;
             }
 
             // if (SDK::UEngine::GetEngine()) { OpenSansRegular12 = SDK::UEngine::GetEngine()->MediumFont; }
@@ -139,15 +156,26 @@ namespace Hook {
             if (currentAlpha < 0.0f) currentAlpha = 0.0f;
         }
 
-        // 3. 鼠标显示逻辑切换（只要还在显示或淡出，就应显示鼠标并保持同步）
+        // 3. 鼠标显示逻辑切换
         static bool bWasAnimating = false;
+        static bool gameOriginalCursorState = false; // 用于备份游戏原本的光标状态
+
         bool isAnimating = (bShowMenu || currentAlpha > 0.001f);
-        if (isAnimating != bWasAnimating) {
-            SetMouseCursorVisible(isAnimating);
-            bWasAnimating = isAnimating;
-        }
-        else if (isAnimating) {
+
+        if (isAnimating) {
+            // 【刚刚打开菜单的第一帧】备份游戏当下的鼠标状态
+            if (!bWasAnimating) {
+                gameOriginalCursorState = GetMouseCursorVisible();
+            }
+
+            // 只要外挂菜单在显示或淡出，强制显示鼠标
             SetMouseCursorVisible(true);
+            bWasAnimating = true;
+        }
+        else if (bWasAnimating) {
+            // 【菜单彻底关闭的第一帧】将游戏原本的状态还原回去
+            SetMouseCursorVisible(gameOriginalCursorState);
+            bWasAnimating = false;
         }
 
         Shadow::NewFrame(canvas);
@@ -333,11 +361,12 @@ namespace Hook {
     }
 
     void FindPostRender() {
-        std::string pattern = "8B C2 35 ?? ?? ?? ?? 44";
+        std::string pattern = "48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89";
 
-        // ASA 8B C2 35 ?? ?? ?? ?? 44
+             // ASA 8B C2 35 ?? ?? ?? ?? 44
         // DRACONIA 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89
-        // DOD 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 48 89 5C 24 10 48 89 74 24 18 48 89 7C 24 20 55
+             // DOD 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 48 89 5C 24 10 48 89 74 24 18 48 89 7C 24 20 55
+            // ISLE 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89 6C
 
         AOB::Result ok = AOB::Scan(pattern);
 

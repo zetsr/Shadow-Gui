@@ -68,6 +68,12 @@ namespace Shadow {
         GuiCol_CheckerboardDark,
         GuiCol_ColorPickerShadow,
         GuiCol_ControlDisabled,
+        GuiCol_SwitchBg,
+        GuiCol_SwitchBgHovered,
+        GuiCol_SwitchBgActive,
+        GuiCol_SwitchBgActiveHovered,
+        GuiCol_SwitchKnob,
+
         GuiCol_COUNT
     };
 
@@ -332,6 +338,12 @@ namespace Shadow {
         colors[GuiCol_ColorPickerShadow] = { 0.000f, 0.000f, 0.000f, 1.000f };
 
         colors[GuiCol_ControlDisabled] = { 0.022f, 0.028f, 0.038f, 0.500f };
+
+        colors[GuiCol_SwitchBg] = { 0.022f, 0.028f, 0.038f, 1.000f };
+        colors[GuiCol_SwitchBgHovered] = { 0.035f, 0.045f, 0.060f, 1.000f };
+        colors[GuiCol_SwitchBgActive] = { 0.520f, 0.220f, 0.220f, 1.000f };
+        colors[GuiCol_SwitchBgActiveHovered] = { 0.620f, 0.270f, 0.270f, 1.000f };
+        colors[GuiCol_SwitchKnob] = { 0.750f, 0.750f, 0.750f, 1.000f };
     }
 
     // 紫曜主题
@@ -381,6 +393,12 @@ namespace Shadow {
         colors[GuiCol_ColorPickerShadow] = { 0.000f, 0.000f, 0.000f, 1.000f };
 
         colors[GuiCol_ControlDisabled] = { 0.100f, 0.075f, 0.135f, 0.450f };
+
+        colors[GuiCol_SwitchBg] = { 0.100f, 0.075f, 0.135f, 0.850f };
+        colors[GuiCol_SwitchBgHovered] = { 0.140f, 0.100f, 0.185f, 0.900f };
+        colors[GuiCol_SwitchBgActive] = { 0.560f, 0.360f, 0.780f, 1.000f };
+        colors[GuiCol_SwitchBgActiveHovered] = { 0.660f, 0.460f, 0.880f, 1.000f };
+        colors[GuiCol_SwitchKnob] = { 0.750f, 0.750f, 0.750f, 1.000f };
     }
 
     inline Vec2 GetWindowSize() {
@@ -2329,6 +2347,68 @@ namespace Shadow {
         Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
         DrawTextString(display, { g_Ctx.Cursor.x + boxSize.x + 10.f, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, textColor);
 
+        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
+        g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+    }
+
+    inline void Switch(std::string_view name, bool* value) {
+        if (!g_Ctx.InActiveTab) return;
+        std::string_view display; size_t id; ParseLabel(name, display, id);
+
+        float padding = 2.f;
+        float height = g_Ctx.ItemHeight;
+        float knobSize = height - padding * 2.f;
+        // 固定 Switch 的宽度为：两个 Knob 的尺寸外加左右 padding
+        float width = knobSize * 2.f + padding * 2.f;
+        Vec2 boxSize = { width, height };
+
+        if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+            return;
+        }
+
+        float textWidth = MeasureTextSize(display).x;
+        // 与图片保持相同的紧凑排版：文本宽度 + 10px空隙 + 开关本身宽度
+        Vec2 interactSize = { textWidth + 10.f + boxSize.x, g_Ctx.ItemHeight };
+
+        bool disabled = IsDisabled();
+        bool hovered = !disabled && IsMouseHovering(g_Ctx.Cursor, interactSize);
+        if (hovered && g_Ctx.MouseClicked) { *value = !(*value); }
+
+        Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
+
+        // 1. 渲染左侧的文本
+        DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, textColor);
+
+        // 2. 紧接在文本后方渲染 Switch，而不是用 ControlOffsetX 右对齐。这样可以确保符合所给图片的紧密排版
+        Vec2 boxPos = { g_Ctx.Cursor.x + textWidth + 10.f, g_Ctx.Cursor.y };
+
+        Color bgColor;
+        if (disabled) {
+            bgColor = g_Ctx.Style.Colors[GuiCol_ControlDisabled];
+        }
+        else {
+            if (*value) {
+                bgColor = hovered ? g_Ctx.Style.Colors[GuiCol_SwitchBgActiveHovered] : g_Ctx.Style.Colors[GuiCol_SwitchBgActive];
+            }
+            else {
+                bgColor = hovered ? g_Ctx.Style.Colors[GuiCol_SwitchBgHovered] : g_Ctx.Style.Colors[GuiCol_SwitchBg];
+            }
+        }
+
+        // 3. 渲染背景 Track
+        DrawRectFilled(boxPos, boxSize, bgColor);
+
+        Color knobColor = g_Ctx.Style.Colors[GuiCol_SwitchKnob];
+        if (disabled) knobColor.a *= 0.5f;
+
+        // 4. 根据开关状态 (true/false) 决定 Knob 绘制在左侧还是右侧
+        float knobX = *value ? (boxPos.x + width - padding - knobSize) : (boxPos.x + padding);
+        DrawRectFilled({ knobX, boxPos.y + padding }, { knobSize, knobSize }, knobColor);
+
+        // 5. 状态推进与换行
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;

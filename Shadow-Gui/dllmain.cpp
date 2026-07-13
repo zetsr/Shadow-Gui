@@ -103,25 +103,21 @@ namespace Hook {
         static   Shadow::HotkeyMode modeAimbot = Shadow::HotkeyMode::HoldOn;
 
         static SDK::UFont* OpenSansRegular12 = nullptr;
-        // static SDK::UFont* SansationBold18 = nullptr;
+        static SDK::UFont* SansationBold18 = nullptr;
 
         // Shadow Gui内部会自动获取引擎默认字体
         if (!Shadow::DefaultFont) {
-            /*
             if (!OpenSansRegular12) {
                 SDK::UObject* _Font = SDK::UObject::FindObject("Font OpenSansRegular12.OpenSansRegular12");
-                if (_Font && _Font->IsA(SDK::UFont::StaticClass())) OpenSansRegular12 = (SDK::UFont*)_Font; // Shadow::DefaultFont = OpenSansRegular12;
+                if (_Font && _Font->IsA(SDK::UFont::StaticClass())) OpenSansRegular12 = (SDK::UFont*)_Font; Shadow::DefaultFont = OpenSansRegular12;
             }
-            */
 
-            /*
             if (!SansationBold18) {
                 SDK::UObject* _Font = SDK::UObject::FindObject("Font SansationBold18.SansationBold18");
                 if (_Font && _Font->IsA(SDK::UFont::StaticClass())) SansationBold18 = (SDK::UFont*)_Font; // Shadow::DefaultFont = OpenSansRegular12;
             }
-             */
 
-            if (SDK::UEngine::GetEngine()) { OpenSansRegular12 = SDK::UEngine::GetEngine()->MediumFont; }
+            // if (SDK::UEngine::GetEngine()) { OpenSansRegular12 = SDK::UEngine::GetEngine()->MediumFont; }
         }
 
         Shadow::SetAllowedKeys({ 'W', 'A', 'S', 'D', VK_SPACE }); // 放行常用移动按键
@@ -158,6 +154,7 @@ namespace Hook {
         Shadow::UpdateAllHotkeyStates();
 
         Shadow::StyleColorsAmethyst();
+        // Shadow::StyleColorsOcean();
         // Shadow::GetStyle().WindowMinSize = { 200, 150 };
 
         Shadow::SetNextWindowSizeConstraints({ static_cast<float>(canvas->SizeX * 0.3), static_cast<float>(canvas->SizeY * 0.4) }, { static_cast<float>(canvas->SizeX), static_cast<float>(canvas->SizeY) });
@@ -206,15 +203,31 @@ namespace Hook {
             if (bTabFittingScroll) currentTabBarFlags |= Shadow::ShadowTabBarFlags_FittingPolicyScroll;
             if (bTabNoScrollbar)   currentTabBarFlags |= Shadow::ShadowTabBarFlags_NoScrollbar;
 
-            Shadow::PushFont(OpenSansRegular12, Shadow::GetStyle().FontScaleDpi);
             if (Shadow::Begin(U8("测试菜单##main_window"), currentWindowFlags)) {
-                Shadow::PopFont();
 
                 if (Shadow::BeginTabBar("MainTabs##tabs", currentTabBarFlags)) {
                     if (Shadow::BeginTabItem(U8("设置##tab0"))) {
-                        Shadow::PushFont(OpenSansRegular12, Shadow::GetStyle().FontScaleDpi);
+                        // Shadow::PushFont(SansationBold18, Shadow::GetStyle().FontScaleDpi);
                         Shadow::HotKey(U8("菜单按键##menu_key"), &keyMenu);
-                        Shadow::PopFont();
+
+						static bool bhello = false;
+                        static bool bnohello = false;
+
+						Shadow::Switch(U8("你好！##bhello_1"), &bhello);
+                        Shadow::SameLine();
+
+                        Shadow::Switch(U8("你好1！##bhello_1"), &bhello);
+                        Shadow::SameLine();
+
+                        Shadow::Switch(U8("你好2！##bhello_1"), &bhello);
+                        Shadow::SameLine();
+
+                        Shadow::Switch(U8("你好3！##bhello_1"), &bhello);
+
+                        Shadow::BeginDisabled(bhello);
+                        Shadow::Switch(U8("好的！##bnohello_1"), &bnohello);
+                        Shadow::EndDisabled();
+                        // Shadow::PopFont();
                     }
                     Shadow::EndTabItem();
 
@@ -320,7 +333,7 @@ namespace Hook {
     }
 
     void FindPostRender() {
-        std::string pattern = "48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89";
+        std::string pattern = "8B C2 35 ?? ?? ?? ?? 44";
 
         // ASA 8B C2 35 ?? ?? ?? ?? 44
         // DRACONIA 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89

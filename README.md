@@ -109,6 +109,12 @@ bool Shadow::Button(std::string_view name);
 void Shadow::Checkbox(std::string_view name, bool* value);
 ```
 
+### Shadow::Switch
+绘制一个开关，并绑定一个布尔值变量来存储其状态。
+```cpp
+void Shadow::Switch(std::string_view name, bool* value);
+```
+
 ### Shadow::Slider
 绘制一个数值滑动调节条，支持鼠标拖拽、键盘左右键微调以及点击文本框直接输入数值。
 ```cpp

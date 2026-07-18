@@ -1,5 +1,7 @@
 # ✨ Shadow Gui
 
+<img width="1059" height="701" alt="QQ20260710-205858" src="https://github.com/user-attachments/assets/2853dbf8-210c-4189-82eb-c9635ca197b0" />
+
 ### ☕ 赞助 / Buy me a coffee
 
 * 您可以通过赞助支持我们的开发，感谢大家的支持！

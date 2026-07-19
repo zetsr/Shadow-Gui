@@ -131,7 +131,7 @@ namespace Shadow {
         Vec2 pos;
         Vec2 size;
         std::string display;
-        SDK::UFont* font = nullptr; 
+        SDK::UFont* font = nullptr;
         float fontScale = 1.0f;
     };
 
@@ -939,20 +939,20 @@ namespace Shadow {
 
         float angle = std::atan2(dy, dx) * (180.0f / 3.14159265358979323846f);
 
-        SDK::FVector2D uePos{ static_cast<double>(start.x), static_cast<double>(start.y) };
-        SDK::FVector2D ueSize{ static_cast<double>(length), static_cast<double>(thickness) };
+        SDK::FVector2D uePos{ static_cast<float>(start.x), static_cast<float>(start.y) };
+        SDK::FVector2D ueSize{ static_cast<float>(length), static_cast<float>(thickness) };
         SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
 
         g_Ctx.Canvas->K2_DrawTexture(
             g_Ctx.Canvas->DefaultTexture,
             uePos,
             ueSize,
-            SDK::FVector2D{ 0.0, 0.0 },
-            SDK::FVector2D{ 1.0, 1.0 },
+            SDK::FVector2D{ 0.0f, 0.0f },
+            SDK::FVector2D{ 1.0f, 1.0f },
             ueColor,
             SDK::EBlendMode::BLEND_Translucent,
             angle,
-            SDK::FVector2D{ 0.0, 0.5 }
+            SDK::FVector2D{ 0.0f, 0.5f }
         );
     }
 
@@ -963,20 +963,20 @@ namespace Shadow {
         if (size.x <= 0.f || size.y <= 0.f) return;
 
         SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
-        SDK::FVector2D uePos{ static_cast<double>(pos.x), static_cast<double>(pos.y) };
-        SDK::FVector2D ueSize{ static_cast<double>(size.x), static_cast<double>(size.y) };
+        SDK::FVector2D uePos{ static_cast<float>(pos.x), static_cast<float>(pos.y) };
+        SDK::FVector2D ueSize{ static_cast<float>(size.x), static_cast<float>(size.y) };
 
         if (g_Ctx.Canvas->DefaultTexture) {
             g_Ctx.Canvas->K2_DrawTexture(
                 g_Ctx.Canvas->DefaultTexture,
                 uePos,
                 ueSize,
-                SDK::FVector2D{ 0.0, 0.0 },
-                SDK::FVector2D{ 1.0, 1.0 },
+                SDK::FVector2D{ 0.0f, 0.0f },
+                SDK::FVector2D{ 1.0f, 1.0f },
                 ueColor,
                 SDK::EBlendMode::BLEND_Translucent,
                 0.0f,
-                SDK::FVector2D{ 0.0, 0.0 }
+                SDK::FVector2D{ 0.0f, 0.0f }
             );
         }
 
@@ -993,20 +993,20 @@ namespace Shadow {
         if (size.x <= 0.f || size.y <= 0.f) return;
 
         SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
-        SDK::FVector2D uePos{ static_cast<double>(pos.x), static_cast<double>(pos.y) };
-        SDK::FVector2D ueSize{ static_cast<double>(size.x), static_cast<double>(size.y) };
+        SDK::FVector2D uePos{ static_cast<float>(pos.x), static_cast<float>(pos.y) };
+        SDK::FVector2D ueSize{ static_cast<float>(size.x), static_cast<float>(size.y) };
 
         if (g_Ctx.Canvas->DefaultTexture) {
             g_Ctx.Canvas->K2_DrawTexture(
                 g_Ctx.Canvas->DefaultTexture,
                 uePos,
                 ueSize,
-                SDK::FVector2D{ 0.0, 0.0 },
-                SDK::FVector2D{ 1.0, 1.0 },
+                SDK::FVector2D{ 0.0f, 0.0f },
+                SDK::FVector2D{ 1.0f, 1.0f },
                 ueColor,
                 SDK::EBlendMode::BLEND_Translucent,
                 0.0f,
-                SDK::FVector2D{ 0.0, 0.0 }
+                SDK::FVector2D{ 0.0f, 0.0f }
             );
         }
     }
@@ -1021,7 +1021,7 @@ namespace Shadow {
         if (!g_Ctx.Canvas || !font) return { 0.f, 0.f };
 
         float finalScale = scaleVal * g_Ctx.Style.FontScaleDpi;
-        SDK::FVector2D scale{ static_cast<double>(finalScale), static_cast<double>(finalScale) };
+        SDK::FVector2D scale{ static_cast<float>(finalScale), static_cast<float>(finalScale) };
 
         std::wstring wstr = ToWString(text);
         SDK::FVector2D size = g_Ctx.Canvas->K2_TextSize(font, SDK::FString(wstr.c_str()), scale);
@@ -1038,7 +1038,7 @@ namespace Shadow {
         if (!g_Ctx.Canvas || !font) return 0.f;
 
         float finalScale = scaleVal * g_Ctx.Style.FontScaleDpi;
-        SDK::FVector2D scale{ static_cast<double>(finalScale), static_cast<double>(finalScale) };
+        SDK::FVector2D scale{ static_cast<float>(finalScale), static_cast<float>(finalScale) };
 
         std::wstring single(1, ch);
         SDK::FVector2D size = g_Ctx.Canvas->K2_TextSize(font, SDK::FString(single.c_str()), scale);
@@ -1149,16 +1149,16 @@ namespace Shadow {
         if (!shouldDraw || clippedText.empty()) return;
 
         float finalScale = scaleVal * g_Ctx.Style.FontScaleDpi;
-        SDK::FVector2D scale{ static_cast<double>(finalScale), static_cast<double>(finalScale) };
+        SDK::FVector2D scale{ static_cast<float>(finalScale), static_cast<float>(finalScale) };
 
         SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
-        SDK::FVector2D uePos{ static_cast<double>(clippedPos.x), static_cast<double>(clippedPos.y) };
+        SDK::FVector2D uePos{ static_cast<float>(clippedPos.x), static_cast<float>(clippedPos.y) };
 
         Color sCol = g_Ctx.Style.Colors[GuiCol_TextShadow];
         Color oCol = g_Ctx.Style.Colors[GuiCol_TextOutline];
         SDK::FLinearColor shadow{ sCol.r, sCol.g, sCol.b, sCol.a };
-        SDK::FLinearColor outline{ oCol.r, oCol.g, oCol.b, oCol.a }; 
-        SDK::FVector2D shadowOff{ 1.0, 1.0 };
+        SDK::FLinearColor outline{ oCol.r, oCol.g, oCol.b, oCol.a };
+        SDK::FVector2D shadowOff{ 1.0f, 1.0f };
 
         std::wstring wstr = ToWString(clippedText);
         g_Ctx.Canvas->K2_DrawText(font, SDK::FString(wstr.c_str()), uePos, scale, ueColor,
@@ -2304,9 +2304,9 @@ namespace Shadow {
         if (g_Ctx.Canvas && IsRectFullyVisible(triPos, { triSize, triSize })) {
             Color dtCol = g_Ctx.Style.Colors[GuiCol_TextDisabled];
             SDK::FLinearColor ueColor{ dtCol.r, dtCol.g, dtCol.b, dtCol.a };
-            SDK::FVector2D p1{ static_cast<double>(triPos.x), static_cast<double>(triPos.y) };
-            SDK::FVector2D p2{ static_cast<double>(triPos.x + triSize), static_cast<double>(triPos.y) };
-            SDK::FVector2D p3{ static_cast<double>(triPos.x + triSize / 2.f), static_cast<double>(triPos.y + triSize) };
+            SDK::FVector2D p1{ static_cast<float>(triPos.x), static_cast<float>(triPos.y) };
+            SDK::FVector2D p2{ static_cast<float>(triPos.x + triSize), static_cast<float>(triPos.y) };
+            SDK::FVector2D p3{ static_cast<float>(triPos.x + triSize / 2.f), static_cast<float>(triPos.y + triSize) };
             g_Ctx.Canvas->K2_DrawLine(p1, p2, 1.0f, ueColor);
             g_Ctx.Canvas->K2_DrawLine(p2, p3, 1.0f, ueColor);
             g_Ctx.Canvas->K2_DrawLine(p3, p1, 1.0f, ueColor);

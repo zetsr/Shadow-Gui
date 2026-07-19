@@ -56,9 +56,6 @@ namespace Hook {
         // 始终处理全局热键（菜单打开或关闭都需要）
         Shadow::ProcessGlobalHotkeys(hwnd, uMsg, wParam, lParam);
 
-        // 处理输入（鼠标坐标、点击等，菜单打开时需要）
-        Shadow::Input(hwnd, uMsg, wParam, lParam);
-
         // 菜单切换键处理（如果正在分配热键，则不切换菜单）
         if (uMsg == WM_KEYDOWN && wParam == keyMenu && !Shadow::g_Ctx.AssigningHotkey) {
             bool isFirstPress = ((lParam & (1 << 30)) == 0);
@@ -69,24 +66,38 @@ namespace Hook {
         }
 
         if (bShowMenu || currentAlpha > 0.001f) {
-            // 如果是鼠标消息，且不在白名单里，直接阻塞
-            if (!Shadow::IsMouseMsgAllowed(uMsg)) {
-                return 1;
-            }
-
             // 键盘消息处理
             if (uMsg == WM_KEYDOWN || uMsg == WM_KEYUP || uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP || uMsg == WM_CHAR) {
+                // 如果是切换键本身，放行给游戏（防止菜单无法关闭）
+                if (wParam == keyMenu) {
+                    return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
+                }
+
                 // 如果是已注册的全局热键，放行给游戏（热键状态已在 ProcessGlobalHotkeys 中更新）
                 if (Shadow::IsHotkeyRegistered(static_cast<int>(wParam))) {
                     return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
                 }
 
                 // 如果不在允许列表中，阻塞该按键
-                if (!Shadow::IsKeyAllowed(static_cast<int>(wParam))) {
-                    return 1;
+                if (Shadow::IsKeyAllowed(static_cast<int>(wParam))) {
+                    return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
                 }
+
+                // 其余菜单所需的键盘输入（如录入热键、打字），交由框架处理并阻塞游戏输入
+                Shadow::Input(hwnd, uMsg, wParam, lParam);
+                return 1;
+            }
+
+            // 如果是鼠标消息，且不在白名单里，直接阻塞
+            if (!Shadow::IsMouseMsgAllowed(uMsg)) {
+                // 处理输入（鼠标坐标、点击等，菜单打开时需要）
+                Shadow::Input(hwnd, uMsg, wParam, lParam);
+                return 1;
             }
         }
+
+        // 处理输入（鼠标坐标、点击等，菜单打开时需要）
+        Shadow::Input(hwnd, uMsg, wParam, lParam);
 
         return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
     }
@@ -361,7 +372,7 @@ namespace Hook {
     }
 
     void FindPostRender() {
-        std::string pattern = "48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89";
+        std::string pattern = "8B C2 35 ?? ?? ?? ?? 44";
 
              // ASA 8B C2 35 ?? ?? ?? ?? 44
         // DRACONIA 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89

@@ -59,7 +59,6 @@ namespace Hook {
         // 菜单切换键处理（如果正在分配热键，则不切换菜单）
         if (uMsg == WM_KEYDOWN && wParam == keyMenu && !Shadow::g_Ctx.AssigningHotkey) {
             bool isFirstPress = ((lParam & (1 << 30)) == 0);
-
             if (isFirstPress) {
                 bShowMenu = !bShowMenu;
             }
@@ -78,27 +77,32 @@ namespace Hook {
                     return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
                 }
 
-                // 如果不在允许列表中，阻塞该按键
+                // 先让框架处理按键（更新 KeyPressed, KeyStates 等）
+                Shadow::Input(hwnd, uMsg, wParam, lParam);
+
+                // 如果是允许放行的按键，再转发给游戏
                 if (Shadow::IsKeyAllowed(static_cast<int>(wParam))) {
+                    // 注意：这里不能再次调用 Shadow::Input，因为上面已经调用过了
                     return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
                 }
 
-                // 其余菜单所需的键盘输入（如录入热键、打字），交由框架处理并阻塞游戏输入
-                Shadow::Input(hwnd, uMsg, wParam, lParam);
+                // 非允许按键，被菜单吃掉
                 return 1;
             }
 
             // 如果是鼠标消息，且不在白名单里，直接阻塞
             if (!Shadow::IsMouseMsgAllowed(uMsg)) {
-                // 处理输入（鼠标坐标、点击等，菜单打开时需要）
                 Shadow::Input(hwnd, uMsg, wParam, lParam);
                 return 1;
             }
+
+            // 鼠标消息在白名单里，也需要先处理，再放行
+            Shadow::Input(hwnd, uMsg, wParam, lParam);
+            return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
         }
 
-        // 处理输入（鼠标坐标、点击等，菜单打开时需要）
+        // 菜单关闭时，也要处理输入以更新全局鼠标状态
         Shadow::Input(hwnd, uMsg, wParam, lParam);
-
         return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
     }
 
@@ -128,6 +132,7 @@ namespace Hook {
         static SDK::UFont* SansationBold18 = nullptr;
         static SDK::UFont* NotoSansSC = nullptr;
 
+        /*
         // Shadow Gui内部会自动获取引擎默认字体
         if (!Shadow::DefaultFont) {
             if (!OpenSansRegular12) {
@@ -142,11 +147,12 @@ namespace Hook {
 
             if (!NotoSansSC) {
                 SDK::UObject* _Font = SDK::UObject::FindObject("Font NotoSansSC-Regular_Font.NotoSansSC-Regular_Font");
-                if (_Font && _Font->IsA(SDK::UFont::StaticClass())) NotoSansSC = (SDK::UFont*)_Font; Shadow::DefaultFont = NotoSansSC;
+                if (_Font && _Font->IsA(SDK::UFont::StaticClass())) NotoSansSC = (SDK::UFont*)_Font; // Shadow::DefaultFont = NotoSansSC;
             }
 
             // if (SDK::UEngine::GetEngine()) { OpenSansRegular12 = SDK::UEngine::GetEngine()->MediumFont; }
         }
+        */
 
         Shadow::SetAllowedKeys({ 'W', 'A', 'S', 'D', VK_SPACE }); // 放行常用移动按键
 

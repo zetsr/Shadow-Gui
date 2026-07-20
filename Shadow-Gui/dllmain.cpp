@@ -313,6 +313,10 @@ namespace Hook {
                         Shadow::BeginDisabled(bhello);
                         Shadow::Switch(U8("好的！##bnohello_1"), &bnohello);
                         Shadow::EndDisabled();
+
+                        Shadow::Text(U8("这是一段普通文本"));
+                        Shadow::TextDisabled(U8("这是一段禁用颜色的文本"));
+
                         // Shadow::PopFont();
                     }
                     Shadow::EndTabItem();

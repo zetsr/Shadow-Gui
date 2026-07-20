@@ -1495,6 +1495,55 @@ namespace Shadow {
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x; // 强制回归左对齐
     }
 
+    inline void Text(std::string_view text) {
+        if (!g_Ctx.InActiveTab) return;
+
+        Vec2 size = MeasureTextSize(text);
+        if (!IsRectVisible(g_Ctx.Cursor, { size.x, g_Ctx.ItemHeight })) {
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+            return;
+        }
+
+        bool disabled = IsDisabled();
+        Color drawColor;
+
+        if (disabled) {
+            // 禁用状态：使用 GuiCol_TextDisabled
+            drawColor = g_Ctx.Style.Colors[GuiCol_TextDisabled];
+        }
+        else {
+            // 非禁用状态：使用 GuiCol_Text
+            drawColor = g_Ctx.Style.Colors[GuiCol_Text];
+        }
+
+        DrawTextString(text, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, drawColor);
+
+        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
+        g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+    }
+
+    inline void TextDisabled(std::string_view text) {
+        if (!g_Ctx.InActiveTab) return;
+
+        Vec2 size = MeasureTextSize(text);
+        if (!IsRectVisible(g_Ctx.Cursor, { size.x, g_Ctx.ItemHeight })) {
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+            return;
+        }
+
+        // 始终使用 GuiCol_TextDisabled，忽略当前的禁用状态
+        Color drawColor = g_Ctx.Style.Colors[GuiCol_TextDisabled];
+
+        DrawTextString(text, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, drawColor);
+
+        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
+        g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+    }
+
     inline void NewFrame(SDK::UCanvas* Canvas) {
         g_Ctx.Canvas = Canvas;
         if (!g_Ctx.DefaultFont) {

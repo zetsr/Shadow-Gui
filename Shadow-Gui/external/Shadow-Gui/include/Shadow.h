@@ -105,6 +105,29 @@ namespace Shadow {
     };
     using ShadowColorPickerFlags = int;
 
+    enum ShadowSliderFlags_ {
+        ShadowSliderFlags_None = 0,
+        ShadowSliderFlags_NoText = 1 << 0,
+        ShadowSliderFlags_NoRightAlign = 1 << 1,
+    };
+    using ShadowSliderFlags = int;
+
+    enum ShadowHotkeyFlags_ {
+        ShadowHotkeyFlags_None = 0,
+        ShadowHotkeyFlags_NoText = 1 << 0,
+        ShadowHotkeyFlags_NoRightAlign = 1 << 1,
+    };
+    using ShadowHotkeyFlags = int;
+
+    enum ShadowComboFlags_ {
+        ShadowComboFlags_None = 0,
+        ShadowComboFlags_NoText = 1 << 0,
+        ShadowComboFlags_NoRightAlign = 1 << 1,
+        ShadowComboFlags_FitText = 1 << 2,
+    };
+    using ShadowComboFlags = int;
+
+
     struct GuiStyle {
         Color Colors[GuiCol_COUNT];
 
@@ -2273,7 +2296,7 @@ namespace Shadow {
         g_Ctx.InActiveTab = true;
     }
 
-    inline bool Combo(std::string_view name, int* current_item, const std::vector<std::string>& items) {
+    inline bool Combo(std::string_view name, int* current_item, const std::vector<std::string>& items, ShadowComboFlags flags = ShadowComboFlags_None) {
         if (!g_Ctx.InActiveTab) return false;
         std::string_view display; size_t id; ParseLabel(name, display, id);
 
@@ -2284,16 +2307,52 @@ namespace Shadow {
         }
 
         bool disabled = IsDisabled();
+        bool noText = (flags & ShadowComboFlags_NoText) != 0;
+        bool noRightAlign = (flags & ShadowComboFlags_NoRightAlign) != 0;
+        bool fitText = (flags & ShadowComboFlags_FitText) != 0;
+
+        float textWidth = 0.f;
         Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
-        DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, textColor);
+
+        if (!noText) {
+            DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, textColor);
+            textWidth = MeasureTextSize(display).x;
+        }
 
         float controlOffsetX = GetControlOffsetX();
         float rightMargin = GetRightMargin();
-        float boxWidth = std::max(100.f, g_Ctx.WindowSize.x - controlOffsetX - rightMargin);
 
-        Vec2 boxPos = { g_Ctx.WindowPos.x + controlOffsetX, g_Ctx.Cursor.y };
+        std::string currentText = (*current_item >= 0 && *current_item < static_cast<int>(items.size())) ? items[*current_item] : "Unknown";
+        float triSize = g_Ctx.ItemHeight * 0.4f;
+
+        float boxWidth;
+        if (fitText) {
+            boxWidth = g_Ctx.Style.FramePadding.x + MeasureTextSize(currentText).x + g_Ctx.Style.FramePadding.x + triSize + g_Ctx.Style.FramePadding.x;
+        }
+        else {
+            if (noRightAlign) {
+                float startX = g_Ctx.Cursor.x + (noText ? 0.f : textWidth + 10.f);
+                boxWidth = std::max(50.f, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - startX);
+            }
+            else {
+                boxWidth = std::max(100.f, g_Ctx.WindowSize.x - controlOffsetX - rightMargin);
+            }
+        }
+
+        Vec2 boxPos;
+        if (noRightAlign) {
+            boxPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + 10.f), g_Ctx.Cursor.y };
+        }
+        else {
+            if (fitText) {
+                boxPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - boxWidth, g_Ctx.Cursor.y };
+            }
+            else {
+                boxPos = { g_Ctx.WindowPos.x + controlOffsetX, g_Ctx.Cursor.y };
+            }
+        }
+
         Vec2 boxSize = { boxWidth, g_Ctx.ItemHeight };
-
         bool hovered = !disabled && IsMouseHovering(boxPos, boxSize);
         bool toggled = false;
 
@@ -2315,10 +2374,8 @@ namespace Shadow {
         Color bgColor = disabled ? g_Ctx.Style.Colors[GuiCol_ControlDisabled] : (hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
         DrawRectFilled(boxPos, boxSize, bgColor);
 
-        std::string currentText = (*current_item >= 0 && *current_item < static_cast<int>(items.size())) ? items[*current_item] : "Unknown";
         DrawTextString(currentText, { boxPos.x + g_Ctx.Style.FramePadding.x, boxPos.y + g_Ctx.Style.FramePadding.y }, textColor);
 
-        float triSize = g_Ctx.ItemHeight * 0.4f;
         Vec2 triPos = { boxPos.x + boxSize.x - g_Ctx.Style.FramePadding.x - triSize, boxPos.y + boxSize.y / 2.f - triSize / 2.f };
         if (g_Ctx.Canvas && IsRectFullyVisible(triPos, { triSize, triSize })) {
             Color dtCol = g_Ctx.Style.Colors[GuiCol_TextDisabled];
@@ -2466,7 +2523,7 @@ namespace Shadow {
         return clicked;
     }
 
-    inline void Slider(std::string_view name, float* value, float min_val, float max_val, float step = 0.f) {
+    inline void Slider(std::string_view name, float* value, float min_val, float max_val, float step = 0.f, ShadowSliderFlags flags = ShadowSliderFlags_None) {
         if (!g_Ctx.InActiveTab) return;
         std::string_view display; size_t id; ParseLabel(name, display, id);
 
@@ -2477,6 +2534,16 @@ namespace Shadow {
         }
 
         bool disabled = IsDisabled();
+        bool noText = (flags & ShadowSliderFlags_NoText) != 0;
+        bool noRightAlign = (flags & ShadowSliderFlags_NoRightAlign) != 0;
+
+        float textWidth = 0.f;
+        Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
+        if (!noText) {
+            DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, textColor);
+            textWidth = MeasureTextSize(display).x;
+        }
+
         size_t sliderInputId = id ^ HashString("_sliderInput");
 
         if (g_Ctx.ActiveInputId != sliderInputId) {
@@ -2507,11 +2574,19 @@ namespace Shadow {
         }
         float valBoxWidth = g_Ctx.SliderInputWidthCache[sliderInputId];
 
-        float sliderWidth = std::max(50.f, g_Ctx.WindowSize.x - controlOffsetX - valBoxWidth - g_Ctx.Style.ItemSpacing.x - rightMargin);
+        Vec2 sliderPos;
+        float sliderWidth;
 
-        Vec2 sliderPos = { g_Ctx.WindowPos.x + controlOffsetX, g_Ctx.Cursor.y };
+        if (noRightAlign) {
+            sliderPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + 10.f), g_Ctx.Cursor.y };
+            sliderWidth = std::max(50.f, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - sliderPos.x - valBoxWidth - g_Ctx.Style.ItemSpacing.x);
+        }
+        else {
+            sliderPos = { g_Ctx.WindowPos.x + controlOffsetX, g_Ctx.Cursor.y };
+            sliderWidth = std::max(50.f, g_Ctx.WindowSize.x - controlOffsetX - valBoxWidth - g_Ctx.Style.ItemSpacing.x - rightMargin);
+        }
+
         Vec2 size = { sliderWidth, g_Ctx.ItemHeight };
-
         Vec2 valBoxPos = { sliderPos.x + sliderWidth + g_Ctx.Style.ItemSpacing.x, sliderPos.y };
         Vec2 valBoxSize = { valBoxWidth, g_Ctx.ItemHeight };
 
@@ -2543,9 +2618,6 @@ namespace Shadow {
                 *value = std::clamp(modifyVal, min_val, max_val);
             }
         }
-
-        Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
-        DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, textColor);
 
         Color bgColor = disabled ? g_Ctx.Style.Colors[GuiCol_ControlDisabled] : (hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
         DrawRectFilled(sliderPos, size, bgColor);
@@ -2680,7 +2752,7 @@ namespace Shadow {
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
     }
 
-    inline bool HotKey(std::string_view name, int* hotkey) {
+    inline bool HotKey(std::string_view name, int* hotkey, ShadowHotkeyFlags flags = ShadowHotkeyFlags_None) {
         RegisterHotkey(hotkey, nullptr, nullptr);
 
         if (!g_Ctx.InActiveTab) return false;
@@ -2693,20 +2765,34 @@ namespace Shadow {
         }
 
         bool disabled = IsDisabled();
-        Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
-        DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, textColor);
+        bool noText = (flags & ShadowHotkeyFlags_NoText) != 0;
+        bool noRightAlign = (flags & ShadowHotkeyFlags_NoRightAlign) != 0;
 
-        float controlOffsetX = GetControlOffsetX();
+        float textWidth = 0.f;
+        Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
+
+        if (!noText) {
+            DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, textColor);
+            textWidth = MeasureTextSize(display).x;
+        }
 
         bool isAssigning = (g_Ctx.AssigningHotkey == hotkey);
         std::string keyName = isAssigning ? "[Press Key]" : std::format("[{}]", GetKeyName(*hotkey));
 
         Vec2 btnSize = { MeasureTextSize(keyName).x + g_Ctx.Style.FramePadding.x * 2.f, g_Ctx.ItemHeight };
-        Vec2 btnPos = { g_Ctx.WindowPos.x + controlOffsetX, g_Ctx.Cursor.y };
+        Vec2 btnPos;
+
+        if (noRightAlign) {
+            btnPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + 10.f), g_Ctx.Cursor.y };
+        }
+        else {
+            float rightMargin = GetRightMargin();
+            btnPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - btnSize.x, g_Ctx.Cursor.y };
+        }
 
         bool btnHovered = !disabled && IsMouseHovering(btnPos, btnSize);
         if (btnHovered && g_Ctx.MouseClicked) {
-            g_Ctx.IsDragging = false; // [修复] 防止点按控件导致拖拽窗体
+            g_Ctx.IsDragging = false;
             g_Ctx.AssigningHotkey = hotkey;
             g_Ctx.MouseClicked = false;
         }
@@ -2721,7 +2807,7 @@ namespace Shadow {
         return *hotkey != 0 && g_Ctx.KeyStates[*hotkey];
     }
 
-    inline void HotKey(std::string_view name, int* hotkey, bool* is_active, HotkeyMode* hotkey_mode) {
+    inline void HotKey(std::string_view name, int* hotkey, bool* is_active, HotkeyMode* hotkey_mode, ShadowHotkeyFlags flags = ShadowHotkeyFlags_None) {
         RegisterHotkey(hotkey, hotkey_mode, is_active);
 
         if (!g_Ctx.InActiveTab) return;
@@ -2734,27 +2820,46 @@ namespace Shadow {
         }
 
         bool disabled = IsDisabled();
-        Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
-        DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, textColor);
+        bool noText = (flags & ShadowHotkeyFlags_NoText) != 0;
+        bool noRightAlign = (flags & ShadowHotkeyFlags_NoRightAlign) != 0;
 
-        float controlOffsetX = GetControlOffsetX();
+        float textWidth = 0.f;
+        Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
+
+        if (!noText) {
+            DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, textColor);
+            textWidth = MeasureTextSize(display).x;
+        }
+
         bool isAssigning = (g_Ctx.AssigningHotkey == hotkey);
         std::vector<std::string> modeStrs = { "None", "Hold On", "Toggle On", "Hold Off", "Always On" };
 
         std::string keyName = isAssigning ? "[Press Key]" : std::format("[{}]", GetKeyName(*hotkey));
         Vec2 btnSize = { MeasureTextSize(keyName).x + g_Ctx.Style.FramePadding.x * 2.f, g_Ctx.ItemHeight };
-        Vec2 btnPos = { g_Ctx.WindowPos.x + controlOffsetX, g_Ctx.Cursor.y };
+
+        float dotSize = std::max(6.f, g_Ctx.ItemHeight * 0.4f);
+        float dotOffset = (g_Ctx.ItemHeight - dotSize) / 2.f;
+
+        Vec2 btnPos;
+        if (noRightAlign) {
+            btnPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + 10.f), g_Ctx.Cursor.y };
+        }
+        else {
+            float rightMargin = GetRightMargin();
+            // 在右侧边界处，减去圆点宽度、间距以及按钮本身宽度，确保整个控件群严格贴近右侧Margin
+            btnPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - dotSize - g_Ctx.Style.ItemSpacing.x - btnSize.x, g_Ctx.Cursor.y };
+        }
 
         bool btnHovered = !disabled && IsMouseHovering(btnPos, btnSize);
 
         if (btnHovered) {
             if (g_Ctx.MouseClicked) {
-                g_Ctx.IsDragging = false; // [修复]
+                g_Ctx.IsDragging = false;
                 g_Ctx.AssigningHotkey = hotkey;
                 g_Ctx.MouseClicked = false;
             }
             else if (g_Ctx.RightMouseClicked) {
-                g_Ctx.IsDragging = false; // [修复] 右键同理
+                g_Ctx.IsDragging = false;
 
                 if (g_Ctx.ActiveDropdownId == id) g_Ctx.ActiveDropdownId = 0;
                 else {
@@ -2779,9 +2884,6 @@ namespace Shadow {
         case HotkeyMode::ToggleOn:  *is_active = g_Ctx.HotkeyToggles[*hotkey]; break;
         case HotkeyMode::AlwaysOn:  *is_active = true; break;
         }
-
-        float dotSize = std::max(6.f, g_Ctx.ItemHeight * 0.4f);
-        float dotOffset = (g_Ctx.ItemHeight - dotSize) / 2.f;
 
         Color indicatorColor = *is_active ? g_Ctx.Style.Colors[GuiCol_ActiveIndicator] : g_Ctx.Style.Colors[GuiCol_InactiveIndicator];
         if (disabled) indicatorColor.a *= 0.5f;

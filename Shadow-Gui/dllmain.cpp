@@ -253,7 +253,7 @@ namespace Hook {
                 if (Shadow::BeginTabBar("MainTabs##tabs", currentTabBarFlags)) {
                     if (Shadow::BeginTabItem(U8("设置##tab0"))) {
                         // Shadow::PushFont(SansationBold18, Shadow::GetStyle().FontScaleDpi);
-                        Shadow::HotKey(U8("菜单按键##menu_key"), &keyMenu);
+                        Shadow::HotKey(U8("菜单按键##menu_key"), &keyMenu, Shadow::ShadowHotkeyFlags_NoRightAlign);
 
 						static bool bhello = false;
                         static bool bnohello = false;
@@ -279,9 +279,9 @@ namespace Hook {
                     if (Shadow::BeginTabItem(U8("战斗##tab1"))) {
                         Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
                         Shadow::SameLine();
-                        Shadow::Slider(U8("移动速度##slider_1"), &fSpeed, 1.0f, 10.0f, 0.1f);
-
-                        Shadow::HotKey(U8("自瞄按键##hotkey_1"), &keyAimbot, &bAimbotActive, &modeAimbot);
+                        Shadow::Slider(U8("移动速度##slider_1"), &fSpeed, 1.0f, 10.0f, 0.1f, Shadow::ShadowSliderFlags_NoRightAlign);
+                        Shadow::Slider(U8("移动速度##slider_2"), &fSpeed, 1.0f, 10.0f, 0.1f, Shadow::ShadowSliderFlags_NoRightAlign);
+                        Shadow::HotKey(U8("自瞄按键##hotkey_1"), &keyAimbot, &bAimbotActive, &modeAimbot, Shadow::ShadowHotkeyFlags_NoRightAlign);
 
                         if (Shadow::Button(U8("重置速度##btn_1"))) {
                             fSpeed = 1.0f;
@@ -316,7 +316,7 @@ namespace Hook {
                         Shadow::Checkbox(U8("禁用窗口移动##flag_w_no_move"), &bWindowNoMove);
                         Shadow::Checkbox(U8("禁用窗口滚动条##flag_w_no_scroll"), &bWindowNoScrollbar);
 
-                        Shadow::Combo(U8("标题对齐方式##flag_w_align_combo"), &selectedTextAlign, alignOptions);
+                        Shadow::Combo(U8("标题对齐方式##flag_w_align_combo"), &selectedTextAlign, alignOptions, Shadow::ShadowComboFlags_NoRightAlign | Shadow::ShadowComboFlags_FitText);
                         Shadow::Combo(U8("缩放DPI##dpiscale_combo"), &selecteddpiO, dpiO);
 
                         Shadow::Checkbox(U8("启用标签拖拽##flag_t_reorder"), &bTabReorderable);

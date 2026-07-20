@@ -74,6 +74,7 @@ namespace Shadow {
         GuiCol_SwitchBgActive,
         GuiCol_SwitchBgActiveHovered,
         GuiCol_SwitchKnob,
+        GuiCol_DropdownActive,
 
         GuiCol_COUNT
     };
@@ -372,6 +373,8 @@ namespace Shadow {
         colors[GuiCol_SwitchBgActive] = { 0.520f, 0.220f, 0.220f, 1.000f };
         colors[GuiCol_SwitchBgActiveHovered] = { 0.620f, 0.270f, 0.270f, 1.000f };
         colors[GuiCol_SwitchKnob] = { 0.750f, 0.750f, 0.750f, 1.000f };
+
+        colors[GuiCol_DropdownActive] = { 0.028f, 0.036f, 0.049f, 1.000f };
     }
 
     // 紫曜主题
@@ -428,6 +431,8 @@ namespace Shadow {
         colors[GuiCol_SwitchBgActive] = { 0.560f, 0.360f, 0.780f, 1.000f };
         colors[GuiCol_SwitchBgActiveHovered] = { 0.660f, 0.460f, 0.880f, 1.000f };
         colors[GuiCol_SwitchKnob] = { 0.750f, 0.750f, 0.750f, 1.000f };
+
+        colors[GuiCol_DropdownActive] = { 0.120f, 0.088f, 0.160f, 0.875f };
     }
 
     inline Vec2 GetWindowSize() {
@@ -1524,16 +1529,24 @@ namespace Shadow {
                 Vec2 itemPos = { dropPos.x, dropPos.y + i * g_Ctx.ItemHeight };
                 bool itemHovered = IsMouseHoveringRaw(itemPos, { dropWidth, g_Ctx.ItemHeight });
 
+                // 判断此项是否为当前的选中状态（Hotkey当前模式 / Combo当前选择项）
+                bool isCurrentItem = (*g_Ctx.DropdownCurrentItem == static_cast<int>(i));
+
                 if (itemHovered) {
-                    DrawRect(itemPos, { dropWidth, g_Ctx.ItemHeight }, g_Ctx.Style.Colors[GuiCol_FrameBgHovered]);
+                    // 鼠标悬停时的最高亮背景色
+                    DrawRectFilled(itemPos, { dropWidth, g_Ctx.ItemHeight }, g_Ctx.Style.Colors[GuiCol_FrameBgHovered]);
                     if (g_Ctx.MouseClicked) {
                         *g_Ctx.DropdownCurrentItem = static_cast<int>(i);
                         g_Ctx.ActiveDropdownId = 0;
                         g_Ctx.MouseClicked = false;
                     }
                 }
+                else if (isCurrentItem) {
+                    // 当处于当前状态、且没有被鼠标指向时，使用较暗的高亮背景色
+                    DrawRectFilled(itemPos, { dropWidth, g_Ctx.ItemHeight }, g_Ctx.Style.Colors[GuiCol_DropdownActive]);
+                }
 
-                Color textColor = (*g_Ctx.DropdownCurrentItem == static_cast<int>(i)) ? g_Ctx.Style.Colors[GuiCol_TextHighlight] : g_Ctx.Style.Colors[GuiCol_Text];
+                Color textColor = isCurrentItem ? g_Ctx.Style.Colors[GuiCol_TextHighlight] : g_Ctx.Style.Colors[GuiCol_Text];
                 DrawTextString(g_Ctx.DropdownItems[i], { itemPos.x + g_Ctx.Style.FramePadding.x, itemPos.y + g_Ctx.Style.FramePadding.y }, textColor);
             }
 

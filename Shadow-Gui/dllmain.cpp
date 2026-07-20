@@ -106,6 +106,47 @@ namespace Hook {
         return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
     }
 
+    void HelpMarker(std::string_view desc) {
+        // 1. 同行紧跟上一个控件
+        Shadow::SameLine();
+
+        // 2. 记录当前 (?) 准备绘制的绝对坐标
+        Shadow::Vec2 pos = Shadow::g_Ctx.Cursor;
+        Shadow::Vec2 textSize = Shadow::MeasureTextSize("(?)");
+        Shadow::Vec2 itemSize = { textSize.x, Shadow::g_Ctx.ItemHeight };
+
+        // 3. 绘制带有禁用文本颜色的 (?) 标识
+        Shadow::TextColored(Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_TextDisabled], "(?)");
+
+        // 4. 判断鼠标是否悬停在刚才绘制的 (?) 上
+        if (Shadow::IsMouseHovering(pos, itemSize)) {
+            // 计算提示文本的尺寸与背景框尺寸
+            Shadow::Vec2 descSize = Shadow::MeasureTextSize(desc);
+            Shadow::Vec2 boxSize = {
+                descSize.x + Shadow::g_Ctx.Style.FramePadding.x * 2.f,
+                descSize.y + Shadow::g_Ctx.Style.FramePadding.y * 2.f
+            };
+
+            // 提示框生成的绝对坐标（在鼠标右下方偏移一些，防止遮挡指针）
+            Shadow::Vec2 tooltipPos = { Shadow::g_Ctx.MousePos.x + 15.f, Shadow::g_Ctx.MousePos.y + 15.f };
+
+            // 5. 渲染 Tooltip 样式（使用暗色弹窗背景与高亮文本）
+            // 关键：为了防止提示框被当前窗口的裁剪区（ClipRect）切掉，可以在绘制前临时清除裁剪，绘制后恢复
+            bool oldClipping = Shadow::g_Ctx.ClippingEnabled;
+            Shadow::g_Ctx.ClippingEnabled = false;
+
+            // 绘制背景与边框
+            Shadow::DrawRectFilled(tooltipPos, boxSize, Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_PopupBg]);
+            Shadow::DrawRect(tooltipPos, boxSize, Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_PopupBorder]);
+
+            // 绘制提示文本
+            Shadow::Vec2 textPos = { tooltipPos.x + Shadow::g_Ctx.Style.FramePadding.x, tooltipPos.y + Shadow::g_Ctx.Style.FramePadding.y };
+            Shadow::DrawTextString(desc, textPos, Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_TextHighlight]);
+
+            Shadow::g_Ctx.ClippingEnabled = oldClipping;
+        }
+    }
+
     typedef void(__fastcall* tPostRender)(SDK::UGameViewportClient* _this, SDK::UCanvas* Canvas);
     tPostRender oPostRender = nullptr;
 
@@ -282,6 +323,7 @@ namespace Hook {
                         Shadow::Slider(U8("移动速度##slider_1"), &fSpeed, 1.0f, 10.0f, 0.1f, Shadow::ShadowSliderFlags_NoRightAlign);
                         Shadow::Slider(U8("移动速度##slider_2"), &fSpeed, 1.0f, 10.0f, 0.1f, Shadow::ShadowSliderFlags_NoRightAlign);
                         Shadow::HotKey(U8("自瞄按键##hotkey_1"), &keyAimbot, &bAimbotActive, &modeAimbot, Shadow::ShadowHotkeyFlags_NoRightAlign | Shadow::ShadowHotkeyFlags_NoStateDisplay);
+                        HelpMarker("开启后按下热键会自动锁定敌方目标。"); // 紧跟在控件后面
 
                         if (Shadow::Button(U8("重置速度##btn_1"))) {
                             fSpeed = 1.0f;

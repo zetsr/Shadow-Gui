@@ -816,6 +816,7 @@ namespace Shadow {
             g_Ctx.MousePos.x = static_cast<float>(LOWORD(lParam));
             g_Ctx.MousePos.y = static_cast<float>(HIWORD(lParam));
             break;
+        case WM_LBUTTONDBLCLK:  // [新增] 补充鼠标左键双击消息，防止快速连点丢失事件
         case WM_LBUTTONDOWN: {
             // [新增] 判断之前是否处于按住状态，防止按键连发 spam 导致的连续触发
             bool wasDown = g_Ctx.KeyStates[VK_LBUTTON];
@@ -832,6 +833,7 @@ namespace Shadow {
             g_Ctx.IsDragging = false;
             g_Ctx.IsResizing = false;
             break;
+        case WM_RBUTTONDBLCLK:  // [新增] 补充鼠标右键双击消息
         case WM_RBUTTONDOWN: {
             bool wasDown = g_Ctx.KeyStates[VK_RBUTTON];
             if (HandleKeyDown(VK_RBUTTON)) return 0;
@@ -845,8 +847,10 @@ namespace Shadow {
             HandleKeyUp(VK_RBUTTON);
             g_Ctx.RightMouseDown = false;
             break;
+        case WM_MBUTTONDBLCLK:  // [新增] 补充鼠标中键双击消息
         case WM_MBUTTONDOWN: if (HandleKeyDown(VK_MBUTTON)) return 0; break;
         case WM_MBUTTONUP:   HandleKeyUp(VK_MBUTTON); break;
+        case WM_XBUTTONDBLCLK:  // [新增] 补充鼠标侧键双击消息 (解决 Hold On 模式丢失触发的 BUG)
         case WM_XBUTTONDOWN: {
             int vk = (HIWORD(wParam) == XBUTTON1) ? VK_XBUTTON1 : VK_XBUTTON2;
             if (HandleKeyDown(vk)) return 0;
@@ -1969,21 +1973,24 @@ namespace Shadow {
         g_Ctx.CurrentTabBarFlags = flags;
         g_Ctx.CurrentTabBarId = id;
 
+        // [修改] 提前在 BeginTabBar 处理松开鼠标时的拖拽状态清理，防止 TabItem 松开瞬间消失一帧
+        if (!g_Ctx.MouseDown && g_Ctx.DraggingTabBarId == id) {
+            g_Ctx.DraggingTabId = 0;
+            g_Ctx.DraggingTabBarId = 0;
+        }
+
         g_Ctx.TabCursor = g_Ctx.Cursor;
         g_Ctx.TabBarOrigin = g_Ctx.Cursor;
 
         bool fittingScroll = (flags & ShadowTabBarFlags_FittingPolicyScroll) != 0;
         bool noScrollbar = (flags & ShadowTabBarFlags_NoScrollbar) != 0;
 
-        // 根据上一帧记录的内容宽度，判断本帧是否需要为水平滚动条预留高度
         float prevContentWidth = g_Ctx.TabBarContentWidth;
         float viewWidth = g_Ctx.WindowSize.x - (g_Ctx.Style.WindowPadding.x * 2.f);
         g_Ctx.TabBarViewWidth = viewWidth;
         bool needsScrollbar = fittingScroll && !noScrollbar && (prevContentWidth > viewWidth);
         g_Ctx.TabBarNeedsScrollbar = needsScrollbar;
 
-        // 在清空显示缓存之前，先用“上一帧的 Tab 宽度缓存”重新计算本帧稳定布局表
-        // 这样 BeginTabItem 内部就不再需要依赖“本帧尚未填充完的缓存”，从根本上消除重叠/坐标错乱问题。
         {
             auto& order = g_Ctx.TabOrderMap[id];
             auto& layout = g_Ctx.TabBarLayoutX[id];
@@ -1998,16 +2005,13 @@ namespace Shadow {
             }
         }
 
-        // 本帧内容宽度重新累积（用于下一帧滚动条判断，与上面的布局表计算相互独立）
         g_Ctx.TabBarContentWidthAccum = 0.f;
 
-        // 清空本帧显示信息缓存（仅用于可视裁剪/调试，不再参与位置计算）
         g_Ctx.TabBarDisplayCache[id].clear();
         g_Ctx.TabAppearedThisFrame[id].clear();
 
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
 
-        // 若需要滚动条，为其预留空间
         float scrollbarReserve = needsScrollbar ? (g_Ctx.Style.ScrollbarSize + 4.f) : 0.f;
         g_Ctx.Cursor.y += scrollbarReserve;
 
@@ -2238,7 +2242,6 @@ namespace Shadow {
             tabPos = { g_Ctx.TabBarOrigin.x + offsetX - scrollX, g_Ctx.TabBarOrigin.y };
         }
 
-        // [修改] 记录当前标签生成时的字体和缩放上下文
         SDK::UFont* currentFont = g_Ctx.DefaultFont;
         float currentScale = 1.0f;
         if (!g_Ctx.FontStack.empty()) {
@@ -2269,6 +2272,7 @@ namespace Shadow {
                 g_Ctx.DraggingTabBarId = tabBarId;
                 g_Ctx.DraggingTabGrabOffsetX = g_Ctx.MousePos.x - tabPos.x;
                 g_Ctx.DraggingTabCurrentX = tabPos.x;
+                isDraggingSelf = true; // [修改] 手动更新标记，防止当前帧继续触发下方的原生绘制，从而避免重叠闪烁
             }
             g_Ctx.MouseClicked = false;
         }

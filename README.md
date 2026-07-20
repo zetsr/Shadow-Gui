@@ -5,8 +5,6 @@
 ### ☕ 赞助 / Buy me a coffee
 
 * 您可以通过赞助支持我们的开发，感谢大家的支持！
-* You can support our development through sponsorship, thank you for your support!
-* **USDT (TRC-20):** `THzBDDbBkDh3nXRkCEeG4p5r733tWeAdib`
 * If this project helps you, feel free to support my work!
 * **USDT (TRC-20):** `THzBDDbBkDh3nXRkCEeG4p5r733tWeAdib`
 

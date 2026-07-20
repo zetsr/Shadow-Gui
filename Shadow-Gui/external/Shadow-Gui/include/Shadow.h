@@ -170,12 +170,10 @@ namespace Shadow {
         bool IsDragging = false;
         Vec2 DragOffset = { 0.f, 0.f };
 
-        // --- 第五个问题：窗口尺寸约束状态 ---
         bool HasWindowSizeConstraints = false;
         Vec2 WindowSizeConstraintMin = { 0.f, 0.f };
         Vec2 WindowSizeConstraintMax = { 10000.f, 10000.f };
 
-        // --- 第八个问题：Font 栈 ---
         std::vector<FontContext> FontStack;
 
         int BeginStack = 0;
@@ -239,10 +237,7 @@ namespace Shadow {
         std::unordered_map<size_t, float> SliderInputWidthCache;
         std::unordered_map<size_t, size_t> SliderInputLengthCache;
 
-        // --- 问题3：窗口行为 Flags ---
         ShadowWindowFlags CurrentWindowFlags = ShadowWindowFlags_None;
-
-        // --- 问题5：TabBar 相关状态 ---
         ShadowTabBarFlags CurrentTabBarFlags = ShadowTabBarFlags_None;
         size_t CurrentTabBarId = 0;
 
@@ -785,22 +780,31 @@ namespace Shadow {
             g_Ctx.MousePos.x = static_cast<float>(LOWORD(lParam));
             g_Ctx.MousePos.y = static_cast<float>(HIWORD(lParam));
             break;
-        case WM_LBUTTONDOWN:
+        case WM_LBUTTONDOWN: {
+            // [新增] 判断之前是否处于按住状态，防止按键连发 spam 导致的连续触发
+            bool wasDown = g_Ctx.KeyStates[VK_LBUTTON];
             if (HandleKeyDown(VK_LBUTTON)) return 0;
             g_Ctx.MouseDown = true;
-            g_Ctx.MouseClicked = true;
+            if (!wasDown) {
+                g_Ctx.MouseClicked = true;
+            }
             break;
+        }
         case WM_LBUTTONUP:
             HandleKeyUp(VK_LBUTTON);
             g_Ctx.MouseDown = false;
             g_Ctx.IsDragging = false;
             g_Ctx.IsResizing = false;
             break;
-        case WM_RBUTTONDOWN:
+        case WM_RBUTTONDOWN: {
+            bool wasDown = g_Ctx.KeyStates[VK_RBUTTON];
             if (HandleKeyDown(VK_RBUTTON)) return 0;
             g_Ctx.RightMouseDown = true;
-            g_Ctx.RightMouseClicked = true;
+            if (!wasDown) {
+                g_Ctx.RightMouseClicked = true;
+            }
             break;
+        }
         case WM_RBUTTONUP:
             HandleKeyUp(VK_RBUTTON);
             g_Ctx.RightMouseDown = false;
@@ -1903,8 +1907,11 @@ namespace Shadow {
 
         if (!g_Ctx.MouseDown) g_Ctx.IsResizing = false;
         RenderPopups();
+
+        // [修复] 去除 MouseReleased
         g_Ctx.MouseClicked = false;
         g_Ctx.RightMouseClicked = false;
+
         memset(g_Ctx.KeyPressed, 0, sizeof(g_Ctx.KeyPressed));
         CheckAndDrawErrors();
         g_Ctx.InputChars.clear();
@@ -1931,7 +1938,7 @@ namespace Shadow {
         bool needsScrollbar = fittingScroll && !noScrollbar && (prevContentWidth > viewWidth);
         g_Ctx.TabBarNeedsScrollbar = needsScrollbar;
 
-        // --- 关键修复：在清空显示缓存之前，先用“上一帧的 Tab 宽度缓存”重新计算本帧稳定布局表 ---
+        // 在清空显示缓存之前，先用“上一帧的 Tab 宽度缓存”重新计算本帧稳定布局表
         // 这样 BeginTabItem 内部就不再需要依赖“本帧尚未填充完的缓存”，从根本上消除重叠/坐标错乱问题。
         {
             auto& order = g_Ctx.TabOrderMap[id];
@@ -2281,7 +2288,11 @@ namespace Shadow {
         Vec2 boxSize = { boxWidth, g_Ctx.ItemHeight };
 
         bool hovered = !disabled && IsMouseHovering(boxPos, boxSize);
+        bool toggled = false;
+
         if (hovered && g_Ctx.MouseClicked) {
+            g_Ctx.IsDragging = false; // [修复] 防止按住控件时触发了窗体拖拽
+
             if (g_Ctx.ActiveDropdownId == id) g_Ctx.ActiveDropdownId = 0;
             else {
                 g_Ctx.ActiveDropdownId = id;
@@ -2290,7 +2301,8 @@ namespace Shadow {
                 g_Ctx.DropdownPos = { boxPos.x, boxPos.y + boxSize.y };
                 g_Ctx.DropdownSize = { boxWidth, 0.f };
             }
-            g_Ctx.MouseClicked = false;
+            g_Ctx.MouseClicked = false; // 消费掉事件
+            toggled = true;
         }
 
         Color bgColor = disabled ? g_Ctx.Style.Colors[GuiCol_ControlDisabled] : (hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
@@ -2315,7 +2327,8 @@ namespace Shadow {
         g_Ctx.LastItemMaxX = boxPos.x + boxSize.x; // [修改] 记录边界
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x; // [修改] 重置X坐标
-        return hovered && g_Ctx.MouseClicked;
+
+        return toggled;
     }
 
     inline void Checkbox(std::string_view name, bool* value) {
@@ -2589,7 +2602,10 @@ namespace Shadow {
         Vec2 boxPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - boxSize.x, g_Ctx.Cursor.y };
 
         bool hovered = IsMouseHovering(boxPos, boxSize);
+
         if (hovered && g_Ctx.MouseClicked) {
+            g_Ctx.IsDragging = false; // [修复] 防止按住控件时触发了窗体拖拽
+
             if (g_Ctx.ActiveColorPickerId == id) g_Ctx.ActiveColorPickerId = 0;
             else {
                 g_Ctx.ActiveColorPickerId = id;
@@ -2604,7 +2620,6 @@ namespace Shadow {
 
         float globalAlpha = g_Ctx.Style.Colors[GuiCol_ColorPickerLight].a;
 
-        // 修复1：使用主题色代替硬编码棋盘格颜色
         Color cbLight = g_Ctx.Style.Colors[GuiCol_CheckerboardLight];
         Color cbDark = g_Ctx.Style.Colors[GuiCol_CheckerboardDark];
 
@@ -2667,6 +2682,7 @@ namespace Shadow {
 
         bool btnHovered = !disabled && IsMouseHovering(btnPos, btnSize);
         if (btnHovered && g_Ctx.MouseClicked) {
+            g_Ctx.IsDragging = false; // [修复] 防止点按控件导致拖拽窗体
             g_Ctx.AssigningHotkey = hotkey;
             g_Ctx.MouseClicked = false;
         }
@@ -2709,10 +2725,13 @@ namespace Shadow {
 
         if (btnHovered) {
             if (g_Ctx.MouseClicked) {
+                g_Ctx.IsDragging = false; // [修复]
                 g_Ctx.AssigningHotkey = hotkey;
                 g_Ctx.MouseClicked = false;
             }
             else if (g_Ctx.RightMouseClicked) {
+                g_Ctx.IsDragging = false; // [修复] 右键同理
+
                 if (g_Ctx.ActiveDropdownId == id) g_Ctx.ActiveDropdownId = 0;
                 else {
                     g_Ctx.ActiveDropdownId = id;

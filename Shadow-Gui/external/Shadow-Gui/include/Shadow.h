@@ -2667,15 +2667,14 @@ namespace Shadow {
         bool changed = InputTextEx(sliderInputId, valBoxPos, valBoxSize, g_Ctx.InputBuffers[sliderInputId]);
 
         if (changed && !disabled) {
-            try {
-                size_t processed = 0;
-                float newVal = std::stof(g_Ctx.InputBuffers[sliderInputId], &processed);
-                if (processed > 0) {
-                    if (step > 0.f) newVal = std::round(newVal / step) * step;
-                    *value = std::clamp(newVal, min_val, max_val);
-                }
+            const std::string& str = g_Ctx.InputBuffers[sliderInputId];
+            float newVal;
+            auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), newVal);
+
+            if (ec == std::errc() && ptr > str.data()) {
+                if (step > 0.f) newVal = std::round(newVal / step) * step;
+                *value = std::clamp(newVal, min_val, max_val);
             }
-            catch (...) {}
         }
 
         g_Ctx.LastItemMaxX = valBoxPos.x + valBoxSize.x;

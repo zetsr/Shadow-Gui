@@ -327,7 +327,6 @@ namespace Hook {
 
                     // 修改 Visuals 标签为中文，并添加新的内容
                     if (Shadow::BeginTabItem(U8("视觉##tab2"))) {
-                        Shadow::ColorPicker(U8("ESP颜色##cp_1"), &cESP.r, &cESP.g, &cESP.b, &cESP.a);
 
                         // 添加目标选择下拉框
                         Shadow::Combo(U8("目标选择##target_combo"), &selectedTarget, targetOptions);
@@ -335,8 +334,14 @@ namespace Hook {
                         // 根据选择的目标显示对应的选项
                         if (selectedTarget == 0) {
                             Shadow::Checkbox(U8("敌人 - 血量##health_enemy"), &showHealth[0]);
+                            Shadow::SameLine();
+                            Shadow::ColorPicker(U8("ESP颜色##cp_1"), &cESP.r, &cESP.g, &cESP.b, &cESP.a, Shadow::ShadowColorPickerFlags_NoText);
                             Shadow::Checkbox(U8("敌人 - 方框##box_enemy"), &showBox[0]);
+                            Shadow::SameLine();
+                            Shadow::ColorPicker(U8("ESP颜色##cp_2"), &cESP.r, &cESP.g, &cESP.b, &cESP.a, Shadow::ShadowColorPickerFlags_NoText | Shadow::ShadowColorPickerFlags_NoRightAlign);
                             Shadow::Checkbox(U8("敌人 - 按钮##button_enemy"), &showButton[0]);
+                            Shadow::SameLine();
+                            Shadow::ColorPicker(U8("ESP颜色##cp_3"), &cESP.r, &cESP.g, &cESP.b, &cESP.a);
                         }
                         else if (selectedTarget == 1) {
                             Shadow::Checkbox(U8("队友 - 血量##health_teammate"), &showHealth[1]);

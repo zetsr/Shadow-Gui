@@ -98,6 +98,13 @@ namespace Shadow {
     };
     using ShadowTabBarFlags = int;
 
+    enum ShadowColorPickerFlags_ {
+        ShadowColorPickerFlags_None = 0,
+        ShadowColorPickerFlags_NoText = 1 << 0,
+        ShadowColorPickerFlags_NoRightAlign = 1 << 1,
+    };
+    using ShadowColorPickerFlags = int;
+
     struct GuiStyle {
         Color Colors[GuiCol_COUNT];
 
@@ -2586,25 +2593,40 @@ namespace Shadow {
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
     }
 
-    inline void ColorPicker(std::string_view name, float* r, float* g, float* b, float* a) {
+    inline void ColorPicker(std::string_view name, float* r, float* g, float* b, float* a, ShadowColorPickerFlags flags = ShadowColorPickerFlags_None) {
         if (!g_Ctx.InActiveTab) return;
         std::string_view display; size_t id; ParseLabel(name, display, id);
 
         if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
             g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x; // 视口外裁剪时也需要重置X坐标
             return;
         }
 
-        DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, g_Ctx.Style.Colors[GuiCol_Text]);
+        bool noText = (flags & ShadowColorPickerFlags_NoText) != 0;
+        bool noRightAlign = (flags & ShadowColorPickerFlags_NoRightAlign) != 0;
 
-        float rightMargin = GetRightMargin();
+        float textWidth = 0.f;
+        if (!noText) {
+            DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, g_Ctx.Style.Colors[GuiCol_Text]);
+            textWidth = MeasureTextSize(display).x;
+        }
+
         Vec2 boxSize = { g_Ctx.ItemHeight, g_Ctx.ItemHeight };
-        Vec2 boxPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - boxSize.x, g_Ctx.Cursor.y };
+        Vec2 boxPos;
+
+        if (noRightAlign) {
+            boxPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + 10.f), g_Ctx.Cursor.y };
+        }
+        else {
+            float rightMargin = GetRightMargin();
+            boxPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - boxSize.x, g_Ctx.Cursor.y };
+        }
 
         bool hovered = IsMouseHovering(boxPos, boxSize);
 
         if (hovered && g_Ctx.MouseClicked) {
-            g_Ctx.IsDragging = false; // [修复] 防止按住控件时触发了窗体拖拽
+            g_Ctx.IsDragging = false; // 防止按住控件时触发了窗体拖拽
 
             if (g_Ctx.ActiveColorPickerId == id) g_Ctx.ActiveColorPickerId = 0;
             else {
@@ -2653,7 +2675,9 @@ namespace Shadow {
             DrawLine({ boxPos.x, boxPos.y + boxSize.y }, { boxPos.x, boxPos.y }, border);
         }
 
+        g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
     }
 
     inline bool HotKey(std::string_view name, int* hotkey) {

@@ -109,6 +109,7 @@ namespace Shadow {
         ShadowSliderFlags_None = 0,
         ShadowSliderFlags_NoText = 1 << 0,
         ShadowSliderFlags_NoRightAlign = 1 << 1,
+        ShadowHotkeyFlags_NoStateDisplay = 1 << 2,
     };
     using ShadowSliderFlags = int;
 
@@ -2822,6 +2823,7 @@ namespace Shadow {
         bool disabled = IsDisabled();
         bool noText = (flags & ShadowHotkeyFlags_NoText) != 0;
         bool noRightAlign = (flags & ShadowHotkeyFlags_NoRightAlign) != 0;
+        bool noStateDisplay = (flags & ShadowHotkeyFlags_NoStateDisplay) != 0;  // 新增
 
         float textWidth = 0.f;
         Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
@@ -2846,8 +2848,13 @@ namespace Shadow {
         }
         else {
             float rightMargin = GetRightMargin();
-            // 在右侧边界处，减去圆点宽度、间距以及按钮本身宽度，确保整个控件群严格贴近右侧Margin
-            btnPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - dotSize - g_Ctx.Style.ItemSpacing.x - btnSize.x, g_Ctx.Cursor.y };
+            // 如果不需要显示状态指示器，按钮直接贴近右侧边界
+            if (noStateDisplay) {
+                btnPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - btnSize.x, g_Ctx.Cursor.y };
+            }
+            else {
+                btnPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - dotSize - g_Ctx.Style.ItemSpacing.x - btnSize.x, g_Ctx.Cursor.y };
+            }
         }
 
         bool btnHovered = !disabled && IsMouseHovering(btnPos, btnSize);
@@ -2885,11 +2892,15 @@ namespace Shadow {
         case HotkeyMode::AlwaysOn:  *is_active = true; break;
         }
 
-        Color indicatorColor = *is_active ? g_Ctx.Style.Colors[GuiCol_ActiveIndicator] : g_Ctx.Style.Colors[GuiCol_InactiveIndicator];
-        if (disabled) indicatorColor.a *= 0.5f;
-        DrawRectFilled({ btnPos.x + btnSize.x + g_Ctx.Style.ItemSpacing.x, g_Ctx.Cursor.y + dotOffset }, { dotSize, dotSize }, indicatorColor);
+        // 只有在 noStateDisplay 为 false 时才绘制状态指示器
+        if (!noStateDisplay) {
+            Color indicatorColor = *is_active ? g_Ctx.Style.Colors[GuiCol_ActiveIndicator] : g_Ctx.Style.Colors[GuiCol_InactiveIndicator];
+            if (disabled) indicatorColor.a *= 0.5f;
+            DrawRectFilled({ btnPos.x + btnSize.x + g_Ctx.Style.ItemSpacing.x, g_Ctx.Cursor.y + dotOffset }, { dotSize, dotSize }, indicatorColor);
+        }
 
-        g_Ctx.LastItemMaxX = btnPos.x + btnSize.x + g_Ctx.Style.ItemSpacing.x + dotSize;
+        // 更新 LastItemMaxX：如果不需要显示状态指示器，则只到按钮右边界
+        g_Ctx.LastItemMaxX = noStateDisplay ? (btnPos.x + btnSize.x) : (btnPos.x + btnSize.x + g_Ctx.Style.ItemSpacing.x + dotSize);
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
     }

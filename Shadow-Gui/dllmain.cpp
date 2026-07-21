@@ -301,14 +301,36 @@ namespace Hook {
                         Shadow::Separator();
 
                         Shadow::TextDisabled(U8("这是一段禁用颜色的文本"));
-                        Shadow::Text(U8("下方会出现巨大空间"));
-                        Shadow::Dummy({100.f, 50.f});
 
-                        Shadow::PushTextWrapPos(200.f);
-                        Shadow::TextWrapped({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("这是一段超长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长的文本。"));
-                        Shadow::PopTextWrapPos();
-                        
-                        Shadow::TextWrapped({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA The Test Message And Hello The Test Message And Hello The Test Message And Hello"));
+                        if (Shadow::TreeNode(U8("第0个折叠块"), Shadow::ShadowTreeNodeFlags_Framed | Shadow::ShadowTreeNodeFlags_FitText)) {
+                            Shadow::Text(U8("下方会出现巨大空间"));
+                            Shadow::Dummy({ 100.f, 50.f });
+
+                            Shadow::PushTextWrapPos(200.f);
+                            Shadow::TextWrapped({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("这是一段超长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长的文本。"));
+                            Shadow::PopTextWrapPos();
+
+                            Shadow::TextWrapped({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA The Test Message And Hello The Test Message And Hello The Test Message And Hello"));
+
+                        }
+                        Shadow::TreePop();
+
+                        if (Shadow::TreeNode(U8("第一个折叠块"), Shadow::ShadowTreeNodeFlags_DefaultOpen | Shadow::ShadowTreeNodeFlags_Framed)) {
+                            Shadow::Checkbox(U8("第一个折叠块内部的第一个cb"), &bnohello);
+
+                            if (Shadow::TreeNode(U8("第二个折叠块"), Shadow::ShadowTreeNodeFlags_Framed | Shadow::ShadowTreeNodeFlags_FitText)) {
+                                Shadow::Checkbox(U8("第二个折叠块的第一个cb"), &bnohello);
+
+                                if (Shadow::TreeNode(U8("第三个折叠块"), Shadow::ShadowTreeNodeFlags_Framed | Shadow::ShadowTreeNodeFlags_FitText)) {
+                                    Shadow::Checkbox(U8("第三个折叠块的第一个cb"), &bnohello);
+                                }
+                                Shadow::TreePop();
+                            }
+                            Shadow::TreePop();
+
+
+                        }
+                        Shadow::TreePop();
 
                         // Shadow::PopFont();
                     }

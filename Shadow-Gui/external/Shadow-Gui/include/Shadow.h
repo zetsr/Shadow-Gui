@@ -144,6 +144,14 @@ namespace Shadow {
     };
     using ShadowHoveredFlags = int;
 
+    enum ShadowTreeNodeFlags_ {
+        ShadowTreeNodeFlags_None = 0,
+        ShadowTreeNodeFlags_DefaultOpen = 1 << 0,
+        ShadowTreeNodeFlags_Framed = 1 << 1,
+        ShadowTreeNodeFlags_FitText = 1 << 2
+    };
+    using ShadowTreeNodeFlags = int;
+
     struct GuiStyle {
         Color Colors[GuiCol_COUNT];
 
@@ -190,7 +198,8 @@ namespace Shadow {
         Line,
         Rect,
         RectFilled,
-        Text
+        Text,
+        TriangleFilled
     };
 
     struct ShadowDrawCmd {
@@ -205,6 +214,7 @@ namespace Shadow {
         bool clippingEnabled;
         Vec2 clipMin;
         Vec2 clipMax;
+        Vec2 p1, p2, p3;
     };
 
     struct GuiContext {
@@ -375,6 +385,10 @@ namespace Shadow {
         float CurrentScrollbarWidth = 0.f;
 
         std::vector<float> TextWrapPosStack;
+
+        std::unordered_map<size_t, bool> TreeNodeOpenStates;
+        float IndentX = 0.f;
+        float BackupIndentX = 0.f;
     };
 
     inline GuiContext g_Ctx;
@@ -1139,6 +1153,55 @@ namespace Shadow {
         }
     }
 
+    inline void DrawTriangleFilled(Vec2 p1, Vec2 p2, Vec2 p3, Color color) {
+        if (g_Ctx.InTooltip) {
+            ShadowDrawCmd cmd{};
+            cmd.type = ShadowDrawCmdType::TriangleFilled;
+            cmd.pos = { 0, 0 }; cmd.size = { 0, 0 };
+            cmd.color = color;
+            cmd.thickness = 1.0f;
+            cmd.font = nullptr;
+            cmd.fontScale = 1.0f;
+            cmd.clippingEnabled = g_Ctx.ClippingEnabled;
+            cmd.clipMin = g_Ctx.ClipMin;
+            cmd.clipMax = g_Ctx.ClipMax;
+            cmd.p1 = p1; cmd.p2 = p2; cmd.p3 = p3;
+            g_Ctx.TooltipDrawCommands.push_back(cmd);
+            return;
+        }
+
+        Vec2 v[3] = { p1, p2, p3 };
+        if (v[0].y > v[1].y) std::swap(v[0], v[1]);
+        if (v[0].y > v[2].y) std::swap(v[0], v[2]);
+        if (v[1].y > v[2].y) std::swap(v[1], v[2]);
+
+        if (std::abs(v[0].y - v[2].y) < 0.5f) return;
+
+        auto interpolateX = [](float y, const Vec2& a, const Vec2& b) {
+            if (std::abs(a.y - b.y) < 0.001f) return (a.x + b.x) * 0.5f;
+            return a.x + (b.x - a.x) * (y - a.y) / (b.y - a.y);
+            };
+
+        int startY = static_cast<int>(std::round(v[0].y));
+        int endY = static_cast<int>(std::round(v[2].y));
+
+        for (int y = startY; y < endY; ++y) {
+            float fy = static_cast<float>(y) + 0.5f;
+            float xa = interpolateX(fy, v[0], v[2]);
+            float xb = (fy < v[1].y) ? interpolateX(fy, v[0], v[1]) : interpolateX(fy, v[1], v[2]);
+
+            if (xa > xb) std::swap(xa, xb);
+
+            float x_min = std::ceil(xa - 0.5f);
+            float x_max = std::floor(xb - 0.5f);
+            float w = x_max - x_min + 1.0f;
+
+            if (w > 0.0f) {
+                DrawRectFilled({ x_min, static_cast<float>(y) }, { w, 1.0f }, color);
+            }
+        }
+    }
+
     inline Vec2 MeasureTextSize(std::string_view text) {
         SDK::UFont* font = g_Ctx.DefaultFont;
         float scaleVal = 1.0f;
@@ -1390,6 +1453,105 @@ namespace Shadow {
         }
     }
 
+    inline bool TreeNode(std::string_view name, ShadowTreeNodeFlags flags = ShadowTreeNodeFlags_None) {
+        if (!g_Ctx.InActiveTab) return false;
+        std::string_view display; size_t id; ParseLabel(name, display, id);
+        g_Ctx.WidgetCount++;
+
+        // 首次出现时根据 DefaultOpen 标志初始化
+        if (g_Ctx.TreeNodeOpenStates.find(id) == g_Ctx.TreeNodeOpenStates.end()) {
+            g_Ctx.TreeNodeOpenStates[id] = (flags & ShadowTreeNodeFlags_DefaultOpen) != 0;
+        }
+
+        bool isOpen = g_Ctx.TreeNodeOpenStates[id];
+        bool isFramed = (flags & ShadowTreeNodeFlags_Framed) != 0;
+        bool isFitText = (flags & ShadowTreeNodeFlags_FitText) != 0; // [新增] 判断自适应
+
+        float arrowSize = g_Ctx.ItemHeight * 0.55f;
+        float textWidth = MeasureTextSize(display).x;
+
+        // 基础交互尺寸 (未开启 Frame 时的最小可点击范围)
+        Vec2 interactSize = { arrowSize + 10.f + textWidth, g_Ctx.ItemHeight };
+
+        if (isFramed) {
+            if (isFitText) {
+                // [修改] 开启 FitText 时，宽度仅包裹：左侧留白 + 箭头大小 + 间隙 + 文字宽度 + 右侧留白
+                interactSize.x = g_Ctx.Style.FramePadding.x + arrowSize + 8.f + textWidth + g_Ctx.Style.FramePadding.x;
+            }
+            else {
+                // 未开启 FitText 时，默认延展到窗口最右侧
+                float rightMargin = GetRightMargin();
+                interactSize.x = std::max(interactSize.x, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - g_Ctx.Cursor.x);
+            }
+        }
+
+        // 视口外剔除
+        if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+            g_Ctx.IndentX += 20.f; // 即使不可见也要无条件推入缩进栈平衡
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            return isOpen;
+        }
+
+        bool disabled = IsDisabled();
+        bool hovered = !disabled && IsMouseHovering(g_Ctx.Cursor, interactSize);
+
+        if (hovered && g_Ctx.MouseClicked) {
+            isOpen = !isOpen;
+            g_Ctx.TreeNodeOpenStates[id] = isOpen;
+            g_Ctx.MouseClicked = false;
+        }
+
+        Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
+        Color arrowColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
+        if (hovered && !disabled) {
+            textColor = g_Ctx.Style.Colors[GuiCol_TextHighlight];
+            arrowColor = g_Ctx.Style.Colors[GuiCol_TextHighlight];
+        }
+
+        // 绘制 Framed 背景
+        if (isFramed) {
+            Color bgColor = disabled ? g_Ctx.Style.Colors[GuiCol_ControlDisabled] : (hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
+            DrawRectFilled(g_Ctx.Cursor, interactSize, bgColor);
+        }
+
+        float centerY = g_Ctx.Cursor.y + g_Ctx.ItemHeight * 0.5f;
+        float arrowX = g_Ctx.Cursor.x + (isFramed ? g_Ctx.Style.FramePadding.x : 0.f);
+
+        if (isOpen) {
+            // 向下箭头 (展开)
+            Vec2 p1 = { arrowX, centerY - arrowSize * 0.25f };
+            Vec2 p2 = { arrowX + arrowSize, centerY - arrowSize * 0.25f };
+            Vec2 p3 = { arrowX + arrowSize * 0.5f, centerY + arrowSize * 0.25f };
+            DrawTriangleFilled(p1, p2, p3, arrowColor);
+        }
+        else {
+            // 向右箭头 (折叠)
+            Vec2 p1 = { arrowX + arrowSize * 0.25f, centerY - arrowSize * 0.5f };
+            Vec2 p2 = { arrowX + arrowSize * 0.75f, centerY };
+            Vec2 p3 = { arrowX + arrowSize * 0.25f, centerY + arrowSize * 0.5f };
+            DrawTriangleFilled(p1, p2, p3, arrowColor);
+        }
+
+        float textStartX = arrowX + arrowSize + 8.f;
+        DrawTextString(display, { textStartX, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, textColor);
+
+        SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + g_Ctx.ItemHeight }, id, disabled);
+        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
+
+        g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+        g_Ctx.IndentX += 20.f;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+
+        return isOpen;
+    }
+
+    // 7. 新增函数：TreePop
+    inline void TreePop() {
+        g_Ctx.IndentX = std::max(0.f, g_Ctx.IndentX - 20.f);
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+    }
+
     inline void Spacing() {
         if (!g_Ctx.InActiveTab) return;
         g_Ctx.Cursor.y += g_Ctx.Style.ItemSpacing.y;
@@ -1401,7 +1563,7 @@ namespace Shadow {
         g_Ctx.Cursor.y -= (g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y);
 
         if (offset_from_start_x > 0.0f) {
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + offset_from_start_x;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + offset_from_start_x + g_Ctx.IndentX;
         }
         else {
             float sp = (spacing < 0.0f) ? g_Ctx.Style.ItemSpacing.x : spacing;
@@ -1698,7 +1860,7 @@ namespace Shadow {
         Vec2 size = MeasureTextSize(text);
         if (!IsRectVisible(g_Ctx.Cursor, { size.x, g_Ctx.ItemHeight })) {
             g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
             return;
         }
 
@@ -1719,13 +1881,12 @@ namespace Shadow {
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + g_Ctx.ItemHeight }, ++g_Ctx.WidgetCount, disabled);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
 
     inline void TextWrapped(Color color, std::string_view text) {
         if (!g_Ctx.InActiveTab) return;
 
-        // 1. 修正 Alpha 与 Disabled 颜色应用逻辑，与 TextColored 保持一致
         bool disabled = IsDisabled();
         Color drawColor;
         if (disabled) {
@@ -1737,14 +1898,11 @@ namespace Shadow {
             drawColor = { color.r, color.g, color.b, color.a * textColor.a };
         }
 
-        // 2. 计算当前允许的最大行宽
         float wrapMaxX = g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - GetRightMargin();
         if (g_Ctx.ClippingEnabled) {
             wrapMaxX = std::min(wrapMaxX, g_Ctx.ClipMax.x);
         }
 
-        // [修改] 如果文本换行堆栈非空，则使用栈顶的值作为最终的换行X坐标。
-        // 这必须在之前的默认计算之后进行，以允许 PushTextWrapPos 覆盖默认行为。
         if (!g_Ctx.TextWrapPosStack.empty()) {
             wrapMaxX = g_Ctx.TextWrapPosStack.back();
         }
@@ -1752,17 +1910,13 @@ namespace Shadow {
         float maxLineWidth = wrapMaxX - g_Ctx.Cursor.x;
         if (maxLineWidth <= 1.0f) maxLineWidth = 1.0f;
 
-        // 转换为宽字符串以精确处理 UTF-8 / 多字节字符与字符级宽度
         std::wstring wtext = ToWString(text);
-
         float startY = g_Ctx.Cursor.y;
         float maxLineX = g_Ctx.Cursor.x;
 
         std::wstring currentLine;
         float currentLineWidth = 0.f;
 
-        // ... 后续代码完全不变 ...
-        // (从 Lambda FlushLine 到函数结尾的所有代码保持不变)
         auto FlushLine = [&](bool addSpacing) {
             if (!currentLine.empty()) {
                 int size_needed = WideCharToMultiByte(CP_UTF8, 0, currentLine.c_str(), static_cast<int>(currentLine.size()), nullptr, 0, nullptr, nullptr);
@@ -1776,6 +1930,7 @@ namespace Shadow {
             }
             if (addSpacing) {
                 g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+                g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
             }
             currentLine.clear();
             currentLineWidth = 0.f;
@@ -1785,14 +1940,12 @@ namespace Shadow {
         size_t len = wtext.length();
 
         while (i < len) {
-            // 处理显式换行符 \n
             if (wtext[i] == L'\n') {
                 FlushLine(true);
                 i++;
                 continue;
             }
 
-            // 提取词 Token 或 空格 Token
             size_t wordStart = i;
             bool isSpace = (wtext[i] == L' ');
             if (isSpace) {
@@ -1810,55 +1963,42 @@ namespace Shadow {
 
             if (isSpace) {
                 float tokenWidth = 0.f;
-                for (wchar_t ch : token) {
-                    tokenWidth += MeasureCharWidth(ch);
-                }
+                for (wchar_t ch : token) tokenWidth += MeasureCharWidth(ch);
                 if (currentLineWidth + tokenWidth <= maxLineWidth) {
                     currentLine += token;
                     currentLineWidth += tokenWidth;
                 }
                 else {
-                    // 行尾空格放不下时直接换行，并忽略新行开头的多余空格
                     FlushLine(true);
                 }
             }
             else {
                 float tokenWidth = 0.f;
-                for (wchar_t ch : token) {
-                    tokenWidth += MeasureCharWidth(ch);
-                }
+                for (wchar_t ch : token) tokenWidth += MeasureCharWidth(ch);
 
                 if (currentLineWidth + tokenWidth <= maxLineWidth) {
-                    // 单词整体可放入当前行
                     currentLine += token;
                     currentLineWidth += tokenWidth;
                 }
                 else if (currentLineWidth > 0.f) {
-                    // 当前行已有内容但放不下该词，先换行
                     FlushLine(true);
                     if (tokenWidth <= maxLineWidth) {
                         currentLine = token;
                         currentLineWidth = tokenWidth;
                     }
                     else {
-                        // 新行也放不下整个词（如中文连续文本或超长单词），回退按字符逐个折行
                         for (wchar_t ch : token) {
                             float chWidth = MeasureCharWidth(ch);
-                            if (currentLineWidth + chWidth > maxLineWidth && currentLineWidth > 0.f) {
-                                FlushLine(true);
-                            }
+                            if (currentLineWidth + chWidth > maxLineWidth && currentLineWidth > 0.f) FlushLine(true);
                             currentLine += ch;
                             currentLineWidth += chWidth;
                         }
                     }
                 }
                 else {
-                    // 当前行空但词宽仍大于 maxLineWidth，按字符逐个折行
                     for (wchar_t ch : token) {
                         float chWidth = MeasureCharWidth(ch);
-                        if (currentLineWidth + chWidth > maxLineWidth && currentLineWidth > 0.f) {
-                            FlushLine(true);
-                        }
+                        if (currentLineWidth + chWidth > maxLineWidth && currentLineWidth > 0.f) FlushLine(true);
                         currentLine += ch;
                         currentLineWidth += chWidth;
                     }
@@ -1866,15 +2006,14 @@ namespace Shadow {
             }
         }
 
-        // 绘制剩余未刷新的文本
         if (!currentLine.empty()) {
             FlushLine(false);
             g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
         }
 
-        SetLastItemInfo({ g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x, startY }, { maxLineX, g_Ctx.Cursor.y - g_Ctx.Style.ItemSpacing.y }, ++g_Ctx.WidgetCount, disabled);
+        SetLastItemInfo({ g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, startY }, { maxLineX, g_Ctx.Cursor.y - g_Ctx.Style.ItemSpacing.y }, ++g_Ctx.WidgetCount, disabled);
         g_Ctx.LastItemMaxX = maxLineX;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
 
     inline void Separator() {
@@ -1892,7 +2031,7 @@ namespace Shadow {
 
         g_Ctx.LastItemMaxX = x2;
         g_Ctx.Cursor.y += 4.f + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
 
     inline void Dummy(Vec2 size) {
@@ -1902,7 +2041,7 @@ namespace Shadow {
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
 
         g_Ctx.Cursor.y += size.y + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
 
     inline void Text(std::string_view text) {
@@ -1911,7 +2050,7 @@ namespace Shadow {
         Vec2 size = MeasureTextSize(text);
         if (!IsRectVisible(g_Ctx.Cursor, { size.x, g_Ctx.ItemHeight })) {
             g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
             return;
         }
 
@@ -1930,7 +2069,7 @@ namespace Shadow {
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + g_Ctx.ItemHeight }, ++g_Ctx.WidgetCount, disabled);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
 
     inline void TextDisabled(std::string_view text) {
@@ -1939,7 +2078,7 @@ namespace Shadow {
         Vec2 size = MeasureTextSize(text);
         if (!IsRectVisible(g_Ctx.Cursor, { size.x, g_Ctx.ItemHeight })) {
             g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
             return;
         }
 
@@ -1949,7 +2088,7 @@ namespace Shadow {
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + g_Ctx.ItemHeight }, ++g_Ctx.WidgetCount, true);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
 
     inline void NewFrame(SDK::UCanvas* Canvas) {
@@ -1970,16 +2109,16 @@ namespace Shadow {
         g_Ctx.BeginStack = 0;
         g_Ctx.TabBarStack = 0;
         g_Ctx.TabItemStack = 0;
+        g_Ctx.IndentX = 0.f; // [新增] 初始化时清空缩进状态，防止跨帧泄漏
 
         g_Ctx.DisabledStack.clear();
 
         g_Ctx.TabBarHoverRects = std::move(g_Ctx.TabBarHoverRectsPending);
         g_Ctx.TabBarHoverRectsPending.clear();
 
-        // --- 新增：更新鼠标静止与悬停判定计时 ---
         float dx = g_Ctx.MousePos.x - g_Ctx.MousePosPrev.x;
         float dy = g_Ctx.MousePos.y - g_Ctx.MousePosPrev.y;
-        if (dx * dx + dy * dy > 4.0f) { // 2 像素范围外视为移动
+        if (dx * dx + dy * dy > 4.0f) {
             g_Ctx.MouseStationaryStartTime = GetTickCount64();
             g_Ctx.MouseIsStationary = false;
             g_Ctx.MousePosPrev = g_Ctx.MousePos;
@@ -2224,7 +2363,6 @@ namespace Shadow {
         g_Ctx.IsScrollApplied = false;
         g_Ctx.CurrentWindowFlags = flags;
 
-        // --- 应用窗口约束和最小尺寸设置 ---
         float min_x = g_Ctx.Style.WindowMinSize.x;
         float min_y = g_Ctx.Style.WindowMinSize.y;
         float max_x = FLT_MAX;
@@ -2247,16 +2385,13 @@ namespace Shadow {
         bool noTitleBar = (flags & ShadowWindowFlags_NoTitleBar) != 0;
         bool noMouseInputs = (flags & ShadowWindowFlags_NoMouseInputs) != 0;
 
-        // 新增：如果 NoMouseInputs，完全跳过窗口交互逻辑
         float titleBarHeight = noTitleBar ? 0.f : std::max(30.f, g_Ctx.ItemHeight + 10.f);
         Vec2 wholeWindowSize = g_Ctx.WindowSize;
 
-        // 当 noMouseInputs 时，hoveringWholeWindow 始终为 false
         bool hoveringWholeWindow = noMouseInputs ? false : IsMouseHovering(g_Ctx.WindowPos, wholeWindowSize);
 
         float triSize = g_Ctx.Style.ResizeGripSize;
         Vec2 triPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - triSize, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y - triSize };
-        // 当 noMouseInputs 时，IsHoveringResize 始终为 false
         g_Ctx.IsHoveringResize = (!noResize && !noMouseInputs) ? IsMouseHoveringRaw(triPos, { triSize, triSize }) : false;
 
         bool isOtherDragging = (g_Ctx.DraggingSliderId != 0) || g_Ctx.IsDraggingSV || g_Ctx.IsDraggingHue || g_Ctx.IsDraggingAlpha || g_Ctx.IsDraggingColorPicker || g_Ctx.IsDraggingScrollbar || g_Ctx.DraggingTabId != 0 || g_Ctx.DraggingTabBarScrollId != 0;
@@ -2280,7 +2415,6 @@ namespace Shadow {
             }
         }
 
-        // 滚轮滚动：NoMouseInputs 时禁用
         if (!noMouseInputs && hoveringWholeWindow && g_Ctx.MouseWheel != 0.f && !hasPopupOpen && !hoveringAnyTabBar) {
             g_Ctx.ScrollY -= g_Ctx.MouseWheel * 30.f;
             g_Ctx.ScrollY = std::clamp(g_Ctx.ScrollY, 0.f, maxScroll);
@@ -2298,7 +2432,6 @@ namespace Shadow {
             Vec2 thumbPos = { trackPos.x, thumbY };
             Vec2 thumbSize = { scrollbarWidth, thumbHeight };
 
-            // 当 noMouseInputs 时，所有悬停检测为 false
             bool hoveringThumb = noMouseInputs ? false : IsMouseHoveringRaw(thumbPos, thumbSize);
             bool hoveringTrack = noMouseInputs ? false : IsMouseHoveringRaw(trackPos, trackSize);
 
@@ -2329,7 +2462,6 @@ namespace Shadow {
             g_Ctx.IsDraggingScrollbar = false;
         }
 
-        // 窗口拖动：NoMouseInputs 或 NoMove 时禁用
         if (!noMove && !noMouseInputs && !g_Ctx.IsDragging && hoveringWholeWindow && g_Ctx.MouseClicked && !g_Ctx.IsHoveringResize && !isOtherDragging && !hoveringScrollbar) {
             g_Ctx.IsDragging = true;
             g_Ctx.DragOffset.x = g_Ctx.MousePos.x - g_Ctx.WindowPos.x;
@@ -2337,7 +2469,6 @@ namespace Shadow {
         }
         if (g_Ctx.IsDragging && isOtherDragging) g_Ctx.IsDragging = false;
 
-        // 窗口缩放：NoMouseInputs 或 NoResize 时禁用
         if (!noResize && !noMouseInputs && !g_Ctx.IsResizing && g_Ctx.IsHoveringResize && g_Ctx.MouseClicked && !isOtherDragging) {
             g_Ctx.IsResizing = true;
             g_Ctx.ResizeStartPos = g_Ctx.MousePos;
@@ -2357,7 +2488,6 @@ namespace Shadow {
             if (!g_Ctx.MouseDown) g_Ctx.IsResizing = false;
         }
 
-        // 绘制窗口背景
         DrawRect(g_Ctx.WindowPos, g_Ctx.WindowSize, g_Ctx.Style.Colors[GuiCol_WindowBg]);
 
         if (!noTitleBar) {
@@ -2377,7 +2507,8 @@ namespace Shadow {
             }
         }
 
-        g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x, g_Ctx.WindowPos.y + titleBarHeight + g_Ctx.Style.WindowPadding.y };
+        g_Ctx.IndentX = 0.f; // [修改] 在创建完新窗口后将缩进置零
+        g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, g_Ctx.WindowPos.y + titleBarHeight + g_Ctx.Style.WindowPadding.y };
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;
 
         PushClipRect(
@@ -2390,7 +2521,6 @@ namespace Shadow {
     inline void BeginTooltip() {
         g_Ctx.InTooltip = true;
 
-        // 备份当前主窗口的状态
         g_Ctx.BackupWindowPos = g_Ctx.WindowPos;
         g_Ctx.BackupWindowSize = g_Ctx.WindowSize;
         g_Ctx.BackupCursor = g_Ctx.Cursor;
@@ -2399,43 +2529,36 @@ namespace Shadow {
         g_Ctx.BackupLastItemMaxX = g_Ctx.LastItemMaxX;
         g_Ctx.BackupIsScrollApplied = g_Ctx.IsScrollApplied;
         g_Ctx.BackupCurrentWindowFlags = g_Ctx.CurrentWindowFlags;
+        g_Ctx.BackupIndentX = g_Ctx.IndentX; // [新增] 保存先前的缩进状态
 
-        // 设定 Tooltip 在指针右下角略微偏移的位置
         g_Ctx.WindowPos = { g_Ctx.MousePos.x + 15.f, g_Ctx.MousePos.y + 15.f };
 
-        // 从缓存中获取上一帧该悬停 ID（也就是被触发的控件）产生的 Tooltip 大小
         size_t tooltipKey = g_Ctx.HoveredIdCurrentFrame;
         Vec2 bgSize = g_Ctx.TooltipSizeCache[tooltipKey];
-        if (bgSize.x < 10.f) bgSize.x = 30.f; // 给定一个安全的初始保底大小
+        if (bgSize.x < 10.f) bgSize.x = 30.f;
         if (bgSize.y < 10.f) bgSize.y = 30.f;
 
-        // 绘制 Tooltip 的外边框和背景层
         DrawRect({ g_Ctx.WindowPos.x - 1.f, g_Ctx.WindowPos.y - 1.f }, { bgSize.x + 2.f, bgSize.y + 2.f }, g_Ctx.Style.Colors[GuiCol_PopupBorder]);
         DrawRectFilled(g_Ctx.WindowPos, bgSize, g_Ctx.Style.Colors[GuiCol_PopupBg]);
 
-        // 切换进入新的子布局上下文：没有滚动、没有交互
         g_Ctx.WindowSize = bgSize;
-        g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x, g_Ctx.WindowPos.y + g_Ctx.Style.WindowPadding.y };
+        g_Ctx.IndentX = 0.f; // [新增] Tooltip 内部的缩进独立
+        g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, g_Ctx.WindowPos.y + g_Ctx.Style.WindowPadding.y };
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;
         g_Ctx.ScrollY = 0.f;
         g_Ctx.IsScrollApplied = false;
         g_Ctx.CurrentWindowFlags = ShadowWindowFlags_NoResize | ShadowWindowFlags_NoMove | ShadowWindowFlags_NoScrollbar;
 
-        // 给 Tooltip 加入独立的裁剪，防止里头长文本乱溢出
         PushClipRect(g_Ctx.WindowPos, { g_Ctx.WindowPos.x + bgSize.x, g_Ctx.WindowPos.y + bgSize.y });
-
-        // 清空本帧追踪，开始利用 SetLastItemInfo 累加内容体积
         g_Ctx.CurrentTooltipSize = { 0.f, 0.f };
     }
 
     inline void EndTooltip() {
         PopClipRect();
 
-        // 将本帧实际排版出的控件累积大小，存入缓存供下一帧精确绘制背景
         size_t tooltipKey = g_Ctx.HoveredIdCurrentFrame;
         g_Ctx.TooltipSizeCache[tooltipKey] = g_Ctx.CurrentTooltipSize;
 
-        // 恢复之前被打断的父窗口状态
         g_Ctx.WindowPos = g_Ctx.BackupWindowPos;
         g_Ctx.WindowSize = g_Ctx.BackupWindowSize;
         g_Ctx.Cursor = g_Ctx.BackupCursor;
@@ -2444,6 +2567,7 @@ namespace Shadow {
         g_Ctx.LastItemMaxX = g_Ctx.BackupLastItemMaxX;
         g_Ctx.IsScrollApplied = g_Ctx.BackupIsScrollApplied;
         g_Ctx.CurrentWindowFlags = g_Ctx.BackupCurrentWindowFlags;
+        g_Ctx.IndentX = g_Ctx.BackupIndentX; // [新增] 恢复主面板的缩进层级
 
         g_Ctx.InTooltip = false;
     }
@@ -2479,6 +2603,10 @@ namespace Shadow {
                 g_Ctx.FontStack.push_back({ cmd.font, cmd.fontScale });
                 DrawTextString(cmd.text, cmd.pos, cmd.color);
                 g_Ctx.FontStack.pop_back();
+            }
+            // [新增] 处理 Tooltip 延迟绘制的三角形
+            else if (cmd.type == ShadowDrawCmdType::TriangleFilled) {
+                DrawTriangleFilled(cmd.p1, cmd.p2, cmd.p3, cmd.color);
             }
         }
 
@@ -2538,19 +2666,17 @@ namespace Shadow {
                 : (g_Ctx.IsHoveringResize ? g_Ctx.Style.Colors[GuiCol_ResizeGripHovered] : g_Ctx.Style.Colors[GuiCol_ResizeGrip]);
 
             float pad = 3.f;
+            // [修改] 右下角的调整手柄更改为支持实心绘制的光栅化三角形
             Vec2 p1 = { x + pad, y + triSize - pad };
             Vec2 p2 = { x + triSize - pad, y + triSize - pad };
             Vec2 p3 = { x + triSize - pad, y + pad };
 
-            DrawLine(p1, p2, triColor);
-            DrawLine(p2, p3, triColor);
-            DrawLine(p3, p1, triColor);
+            DrawTriangleFilled(p1, p2, p3, triColor);
         }
 
         if (!g_Ctx.MouseDown) g_Ctx.IsResizing = false;
         RenderPopups();
 
-        // 绘制 Tooltip 置顶层 (解决遮挡)
         RenderTooltipCommands();
 
         g_Ctx.MouseClicked = false;
@@ -2916,7 +3042,7 @@ namespace Shadow {
 
         if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
             g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
             return false;
         }
 
@@ -2937,7 +3063,9 @@ namespace Shadow {
         float rightMargin = GetRightMargin();
 
         std::string currentText = (*current_item >= 0 && *current_item < static_cast<int>(items.size())) ? items[*current_item] : "Unknown";
-        float triSize = g_Ctx.ItemHeight * 0.4f;
+
+        // 箭头尺寸
+        float triSize = g_Ctx.ItemHeight * 0.5f;
 
         float boxWidth;
         if (fitText) {
@@ -2991,21 +3119,18 @@ namespace Shadow {
         DrawTextString(currentText, { boxPos.x + g_Ctx.Style.FramePadding.x, boxPos.y + g_Ctx.Style.FramePadding.y }, textColor);
 
         Vec2 triPos = { boxPos.x + boxSize.x - g_Ctx.Style.FramePadding.x - triSize, boxPos.y + boxSize.y / 2.f - triSize / 2.f };
-        if (g_Ctx.Canvas && IsRectFullyVisible(triPos, { triSize, triSize })) {
-            Color dtCol = g_Ctx.Style.Colors[GuiCol_TextDisabled];
-            SDK::FLinearColor ueColor{ dtCol.r, dtCol.g, dtCol.b, dtCol.a };
-            SDK::FVector2D p1{ static_cast<float>(triPos.x), static_cast<float>(triPos.y) };
-            SDK::FVector2D p2{ static_cast<float>(triPos.x + triSize), static_cast<float>(triPos.y) };
-            SDK::FVector2D p3{ static_cast<float>(triPos.x + triSize / 2.f), static_cast<float>(triPos.y + triSize) };
-            g_Ctx.Canvas->K2_DrawLine(p1, p2, 1.0f, ueColor);
-            g_Ctx.Canvas->K2_DrawLine(p2, p3, 1.0f, ueColor);
-            g_Ctx.Canvas->K2_DrawLine(p3, p1, 1.0f, ueColor);
+        if (IsRectVisible(triPos, { triSize, triSize })) {
+            Color triCol = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
+            Vec2 p1 = { triPos.x, triPos.y + triSize * 0.25f };
+            Vec2 p2 = { triPos.x + triSize, triPos.y + triSize * 0.25f };
+            Vec2 p3 = { triPos.x + triSize * 0.5f, triPos.y + triSize * 0.75f };
+            DrawTriangleFilled(p1, p2, p3, triCol);
         }
 
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + g_Ctx.ItemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
 
         return toggled;
     }
@@ -3019,7 +3144,7 @@ namespace Shadow {
 
         if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
             g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
             return;
         }
 
@@ -3046,7 +3171,7 @@ namespace Shadow {
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + g_Ctx.ItemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
 
     inline void Switch(std::string_view name, bool* value) {
@@ -3062,7 +3187,7 @@ namespace Shadow {
 
         if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
             g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
             return;
         }
 
@@ -3102,7 +3227,7 @@ namespace Shadow {
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + g_Ctx.ItemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
 
     inline bool Button(std::string_view name) {
@@ -3115,7 +3240,7 @@ namespace Shadow {
 
         if (!IsRectVisible(g_Ctx.Cursor, size)) {
             g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
             return false;
         }
 
@@ -3132,7 +3257,7 @@ namespace Shadow {
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, id, disabled);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
         return clicked;
     }
 
@@ -3143,7 +3268,7 @@ namespace Shadow {
 
         if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
             g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
             return;
         }
 
@@ -3273,7 +3398,7 @@ namespace Shadow {
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, sliderPos.x), g_Ctx.Cursor.y }, { valBoxPos.x + valBoxSize.x, g_Ctx.Cursor.y + g_Ctx.ItemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = valBoxPos.x + valBoxSize.x;
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
 
     inline void ColorPicker(std::string_view name, float* r, float* g, float* b, float* a, ShadowColorPickerFlags flags = ShadowColorPickerFlags_None) {
@@ -3283,7 +3408,7 @@ namespace Shadow {
 
         if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
             g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
             return;
         }
 
@@ -3364,7 +3489,7 @@ namespace Shadow {
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + g_Ctx.ItemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
 
     inline bool HotKey(std::string_view name, int* hotkey, ShadowHotkeyFlags flags = ShadowHotkeyFlags_None) {
@@ -3376,7 +3501,7 @@ namespace Shadow {
 
         if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
             g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
             return false;
         }
 
@@ -3420,7 +3545,7 @@ namespace Shadow {
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, btnPos.x), g_Ctx.Cursor.y }, { btnPos.x + btnSize.x, g_Ctx.Cursor.y + g_Ctx.ItemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = btnPos.x + btnSize.x;
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
         return *hotkey != 0 && g_Ctx.KeyStates[*hotkey];
     }
 
@@ -3433,7 +3558,7 @@ namespace Shadow {
 
         if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
             g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
             return;
         }
 
@@ -3519,6 +3644,6 @@ namespace Shadow {
 
         g_Ctx.LastItemMaxX = maxX;
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
 }

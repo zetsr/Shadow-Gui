@@ -5,13 +5,11 @@
 #include "external/MinHook/include/MinHook.h"
 #include "external/CppSDK/SDK.hpp"
 #include "external/Shadow-Gui/include/Shadow.h"
+#include "shadow_demo.h"
 
 namespace Hook {
     bool bShowMenu = false;
     int keyMenu = VK_F1;
-
-    float currentAlpha = 0.0f;
-    const float fadeSpeed = 5.0f;
 
     HWND g_hwnd = NULL;
     WNDPROC oWndProc = NULL;
@@ -64,7 +62,7 @@ namespace Hook {
             }
         }
 
-        if (bShowMenu || currentAlpha > 0.001f) {
+        if (bShowMenu) {
             // 键盘消息处理
             if (uMsg == WM_KEYDOWN || uMsg == WM_KEYUP || uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP || uMsg == WM_CHAR) {
                 // 如果是切换键本身，放行给游戏（防止菜单无法关闭）
@@ -106,109 +104,28 @@ namespace Hook {
         return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
     }
 
-    void HelpMarker(std::string_view desc, float TextWrap = 200.f) {
-        Shadow::SameLine();
-
-        Shadow::TextColored(Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_TextDisabled], "(?)");
-
-        if (Shadow::IsItemHovered(Shadow::ShadowHoveredFlags_DelayNone)) {
-            Shadow::BeginTooltip();
-            Shadow::PushTextWrapPos(TextWrap);
-            Shadow::TextWrapped({ 1.0f, 1.0f, 1.0f, 1.0f }, desc.data());
-            Shadow::PopTextWrapPos();
-            Shadow::EndTooltip();
-        }
-    }
-
     typedef void(__fastcall* tPostRender)(SDK::UGameViewportClient* _this, SDK::UCanvas* Canvas);
     tPostRender oPostRender = nullptr;
 
     void __fastcall hkPostRender(SDK::UGameViewportClient* rcx, SDK::UCanvas* canvas) {
         oPostRender(rcx, canvas);
 
-        static bool bGodMode = false;
-        static  float fSpeed = 1.0f;
-        static  Shadow::Color cESP = { 1.0f, 0.0f, 0.0f, 1.0f };
-
-        static  int selectedTarget = 0; // 0:敌人, 1:队友, 2:AI
-        static  bool showHealth[3] = { true, true, true };  // 血量显示开关
-        static  bool showBox[3] = { false, false, false };   // 方框显示开关
-        static   bool showButton[3] = { false, false, false }; // 按钮显示开关
-
-        // 下拉框选项列表
-        static    std::vector<std::string> targetOptions = { U8("敌人"), U8("队友"), U8("AI") };
-
-        static    int keyAimbot = VK_RBUTTON;
-        static    bool bAimbotActive = false;
-        static   Shadow::HotkeyMode modeAimbot = Shadow::HotkeyMode::HoldOn;
-
-        static    int keyDisabledInput = VK_F2;
-        static    bool bDisabledInput = false;
-        static   Shadow::HotkeyMode modeDisabledInput = Shadow::HotkeyMode::HoldOn;
-
-        static SDK::UFont* OpenSansRegular12 = nullptr;
-        static SDK::UFont* SansationBold18 = nullptr;
-        static SDK::UFont* NotoSansSC = nullptr;
-
-        /*
-        // Shadow Gui内部会自动获取引擎默认字体
-        if (!Shadow::DefaultFont) {
-            if (!OpenSansRegular12) {
-                SDK::UObject* _Font = SDK::UObject::FindObject("Font OpenSansRegular12.OpenSansRegular12");
-                if (_Font && _Font->IsA(SDK::UFont::StaticClass())) OpenSansRegular12 = (SDK::UFont*)_Font; // Shadow::DefaultFont = OpenSansRegular12;
-            }
-
-            if (!SansationBold18) {
-                SDK::UObject* _Font = SDK::UObject::FindObject("Font SansationBold18.SansationBold18");
-                if (_Font && _Font->IsA(SDK::UFont::StaticClass())) SansationBold18 = (SDK::UFont*)_Font; // Shadow::DefaultFont = SansationBold18;
-            }
-
-            if (!NotoSansSC) {
-                SDK::UObject* _Font = SDK::UObject::FindObject("Font NotoSansSC-Regular_Font.NotoSansSC-Regular_Font");
-                if (_Font && _Font->IsA(SDK::UFont::StaticClass())) NotoSansSC = (SDK::UFont*)_Font; // Shadow::DefaultFont = NotoSansSC;
-            }
-
-            // if (SDK::UEngine::GetEngine()) { OpenSansRegular12 = SDK::UEngine::GetEngine()->MediumFont; }
-        }
-        */
-
         Shadow::SetAllowedKeys({ 'W', 'A', 'S', 'D', VK_SPACE }); // 放行常用移动按键
 
-        // 1. 使用 C++20/23 chrono 库计算每帧的 Delta Time
-        static auto lastTime = std::chrono::steady_clock::now();
-        auto currentTime = std::chrono::steady_clock::now();
-        std::chrono::duration<float> deltaTime = currentTime - lastTime;
-        lastTime = currentTime;
-        float dt = deltaTime.count();
-
-        // 2. 根据 bShowMenu 目标状态平滑计算 currentAlpha
-        if (bShowMenu) {
-            currentAlpha += fadeSpeed * dt;
-            if (currentAlpha > 1.0f) currentAlpha = 1.0f;
-        }
-        else {
-            currentAlpha -= fadeSpeed * dt;
-            if (currentAlpha < 0.0f) currentAlpha = 0.0f;
-        }
-
-        // 3. 鼠标显示逻辑切换
         static bool bWasAnimating = false;
-        static bool gameOriginalCursorState = false; // 用于备份游戏原本的光标状态
+        static bool gameOriginalCursorState = false;
 
-        bool isAnimating = (bShowMenu || currentAlpha > 0.001f);
+        bool isAnimating = (bShowMenu);
 
         if (isAnimating) {
-            // 【刚刚打开菜单的第一帧】备份游戏当下的鼠标状态
             if (!bWasAnimating) {
                 gameOriginalCursorState = GetMouseCursorVisible();
             }
 
-            // 只要外挂菜单在显示或淡出，强制显示鼠标
             SetMouseCursorVisible(true);
             bWasAnimating = true;
         }
         else if (bWasAnimating) {
-            // 【菜单彻底关闭的第一帧】将游戏原本的状态还原回去
             SetMouseCursorVisible(gameOriginalCursorState);
             bWasAnimating = false;
         }
@@ -216,314 +133,8 @@ namespace Hook {
         Shadow::NewFrame(canvas);
         Shadow::UpdateAllHotkeyStates();
 
-        Shadow::StyleColorsAmethyst();
-        // Shadow::StyleColorsOcean();
-        // Shadow::GetStyle().WindowMinSize = { 200, 150 };
-
-        Shadow::SetNextWindowSizeConstraints({ static_cast<float>(canvas->SizeX * 0.3), static_cast<float>(canvas->SizeY * 0.4) }, { static_cast<float>(canvas->SizeX), static_cast<float>(canvas->SizeY) });
-
-        for (auto& color : Shadow::GetStyle().Colors) {
-            color.a *= currentAlpha; // 仅修改或叠加当前的 Alpha 动画系数
-        }
-
-        if (bAimbotActive) {
-            canvas->K2_DrawBox({ 10, 10 }, { 20, 20 }, 1.0f, { 0.0f, 1.0f, 0.0f, 1.0f });
-        }
-
-        if (currentAlpha > 0.001f) {
-            static bool bWindowNoResize = false;
-            static bool bWindowNoMove = false;
-            static bool bWindowNoScrollbar = false;
-            static bool bWindowNoTitleBar = false;
-
-            static bool bTabReorderable = true;
-            static bool bTabFittingScroll = true;
-            static bool bTabNoScrollbar = true;
-
-            static int selectedTextAlign = 1;
-            static const std::vector<std::string> alignOptions = { U8("左对齐"), U8("居中对齐"), U8("右对齐") };
-
-            static int selecteddpiO = 1;
-            static const std::vector<std::string> dpiO = { U8("75%"), U8("100%"), U8("125%"), U8("150%") };
-
-            switch (selecteddpiO) {
-            case 0: Shadow::GetStyle().FontScaleDpi = 0.75f; break;
-            case 1: Shadow::GetStyle().FontScaleDpi = 1.0f; break;
-            case 2: Shadow::GetStyle().FontScaleDpi = 1.25f; break;
-            case 3: Shadow::GetStyle().FontScaleDpi = 1.5f; break;
-            }
-
-            int currentWindowFlags = 0;
-            if (bWindowNoResize)    currentWindowFlags |= Shadow::ShadowWindowFlags_NoResize;
-            if (bWindowNoMove)      currentWindowFlags |= Shadow::ShadowWindowFlags_NoMove;
-            if (bWindowNoScrollbar) currentWindowFlags |= Shadow::ShadowWindowFlags_NoScrollbar;
-            if (bWindowNoTitleBar)  currentWindowFlags |= Shadow::ShadowWindowFlags_NoTitleBar;
-            if (bDisabledInput)     currentWindowFlags |= Shadow::ShadowWindowFlags_NoMouseInputs;
-
-            if (selectedTextAlign == 0)      currentWindowFlags |= Shadow::ShadowWindowFlags_TextAlignLeft;
-            else if (selectedTextAlign == 1) currentWindowFlags |= Shadow::ShadowWindowFlags_TextAlignCenter;
-            else if (selectedTextAlign == 2) currentWindowFlags |= Shadow::ShadowWindowFlags_TextAlignRight;
-
-            int currentTabBarFlags = 0;
-            if (bTabReorderable)   currentTabBarFlags |= Shadow::ShadowTabBarFlags_Reorderable;
-            if (bTabFittingScroll) currentTabBarFlags |= Shadow::ShadowTabBarFlags_FittingPolicyScroll;
-            if (bTabNoScrollbar)   currentTabBarFlags |= Shadow::ShadowTabBarFlags_NoScrollbar;
-
-            if (Shadow::Begin(U8("测试菜单##main_window"), currentWindowFlags)) {
-
-                if (Shadow::BeginTabBar("MainTabs##tabs", currentTabBarFlags)) {
-                    if (Shadow::BeginTabItem(U8("设置##tab0"))) {
-                        // Shadow::PushFont(SansationBold18, Shadow::GetStyle().FontScaleDpi);
-                        Shadow::HotKey(U8("菜单按键##menu_key"), &keyMenu, Shadow::ShadowHotkeyFlags_NoRightAlign);
-                        Shadow::HotKey(U8("禁用输入##DisabledInput"), &keyDisabledInput, &bDisabledInput, &modeDisabledInput, Shadow::ShadowHotkeyFlags_NoRightAlign);
-
-
-						static bool bhello = false;
-                        static bool bnohello = false;
-
-						Shadow::Switch(U8("你好！##bhello_1"), &bhello);
-                        Shadow::SameLine();
-
-                        Shadow::Switch(U8("你好1！##bhello_1"), &bhello);
-                        Shadow::SameLine();
-
-                        Shadow::Switch(U8("你好2！##bhello_1"), &bhello);
-                        Shadow::SameLine();
-
-                        Shadow::Switch(U8("你好3！##bhello_1"), &bhello);
-
-                        Shadow::BeginDisabled(bhello);
-                        Shadow::Switch(U8("好的！##bnohello_1"), &bnohello);
-                        Shadow::EndDisabled();
-
-                        Shadow::Text(U8("这是一段普通文本"));
-
-                        Shadow::Separator();
-
-                        Shadow::TextDisabled(U8("这是一段禁用颜色的文本"));
-
-                        static int selected_item = 0; // 默认选中第 0 项
-                        static const std::vector<std::string> items = { U8("苹果"), U8("香蕉"), U8("橙子"), U8("葡萄") };
-
-                        for (int i = 0; i < items.size(); i++)
-                        {
-                            // 如果 i 等于当前选中索引，传入 true 显示高亮
-                            if (Shadow::Selectable(items[i], selected_item == i))
-                            {
-                                selected_item = i; // 点击后更新选中索引
-                            }
-                        }
-
-                        if (Shadow::TreeNode(U8("第0个折叠块"), Shadow::ShadowTreeNodeFlags_Framed | Shadow::ShadowTreeNodeFlags_FitText | Shadow::ShadowTreeNodeFlags_NoIndent)) {
-                            Shadow::Text(U8("下方会出现巨大空间"));
-                            Shadow::Dummy({ 100.f, 50.f });
-
-                            Shadow::PushTextWrapPos(200.f);
-                            Shadow::TextWrapped({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("这是一段超长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长的文本。"));
-                            Shadow::PopTextWrapPos();
-
-                            Shadow::TextWrapped({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA The Test Message And Hello The Test Message And Hello The Test Message And Hello"));
-
-                        }
-                        Shadow::TreePop();
-
-                        if (Shadow::TreeNode(U8("第一个折叠块"), Shadow::ShadowTreeNodeFlags_DefaultOpen | Shadow::ShadowTreeNodeFlags_Framed)) {
-                            Shadow::Checkbox(U8("第一个折叠块内部的第一个cb"), &bnohello);
-
-                            if (Shadow::TreeNode(U8("第二个折叠块"), Shadow::ShadowTreeNodeFlags_Framed | Shadow::ShadowTreeNodeFlags_FitText)) {
-                                Shadow::Checkbox(U8("第二个折叠块的第一个cb"), &bnohello);
-
-                                if (Shadow::TreeNode(U8("第三个折叠块"), Shadow::ShadowTreeNodeFlags_Framed | Shadow::ShadowTreeNodeFlags_FitText)) {
-                                    Shadow::Checkbox(U8("第三个折叠块的第一个cb"), &bnohello);
-                                }
-                                Shadow::TreePop();
-                            }
-                            Shadow::TreePop();
-
-
-                            static std::string text_basic = U8("");
-                            static std::string text_decimal = U8("");
-                            static std::string text_hex = U8("");
-                            static std::string text_scientific = U8("");
-                            static std::string text_uppercase = U8("");
-                            static std::string text_noblank = U8("");
-                            static std::string text_esc_clear = U8("按 Esc 清空我");
-                            static std::string text_readonly = U8("只读内容，不可更改");
-                            static std::string text_password = U8("");
-                            static std::string text_autoselect = U8("点击后自动全选文本");
-                            static float text_parse_ref = 1.f;
-                            static float text_display_ref = 1.f;
-                            static std::string text_combo_key = U8("");
-
-                            // 1. 基础用法 (ShadowInputTextFlags_None)
-                            if (Shadow::InputTextWithHint(U8("普通输入"), U8("请输入任意内容..."), text_basic, Shadow::ShadowInputTextFlags_None))
-                            {
-                                // 文本发生变更时触发
-                            }
-
-                            // 2. 字符限制类 Flags
-                            // 2.1 仅十进制数字 (0-9, +, -, .)
-                            Shadow::InputTextWithHint(U8("纯数字"), U8("如: 123 或 -45.6"), text_decimal,
-                                Shadow::ShadowInputTextFlags_CharsDecimal);
-
-                            // 2.2 仅十六进制 (0-9, a-f, A-F)
-                            Shadow::InputTextWithHint(U8("16进制"), U8("如: FF00AA"), text_hex,
-                                Shadow::ShadowInputTextFlags_CharsHexadecimal);
-
-                            // 2.3 科学计数法 (1.23e4)
-                            Shadow::InputTextWithHint(U8("科学计数"), U8("如: 1.23e4"), text_scientific,
-                                Shadow::ShadowInputTextFlags_CharsScientific);
-
-                            // 2.4 自动将小写转换为大写
-                            Shadow::InputTextWithHint(U8("自动大写"), U8("输入 abc 会变成 ABC"), text_uppercase,
-                                Shadow::ShadowInputTextFlags_CharsUppercase);
-
-                            // 2.5 屏蔽空格键，禁止输入空格
-                            Shadow::InputTextWithHint(U8("禁止空格"), U8("无法输入空格..."), text_noblank,
-                                Shadow::ShadowInputTextFlags_CharsNoBlank);
-
-                            // 3. 交互与状态控制 Flags
-                            // 3.1 聚焦时按下 Esc 键直接清空字符串
-                            Shadow::InputTextWithHint(U8("Esc 清空"), U8("按 Esc 键清空..."), text_esc_clear,
-                                Shadow::ShadowInputTextFlags_EscapeClearsAll);
-
-                            // 3.2 只读模式：禁止编辑，但可以选中和复制
-                            Shadow::InputTextWithHint(U8("只读文本"), U8("不可编辑..."), text_readonly,
-                                Shadow::ShadowInputTextFlags_ReadOnly);
-
-                            // 3.3 密码隐藏模式：输入内容显示为掩码字符
-                            Shadow::InputTextWithHint(U8("密码模式"), U8("请输入密码..."), text_password,
-                                Shadow::ShadowInputTextFlags_Password);
-
-                            // 3.4 鼠标点击获得焦点时，自动选中全部文本
-                            Shadow::InputTextWithHint(U8("自动全选"), U8("点击该框自动选中全部"), text_autoselect,
-                                Shadow::ShadowInputTextFlags_AutoSelectAll);
-
-                            // 4. 缺省/引用值控制 Flags
-                            // 4.1 清空内容时将其解析恢复为默认参考值
-                            Shadow::InputFloat(U8("解析空参考值"), &text_parse_ref,
-                                Shadow::ShadowInputTextFlags_ParseEmptyRefVal);
-
-                            // 4.2 即使绑定的字符串为空，也强制渲染/展示空参考状态
-                            Shadow::InputFloat(U8("显示空参考值"), &text_display_ref,
-                                Shadow::ShadowInputTextFlags_DisplayEmptyRefVal);
-
-                            // 5. 实战推荐：多 Flags 按位或组合使用
-                            // 示例：卡密/激活码输入框（无空格 + 自动大写 + 点击自动全选）
-                            Shadow::InputTextWithHint(U8("激活码"), U8("XXXX-XXXX-XXXX"), text_combo_key,
-                                Shadow::ShadowInputTextFlags_CharsNoBlank |
-                                Shadow::ShadowInputTextFlags_CharsUppercase |
-                                Shadow::ShadowInputTextFlags_AutoSelectAll);
-
-                        }
-                        Shadow::TreePop();
-
-                        // Shadow::PopFont();
-                    }
-                    Shadow::EndTabItem();
-
-                    if (Shadow::BeginTabItem(U8("战斗##tab1"))) {
-                        Shadow::Checkbox(U8("无敌模式##checkbox_1"), &bGodMode);
-                        Shadow::SameLine();
-                        Shadow::Slider(U8("移动速度##slider_1"), &fSpeed, 1.0f, 10.0f, 0.1f, Shadow::ShadowSliderFlags_NoRightAlign);
-                        Shadow::Slider(U8("移动速度##slider_2"), &fSpeed, 1.0f, 10.0f, 0.1f, Shadow::ShadowSliderFlags_NoRightAlign);
-                        Shadow::HotKey(U8("自瞄按键##hotkey_1"), &keyAimbot, &bAimbotActive, &modeAimbot, Shadow::ShadowHotkeyFlags_NoRightAlign | Shadow::ShadowHotkeyFlags_NoStateDisplay);
-                        HelpMarker(U8("开启后按下热键会自动锁定敌方目标。此外，还有很多工作。测试一下换行。"), 100.f);
-
-                        if (Shadow::Button(U8("重置速度##btn_1"))) {
-                            fSpeed = 1.0f;
-                        }
-                        Shadow::SameLine();
-                        Shadow::Button(U8("重置速度2##btn_2"));
-                        Shadow::SameLine();
-                        Shadow::Button(U8("重置速度3##btn_3"));
-                        Shadow::Spacing();
-                        Shadow::Spacing();
-                        Shadow::Spacing();
-                        Shadow::Spacing();
-                        Shadow::Button(U8("重置速度4##btn_4"));
-
-                        static bool testswitchcb = false;
-                        Shadow::Checkbox(U8("测试开关##testswitchcb"), &testswitchcb);
-                        if (testswitchcb) {
-                            Shadow::TextColored({ 1.0f, 0.0f, 0.0f, 1.0f }, U8("测试开关已开启"));
-                        }
-
-                        static bool btestdisabled = false;
-                        Shadow::Checkbox(U8("测试禁用开关##test_disabled_cb1"), &btestdisabled);
-                        Shadow::SameLine();
-                        Shadow::TextColored({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("第一个测试文本"));
-
-                        Shadow::BeginDisabled(btestdisabled);
-                        Shadow::TextColored({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("第二个测试文本"));
-                        Shadow::Checkbox(U8("测试开关##test_cb_1"), &bWindowNoResize);
-                        Shadow::EndDisabled();
-
-                        Shadow::Checkbox(U8("禁用窗口缩放##flag_w_no_resize"), &bWindowNoResize);
-                        Shadow::Checkbox(U8("禁用窗口移动##flag_w_no_move"), &bWindowNoMove);
-                        Shadow::Checkbox(U8("禁用窗口滚动条##flag_w_no_scroll"), &bWindowNoScrollbar);
-                        Shadow::Checkbox(U8("禁用窗口标题##flag_w_no_TitleBar"), &bWindowNoTitleBar);
-
-                        Shadow::Combo(U8("标题对齐方式##flag_w_align_combo"), &selectedTextAlign, alignOptions, Shadow::ShadowComboFlags_NoRightAlign | Shadow::ShadowComboFlags_FitText);
-                        Shadow::Combo(U8("缩放DPI##dpiscale_combo"), &selecteddpiO, dpiO);
-
-                        Shadow::Checkbox(U8("启用标签拖拽##flag_t_reorder"), &bTabReorderable);
-                        Shadow::Checkbox(U8("标签溢出滚动##flag_t_fit_scroll"), &bTabFittingScroll);
-                        Shadow::Checkbox(U8("禁用标签滚动条##flag_t_no_scroll"), &bTabNoScrollbar);
-                    }
-                    Shadow::EndTabItem();
-
-                    if (Shadow::BeginTabItem(U8("视觉##tab2"))) {
-
-                        Shadow::Combo(U8("目标选择##target_combo"), &selectedTarget, targetOptions);
-
-                        if (selectedTarget == 0) {
-                            Shadow::Checkbox(U8("敌人 - 血量##health_enemy"), &showHealth[0]);
-                            Shadow::SameLine();
-                            Shadow::ColorPicker(U8("ESP颜色##cp_1"), &cESP.r, &cESP.g, &cESP.b, &cESP.a, Shadow::ShadowColorPickerFlags_NoText);
-                            Shadow::Checkbox(U8("敌人 - 方框##box_enemy"), &showBox[0]);
-                            Shadow::SameLine();
-                            Shadow::ColorPicker(U8("ESP颜色##cp_2"), &cESP.r, &cESP.g, &cESP.b, &cESP.a, Shadow::ShadowColorPickerFlags_NoText | Shadow::ShadowColorPickerFlags_NoRightAlign);
-                            Shadow::Checkbox(U8("敌人 - 按钮##button_enemy"), &showButton[0]);
-                            Shadow::SameLine();
-                            Shadow::ColorPicker(U8("ESP颜色##cp_3"), &cESP.r, &cESP.g, &cESP.b, &cESP.a);
-                        }
-                        else if (selectedTarget == 1) {
-                            Shadow::Checkbox(U8("队友 - 血量##health_teammate"), &showHealth[1]);
-                            Shadow::Checkbox(U8("队友 - 方框##box_teammate"), &showBox[1]);
-                            Shadow::Checkbox(U8("队友 - 按钮##button_teammate"), &showButton[1]);
-                        }
-                        else if (selectedTarget == 2) {
-                            Shadow::Checkbox(U8("AI - 血量##health_ai"), &showHealth[2]);
-                            Shadow::Checkbox(U8("AI - 方框##box_ai"), &showBox[2]);
-                            Shadow::Checkbox(U8("AI - 按钮##button_ai"), &showButton[2]);
-                        }
-                    }
-                    Shadow::EndTabItem();
-
-                    if (Shadow::BeginTabItem(U8("测试1##tab1"))) {
-
-                    }
-                    Shadow::EndTabItem();
-
-                    if (Shadow::BeginTabItem(U8("测试2##tab2"))) {
-
-                    }
-                    Shadow::EndTabItem();
-
-                    if (Shadow::BeginTabItem(U8("测试3##tab3"))) {
-
-                    }
-                    Shadow::EndTabItem();
-
-                    if (Shadow::BeginTabItem(U8("测试4##tab4"))) {
-
-                    }
-                    Shadow::EndTabItem();
-                }
-                Shadow::EndTabBar();
-            }
-            Shadow::End();
+        if (bShowMenu) {
+            Shadow::ShowDemoWindow();
         }
     }
 

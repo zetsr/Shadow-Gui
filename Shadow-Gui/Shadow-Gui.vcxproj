@@ -44,6 +44,7 @@
     <ClInclude Include="external\MinHook\src\hde\table64.h" />
     <ClInclude Include="external\MinHook\src\trampoline.h" />
     <ClInclude Include="external\Shadow-Gui\include\Shadow.h" />
+    <ClInclude Include="shadow_demo.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="external\CppSDK\Assertions.inl" />

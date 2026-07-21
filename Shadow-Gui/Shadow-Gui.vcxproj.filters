@@ -107,6 +107,9 @@
     <ClInclude Include="external\Shadow-Gui\include\Shadow.h">
       <Filter>external\Shadow-Gui\include</Filter>
     </ClInclude>
+    <ClInclude Include="shadow_demo.h">
+      <Filter>dllmain</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="external\CppSDK\Assertions.inl">

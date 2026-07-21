@@ -142,6 +142,10 @@ namespace Hook {
         static    bool bAimbotActive = false;
         static   Shadow::HotkeyMode modeAimbot = Shadow::HotkeyMode::HoldOn;
 
+        static    int keyDisabledInput = VK_F2;
+        static    bool bDisabledInput = false;
+        static   Shadow::HotkeyMode modeDisabledInput = Shadow::HotkeyMode::HoldOn;
+
         static SDK::UFont* OpenSansRegular12 = nullptr;
         static SDK::UFont* SansationBold18 = nullptr;
         static SDK::UFont* NotoSansSC = nullptr;
@@ -227,9 +231,10 @@ namespace Hook {
         }
 
         if (currentAlpha > 0.001f) {
-            static bool bWindowNoResize = true;
+            static bool bWindowNoResize = false;
             static bool bWindowNoMove = false;
-            static bool bWindowNoScrollbar = true;
+            static bool bWindowNoScrollbar = false;
+            static bool bWindowNoTitleBar = false;
 
             static bool bTabReorderable = true;
             static bool bTabFittingScroll = true;
@@ -252,6 +257,8 @@ namespace Hook {
             if (bWindowNoResize)    currentWindowFlags |= Shadow::ShadowWindowFlags_NoResize;
             if (bWindowNoMove)      currentWindowFlags |= Shadow::ShadowWindowFlags_NoMove;
             if (bWindowNoScrollbar) currentWindowFlags |= Shadow::ShadowWindowFlags_NoScrollbar;
+            if (bWindowNoTitleBar)  currentWindowFlags |= Shadow::ShadowWindowFlags_NoTitleBar;
+            if (bDisabledInput)     currentWindowFlags |= Shadow::ShadowWindowFlags_NoMouseInputs;
 
             if (selectedTextAlign == 0)      currentWindowFlags |= Shadow::ShadowWindowFlags_TextAlignLeft;
             else if (selectedTextAlign == 1) currentWindowFlags |= Shadow::ShadowWindowFlags_TextAlignCenter;
@@ -268,6 +275,8 @@ namespace Hook {
                     if (Shadow::BeginTabItem(U8("设置##tab0"))) {
                         // Shadow::PushFont(SansationBold18, Shadow::GetStyle().FontScaleDpi);
                         Shadow::HotKey(U8("菜单按键##menu_key"), &keyMenu, Shadow::ShadowHotkeyFlags_NoRightAlign);
+                        Shadow::HotKey(U8("禁用输入##DisabledInput"), &keyDisabledInput, &bDisabledInput, &modeDisabledInput, Shadow::ShadowHotkeyFlags_NoRightAlign);
+
 
 						static bool bhello = false;
                         static bool bnohello = false;
@@ -345,6 +354,7 @@ namespace Hook {
                         Shadow::Checkbox(U8("禁用窗口缩放##flag_w_no_resize"), &bWindowNoResize);
                         Shadow::Checkbox(U8("禁用窗口移动##flag_w_no_move"), &bWindowNoMove);
                         Shadow::Checkbox(U8("禁用窗口滚动条##flag_w_no_scroll"), &bWindowNoScrollbar);
+                        Shadow::Checkbox(U8("禁用窗口标题##flag_w_no_TitleBar"), &bWindowNoTitleBar);
 
                         Shadow::Combo(U8("标题对齐方式##flag_w_align_combo"), &selectedTextAlign, alignOptions, Shadow::ShadowComboFlags_NoRightAlign | Shadow::ShadowComboFlags_FitText);
                         Shadow::Combo(U8("缩放DPI##dpiscale_combo"), &selecteddpiO, dpiO);
@@ -355,13 +365,10 @@ namespace Hook {
                     }
                     Shadow::EndTabItem();
 
-                    // 修改 Visuals 标签为中文，并添加新的内容
                     if (Shadow::BeginTabItem(U8("视觉##tab2"))) {
 
-                        // 添加目标选择下拉框
                         Shadow::Combo(U8("目标选择##target_combo"), &selectedTarget, targetOptions);
 
-                        // 根据选择的目标显示对应的选项
                         if (selectedTarget == 0) {
                             Shadow::Checkbox(U8("敌人 - 血量##health_enemy"), &showHealth[0]);
                             Shadow::SameLine();

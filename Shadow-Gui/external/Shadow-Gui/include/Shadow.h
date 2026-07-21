@@ -84,6 +84,8 @@ namespace Shadow {
         ShadowWindowFlags_NoResize = 1 << 0,
         ShadowWindowFlags_NoMove = 1 << 1,
         ShadowWindowFlags_NoScrollbar = 1 << 2,
+        ShadowWindowFlags_NoTitleBar = 1 << 5,
+        ShadowWindowFlags_NoMouseInputs = 1 << 6,
 
         ShadowWindowFlags_TextAlignLeft = 0,
         ShadowWindowFlags_TextAlignCenter = 1 << 3,
@@ -678,6 +680,11 @@ namespace Shadow {
     }
 
     inline bool IsMouseHovering(Vec2 pos, Vec2 size) {
+        // 如果当前窗口禁用了鼠标输入，直接返回 false
+        if (g_Ctx.CurrentWindowFlags & ShadowWindowFlags_NoMouseInputs) {
+            return false;
+        }
+
         if (g_Ctx.ActiveDropdownId != 0) {
             float dropWidth = g_Ctx.DropdownSize.x;
             float dropHeight = g_Ctx.DropdownItems.size() * g_Ctx.ItemHeight;
@@ -689,7 +696,6 @@ namespace Shadow {
         if (g_Ctx.ActiveColorPickerId != 0) {
             Vec2 popupPos = g_Ctx.ColorPickerPos;
             float hexBoxHeight = std::max(24.f, g_Ctx.ItemHeight + 4.f);
-            // 修复：动态提取 Style 中的各面板参数
             float popupWidth = g_Ctx.Style.CPPadding * 2.f + g_Ctx.Style.CPSVSize + g_Ctx.Style.CPSpacing * 2.f + g_Ctx.Style.CPHueWidth + g_Ctx.Style.CPAlphaWidth;
             float popupHeight = g_Ctx.Style.CPPadding * 2.f + g_Ctx.Style.CPSVSize + g_Ctx.Style.CPSpacing + hexBoxHeight;
 
@@ -2227,9 +2233,9 @@ namespace Shadow {
         if (g_Ctx.HasWindowSizeConstraints) {
             min_x = std::max(min_x, g_Ctx.WindowSizeConstraintMin.x);
             min_y = std::max(min_y, g_Ctx.WindowSizeConstraintMin.y);
-            max_x = std::max(min_x, g_Ctx.WindowSizeConstraintMax.x); // 确保 max >= min
+            max_x = std::max(min_x, g_Ctx.WindowSizeConstraintMax.x);
             max_y = std::max(min_y, g_Ctx.WindowSizeConstraintMax.y);
-            g_Ctx.HasWindowSizeConstraints = false; // 当前帧应用后立刻重置
+            g_Ctx.HasWindowSizeConstraints = false;
         }
 
         g_Ctx.WindowSize.x = std::clamp(g_Ctx.WindowSize.x, min_x, max_x);
@@ -2238,14 +2244,20 @@ namespace Shadow {
         bool noResize = (flags & ShadowWindowFlags_NoResize) != 0;
         bool noMove = (flags & ShadowWindowFlags_NoMove) != 0;
         bool noScrollbar = (flags & ShadowWindowFlags_NoScrollbar) != 0;
+        bool noTitleBar = (flags & ShadowWindowFlags_NoTitleBar) != 0;
+        bool noMouseInputs = (flags & ShadowWindowFlags_NoMouseInputs) != 0;
 
-        float titleBarHeight = std::max(30.f, g_Ctx.ItemHeight + 10.f);
+        // 新增：如果 NoMouseInputs，完全跳过窗口交互逻辑
+        float titleBarHeight = noTitleBar ? 0.f : std::max(30.f, g_Ctx.ItemHeight + 10.f);
         Vec2 wholeWindowSize = g_Ctx.WindowSize;
-        bool hoveringWholeWindow = IsMouseHovering(g_Ctx.WindowPos, wholeWindowSize);
+
+        // 当 noMouseInputs 时，hoveringWholeWindow 始终为 false
+        bool hoveringWholeWindow = noMouseInputs ? false : IsMouseHovering(g_Ctx.WindowPos, wholeWindowSize);
 
         float triSize = g_Ctx.Style.ResizeGripSize;
         Vec2 triPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - triSize, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y - triSize };
-        g_Ctx.IsHoveringResize = (!noResize) && IsMouseHoveringRaw(triPos, { triSize, triSize });
+        // 当 noMouseInputs 时，IsHoveringResize 始终为 false
+        g_Ctx.IsHoveringResize = (!noResize && !noMouseInputs) ? IsMouseHoveringRaw(triPos, { triSize, triSize }) : false;
 
         bool isOtherDragging = (g_Ctx.DraggingSliderId != 0) || g_Ctx.IsDraggingSV || g_Ctx.IsDraggingHue || g_Ctx.IsDraggingAlpha || g_Ctx.IsDraggingColorPicker || g_Ctx.IsDraggingScrollbar || g_Ctx.DraggingTabId != 0 || g_Ctx.DraggingTabBarScrollId != 0;
 
@@ -2260,8 +2272,6 @@ namespace Shadow {
 
         bool hasPopupOpen = g_Ctx.ActiveDropdownId != 0 || g_Ctx.ActiveColorPickerId != 0;
 
-        // 修复：鼠标若悬停在（上一帧记录的）任意 TabBar 行/滚动条区域内，
-        // 窗口自身的垂直滚动条不应响应本次滚轮事件，避免与 TabBar 的横向滚动互相干扰
         bool hoveringAnyTabBar = false;
         for (auto& [rectPos, rectSize] : g_Ctx.TabBarHoverRects) {
             if (IsMouseHoveringRaw(rectPos, rectSize)) {
@@ -2270,8 +2280,8 @@ namespace Shadow {
             }
         }
 
-        // 注：即使 NoScrollbar，鼠标滚轮/代码依然可以滚动内容，只是不绘制/不可拖拽滚动条
-        if (hoveringWholeWindow && g_Ctx.MouseWheel != 0.f && !hasPopupOpen && !hoveringAnyTabBar) {
+        // 滚轮滚动：NoMouseInputs 时禁用
+        if (!noMouseInputs && hoveringWholeWindow && g_Ctx.MouseWheel != 0.f && !hasPopupOpen && !hoveringAnyTabBar) {
             g_Ctx.ScrollY -= g_Ctx.MouseWheel * 30.f;
             g_Ctx.ScrollY = std::clamp(g_Ctx.ScrollY, 0.f, maxScroll);
         }
@@ -2288,16 +2298,17 @@ namespace Shadow {
             Vec2 thumbPos = { trackPos.x, thumbY };
             Vec2 thumbSize = { scrollbarWidth, thumbHeight };
 
-            bool hoveringThumb = IsMouseHoveringRaw(thumbPos, thumbSize);
-            bool hoveringTrack = IsMouseHoveringRaw(trackPos, trackSize);
+            // 当 noMouseInputs 时，所有悬停检测为 false
+            bool hoveringThumb = noMouseInputs ? false : IsMouseHoveringRaw(thumbPos, thumbSize);
+            bool hoveringTrack = noMouseInputs ? false : IsMouseHoveringRaw(trackPos, trackSize);
 
             if (hoveringTrack || hoveringThumb) { hoveringScrollbar = true; }
 
-            if (g_Ctx.MouseClicked && hoveringThumb) {
+            if (!noMouseInputs && g_Ctx.MouseClicked && hoveringThumb) {
                 g_Ctx.IsDraggingScrollbar = true;
                 g_Ctx.ScrollDragOffset = g_Ctx.MousePos.y - thumbPos.y;
             }
-            else if (g_Ctx.MouseClicked && hoveringTrack) {
+            else if (!noMouseInputs && g_Ctx.MouseClicked && hoveringTrack) {
                 if (g_Ctx.MousePos.y < thumbPos.y) g_Ctx.ScrollY -= viewHeight;
                 else g_Ctx.ScrollY += viewHeight;
                 g_Ctx.ScrollY = std::clamp(g_Ctx.ScrollY, 0.f, maxScroll);
@@ -2318,50 +2329,52 @@ namespace Shadow {
             g_Ctx.IsDraggingScrollbar = false;
         }
 
-        if (!noMove && !g_Ctx.IsDragging && hoveringWholeWindow && g_Ctx.MouseClicked && !g_Ctx.IsHoveringResize && !isOtherDragging && !hoveringScrollbar) {
+        // 窗口拖动：NoMouseInputs 或 NoMove 时禁用
+        if (!noMove && !noMouseInputs && !g_Ctx.IsDragging && hoveringWholeWindow && g_Ctx.MouseClicked && !g_Ctx.IsHoveringResize && !isOtherDragging && !hoveringScrollbar) {
             g_Ctx.IsDragging = true;
             g_Ctx.DragOffset.x = g_Ctx.MousePos.x - g_Ctx.WindowPos.x;
             g_Ctx.DragOffset.y = g_Ctx.MousePos.y - g_Ctx.WindowPos.y;
         }
         if (g_Ctx.IsDragging && isOtherDragging) g_Ctx.IsDragging = false;
 
-        if (!noResize && !g_Ctx.IsResizing && g_Ctx.IsHoveringResize && g_Ctx.MouseClicked && !isOtherDragging) {
+        // 窗口缩放：NoMouseInputs 或 NoResize 时禁用
+        if (!noResize && !noMouseInputs && !g_Ctx.IsResizing && g_Ctx.IsHoveringResize && g_Ctx.MouseClicked && !isOtherDragging) {
             g_Ctx.IsResizing = true;
             g_Ctx.ResizeStartPos = g_Ctx.MousePos;
             g_Ctx.ResizeStartSize = g_Ctx.WindowSize;
         }
         if (g_Ctx.IsResizing && isOtherDragging) g_Ctx.IsResizing = false;
 
-        if (!noMove && g_Ctx.IsDragging) {
+        if (!noMove && !noMouseInputs && g_Ctx.IsDragging) {
             g_Ctx.WindowPos.x = g_Ctx.MousePos.x - g_Ctx.DragOffset.x;
             g_Ctx.WindowPos.y = g_Ctx.MousePos.y - g_Ctx.DragOffset.y;
         }
 
-        // --- 处理缩放拖拽时同样遵循最新设定的限制 ---
-        if (!noResize && g_Ctx.IsResizing) {
+        if (!noResize && !noMouseInputs && g_Ctx.IsResizing) {
             Vec2 delta = { g_Ctx.MousePos.x - g_Ctx.ResizeStartPos.x, g_Ctx.MousePos.y - g_Ctx.ResizeStartPos.y };
-
             g_Ctx.WindowSize.x = std::clamp(g_Ctx.ResizeStartSize.x + delta.x, min_x, max_x);
             g_Ctx.WindowSize.y = std::clamp(g_Ctx.ResizeStartSize.y + delta.y, min_y, max_y);
-
             if (!g_Ctx.MouseDown) g_Ctx.IsResizing = false;
         }
 
+        // 绘制窗口背景
         DrawRect(g_Ctx.WindowPos, g_Ctx.WindowSize, g_Ctx.Style.Colors[GuiCol_WindowBg]);
-        DrawRect(g_Ctx.WindowPos, { g_Ctx.WindowSize.x, titleBarHeight }, g_Ctx.Style.Colors[GuiCol_TitleBarBg]);
 
-        // 问题4：标题文本对齐方式
-        {
-            float titleTextX = g_Ctx.WindowPos.x + 10.f;
-            if (flags & ShadowWindowFlags_TextAlignCenter) {
-                float textW = MeasureTextSize(display).x;
-                titleTextX = g_Ctx.WindowPos.x + (g_Ctx.WindowSize.x - textW) * 0.5f;
+        if (!noTitleBar) {
+            DrawRect(g_Ctx.WindowPos, { g_Ctx.WindowSize.x, titleBarHeight }, g_Ctx.Style.Colors[GuiCol_TitleBarBg]);
+
+            {
+                float titleTextX = g_Ctx.WindowPos.x + 10.f;
+                if (flags & ShadowWindowFlags_TextAlignCenter) {
+                    float textW = MeasureTextSize(display).x;
+                    titleTextX = g_Ctx.WindowPos.x + (g_Ctx.WindowSize.x - textW) * 0.5f;
+                }
+                else if (flags & ShadowWindowFlags_TextAlignRight) {
+                    float textW = MeasureTextSize(display).x;
+                    titleTextX = g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - 10.f - textW;
+                }
+                DrawTextString(display, { titleTextX, g_Ctx.WindowPos.y + 7.f }, g_Ctx.Style.Colors[GuiCol_Text]);
             }
-            else if (flags & ShadowWindowFlags_TextAlignRight) {
-                float textW = MeasureTextSize(display).x;
-                titleTextX = g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - 10.f - textW;
-            }
-            DrawTextString(display, { titleTextX, g_Ctx.WindowPos.y + 7.f }, g_Ctx.Style.Colors[GuiCol_Text]);
         }
 
         g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x, g_Ctx.WindowPos.y + titleBarHeight + g_Ctx.Style.WindowPadding.y };

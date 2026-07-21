@@ -302,7 +302,19 @@ namespace Hook {
 
                         Shadow::TextDisabled(U8("这是一段禁用颜色的文本"));
 
-                        if (Shadow::TreeNode(U8("第0个折叠块"), Shadow::ShadowTreeNodeFlags_Framed | Shadow::ShadowTreeNodeFlags_FitText)) {
+                        static int selected_item = 0; // 默认选中第 0 项
+                        static const std::vector<std::string> items = { U8("苹果"), U8("香蕉"), U8("橙子"), U8("葡萄") };
+
+                        for (int i = 0; i < items.size(); i++)
+                        {
+                            // 如果 i 等于当前选中索引，传入 true 显示高亮
+                            if (Shadow::Selectable(items[i], selected_item == i))
+                            {
+                                selected_item = i; // 点击后更新选中索引
+                            }
+                        }
+
+                        if (Shadow::TreeNode(U8("第0个折叠块"), Shadow::ShadowTreeNodeFlags_Framed | Shadow::ShadowTreeNodeFlags_FitText | Shadow::ShadowTreeNodeFlags_NoIndent)) {
                             Shadow::Text(U8("下方会出现巨大空间"));
                             Shadow::Dummy({ 100.f, 50.f });
 
@@ -328,6 +340,80 @@ namespace Hook {
                             }
                             Shadow::TreePop();
 
+
+                            static std::string text_basic = U8("");
+                            static std::string text_decimal = U8("");
+                            static std::string text_hex = U8("");
+                            static std::string text_scientific = U8("");
+                            static std::string text_uppercase = U8("");
+                            static std::string text_noblank = U8("");
+                            static std::string text_esc_clear = U8("按 Esc 清空我");
+                            static std::string text_readonly = U8("只读内容，不可更改");
+                            static std::string text_password = U8("");
+                            static std::string text_autoselect = U8("点击后自动全选文本");
+                            static float text_parse_ref = 1.f;
+                            static float text_display_ref = 1.f;
+                            static std::string text_combo_key = U8("");
+
+                            // 1. 基础用法 (ShadowInputTextFlags_None)
+                            if (Shadow::InputTextWithHint(U8("普通输入"), U8("请输入任意内容..."), text_basic, Shadow::ShadowInputTextFlags_None))
+                            {
+                                // 文本发生变更时触发
+                            }
+
+                            // 2. 字符限制类 Flags
+                            // 2.1 仅十进制数字 (0-9, +, -, .)
+                            Shadow::InputTextWithHint(U8("纯数字"), U8("如: 123 或 -45.6"), text_decimal,
+                                Shadow::ShadowInputTextFlags_CharsDecimal);
+
+                            // 2.2 仅十六进制 (0-9, a-f, A-F)
+                            Shadow::InputTextWithHint(U8("16进制"), U8("如: FF00AA"), text_hex,
+                                Shadow::ShadowInputTextFlags_CharsHexadecimal);
+
+                            // 2.3 科学计数法 (1.23e4)
+                            Shadow::InputTextWithHint(U8("科学计数"), U8("如: 1.23e4"), text_scientific,
+                                Shadow::ShadowInputTextFlags_CharsScientific);
+
+                            // 2.4 自动将小写转换为大写
+                            Shadow::InputTextWithHint(U8("自动大写"), U8("输入 abc 会变成 ABC"), text_uppercase,
+                                Shadow::ShadowInputTextFlags_CharsUppercase);
+
+                            // 2.5 屏蔽空格键，禁止输入空格
+                            Shadow::InputTextWithHint(U8("禁止空格"), U8("无法输入空格..."), text_noblank,
+                                Shadow::ShadowInputTextFlags_CharsNoBlank);
+
+                            // 3. 交互与状态控制 Flags
+                            // 3.1 聚焦时按下 Esc 键直接清空字符串
+                            Shadow::InputTextWithHint(U8("Esc 清空"), U8("按 Esc 键清空..."), text_esc_clear,
+                                Shadow::ShadowInputTextFlags_EscapeClearsAll);
+
+                            // 3.2 只读模式：禁止编辑，但可以选中和复制
+                            Shadow::InputTextWithHint(U8("只读文本"), U8("不可编辑..."), text_readonly,
+                                Shadow::ShadowInputTextFlags_ReadOnly);
+
+                            // 3.3 密码隐藏模式：输入内容显示为掩码字符
+                            Shadow::InputTextWithHint(U8("密码模式"), U8("请输入密码..."), text_password,
+                                Shadow::ShadowInputTextFlags_Password);
+
+                            // 3.4 鼠标点击获得焦点时，自动选中全部文本
+                            Shadow::InputTextWithHint(U8("自动全选"), U8("点击该框自动选中全部"), text_autoselect,
+                                Shadow::ShadowInputTextFlags_AutoSelectAll);
+
+                            // 4. 缺省/引用值控制 Flags
+                            // 4.1 清空内容时将其解析恢复为默认参考值
+                            Shadow::InputFloat(U8("解析空参考值"), &text_parse_ref,
+                                Shadow::ShadowInputTextFlags_ParseEmptyRefVal);
+
+                            // 4.2 即使绑定的字符串为空，也强制渲染/展示空参考状态
+                            Shadow::InputFloat(U8("显示空参考值"), &text_display_ref,
+                                Shadow::ShadowInputTextFlags_DisplayEmptyRefVal);
+
+                            // 5. 实战推荐：多 Flags 按位或组合使用
+                            // 示例：卡密/激活码输入框（无空格 + 自动大写 + 点击自动全选）
+                            Shadow::InputTextWithHint(U8("激活码"), U8("XXXX-XXXX-XXXX"), text_combo_key,
+                                Shadow::ShadowInputTextFlags_CharsNoBlank |
+                                Shadow::ShadowInputTextFlags_CharsUppercase |
+                                Shadow::ShadowInputTextFlags_AutoSelectAll);
 
                         }
                         Shadow::TreePop();

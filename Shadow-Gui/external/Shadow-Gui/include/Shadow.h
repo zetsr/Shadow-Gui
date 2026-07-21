@@ -19,6 +19,7 @@ Credit:
 #include <charconv>
 #include <array>
 #include <ranges>
+#include <cstdio>
 
 #include "../../CppSDK/SDK.hpp"
 
@@ -148,9 +149,26 @@ namespace Shadow {
         ShadowTreeNodeFlags_None = 0,
         ShadowTreeNodeFlags_DefaultOpen = 1 << 0,
         ShadowTreeNodeFlags_Framed = 1 << 1,
-        ShadowTreeNodeFlags_FitText = 1 << 2
+        ShadowTreeNodeFlags_FitText = 1 << 2,
+        ShadowTreeNodeFlags_NoIndent = 1 << 3
     };
     using ShadowTreeNodeFlags = int;
+
+    enum ShadowInputTextFlags_ {
+        ShadowInputTextFlags_None = 0,
+        ShadowInputTextFlags_CharsDecimal = 1 << 0,
+        ShadowInputTextFlags_CharsHexadecimal = 1 << 1,
+        ShadowInputTextFlags_CharsScientific = 1 << 2,
+        ShadowInputTextFlags_CharsUppercase = 1 << 3,
+        ShadowInputTextFlags_CharsNoBlank = 1 << 4,
+        ShadowInputTextFlags_EscapeClearsAll = 1 << 5,
+        ShadowInputTextFlags_ReadOnly = 1 << 6,
+        ShadowInputTextFlags_Password = 1 << 7,
+        ShadowInputTextFlags_AutoSelectAll = 1 << 8,
+        ShadowInputTextFlags_ParseEmptyRefVal = 1 << 9,
+        ShadowInputTextFlags_DisplayEmptyRefVal = 1 << 10
+    };
+    using ShadowInputTextFlags = int;
 
     struct GuiStyle {
         Color Colors[GuiCol_COUNT];
@@ -390,6 +408,7 @@ namespace Shadow {
         std::unordered_map<size_t, bool> TreeNodeOpenStates;
         float IndentX = 0.f;
         float BackupIndentX = 0.f;
+        std::vector<bool> TreeNodeNoIndentStack;
     };
 
     inline GuiContext g_Ctx;
@@ -1458,9 +1477,8 @@ namespace Shadow {
         if (!g_Ctx.InActiveTab) return false;
         std::string_view display; size_t id; ParseLabel(name, display, id);
         g_Ctx.WidgetCount++;
-        g_Ctx.TreeNodeStack++; // [新增] 追踪 TreeNode 层级深度
+        g_Ctx.TreeNodeStack++;
 
-        // 首次出现时根据 DefaultOpen 标志初始化
         if (g_Ctx.TreeNodeOpenStates.find(id) == g_Ctx.TreeNodeOpenStates.end()) {
             g_Ctx.TreeNodeOpenStates[id] = (flags & ShadowTreeNodeFlags_DefaultOpen) != 0;
         }
@@ -1468,11 +1486,10 @@ namespace Shadow {
         bool isOpen = g_Ctx.TreeNodeOpenStates[id];
         bool isFramed = (flags & ShadowTreeNodeFlags_Framed) != 0;
         bool isFitText = (flags & ShadowTreeNodeFlags_FitText) != 0;
+        bool noIndent = (flags & ShadowTreeNodeFlags_NoIndent) != 0;
 
         float arrowSize = g_Ctx.ItemHeight * 0.55f;
         float textWidth = MeasureTextSize(display).x;
-
-        // 基础交互尺寸 (未开启 Frame 时的最小可点击范围)
         Vec2 interactSize = { arrowSize + 10.f + textWidth, g_Ctx.ItemHeight };
 
         if (isFramed) {
@@ -1488,7 +1505,8 @@ namespace Shadow {
         // 视口外剔除
         if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
             g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.IndentX += 20.f; // 即使不可见也要无条件推入缩进栈平衡
+            if (!noIndent) g_Ctx.IndentX += 20.f;
+            g_Ctx.TreeNodeNoIndentStack.push_back(noIndent);
             g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
             return isOpen;
         }
@@ -1509,7 +1527,6 @@ namespace Shadow {
             arrowColor = g_Ctx.Style.Colors[GuiCol_TextHighlight];
         }
 
-        // 绘制 Framed 背景
         if (isFramed) {
             Color bgColor = disabled ? g_Ctx.Style.Colors[GuiCol_ControlDisabled] : (hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
             DrawRectFilled(g_Ctx.Cursor, interactSize, bgColor);
@@ -1519,21 +1536,18 @@ namespace Shadow {
         float arrowX = g_Ctx.Cursor.x + (isFramed ? g_Ctx.Style.FramePadding.x : 0.f);
 
         if (isOpen) {
-            // 向下箭头 (展开)
             Vec2 p1 = { arrowX, centerY - arrowSize * 0.25f };
             Vec2 p2 = { arrowX + arrowSize, centerY - arrowSize * 0.25f };
             Vec2 p3 = { arrowX + arrowSize * 0.5f, centerY + arrowSize * 0.25f };
             DrawTriangleFilled(p1, p2, p3, arrowColor);
         }
         else {
-            // 向右箭头 (折叠)
             Vec2 p1 = { arrowX + arrowSize * 0.25f, centerY - arrowSize * 0.5f };
             Vec2 p2 = { arrowX + arrowSize * 0.75f, centerY };
             Vec2 p3 = { arrowX + arrowSize * 0.25f, centerY + arrowSize * 0.5f };
             DrawTriangleFilled(p1, p2, p3, arrowColor);
         }
 
-        // [修改] 利用 std::round 强制截去包含 0.55f 乘积运算时产生的小数坐标偏移
         float textStartX = std::round(arrowX + arrowSize + 8.f);
         DrawTextString(display, { textStartX, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, textColor);
 
@@ -1541,16 +1555,27 @@ namespace Shadow {
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
 
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.IndentX += 20.f;
+        if (!noIndent) g_Ctx.IndentX += 20.f;
+        g_Ctx.TreeNodeNoIndentStack.push_back(noIndent);
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
 
         return isOpen;
     }
 
     inline void TreePop() {
-        if (!g_Ctx.InActiveTab) return; // [新增] 若控件被隐藏剔除，放弃执行，以确保与 TreeNode 的前置校验匹配
-        g_Ctx.TreeNodeStack--; // [新增]
-        g_Ctx.IndentX = std::max(0.f, g_Ctx.IndentX - 20.f);
+        if (!g_Ctx.InActiveTab) return;
+        g_Ctx.TreeNodeStack--;
+
+        bool noIndent = false;
+        if (!g_Ctx.TreeNodeNoIndentStack.empty()) {
+            noIndent = g_Ctx.TreeNodeNoIndentStack.back();
+            g_Ctx.TreeNodeNoIndentStack.pop_back();
+        }
+
+        if (!noIndent) {
+            g_Ctx.IndentX = std::max(0.f, g_Ctx.IndentX - 20.f);
+        }
+
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
 
@@ -1685,10 +1710,12 @@ namespace Shadow {
         return true;
     }
 
-    // --- 真正的输入框核心逻辑，不改变 Cursor 游标（供复用） ---
-    inline bool InputTextEx(size_t id, Vec2 pos, Vec2 size, std::string& text, bool is_popup = false) {
+    inline bool InputTextEx(size_t id, Vec2 pos, Vec2 size, std::string& text, ShadowInputTextFlags flags = 0, bool is_popup = false, std::string_view hint = "") {
         bool disabled = IsDisabled();
         bool hovered = is_popup ? IsMouseHoveringRaw(pos, size) : IsMouseHovering(pos, size);
+
+        bool isReadOnly = (flags & ShadowInputTextFlags_ReadOnly) != 0;
+        bool isPassword = (flags & ShadowInputTextFlags_Password) != 0;
 
         if (g_Ctx.MouseClicked) {
             if (hovered && !disabled) {
@@ -1697,6 +1724,12 @@ namespace Shadow {
                 g_Ctx.InputSelectionStart = -1;
                 g_Ctx.InputSelectionEnd = -1;
                 g_Ctx.MouseClicked = false;
+
+                if (flags & ShadowInputTextFlags_AutoSelectAll) {
+                    g_Ctx.InputSelectionStart = 0;
+                    g_Ctx.InputSelectionEnd = static_cast<int>(text.size());
+                    g_Ctx.InputCursorPos = static_cast<int>(text.size());
+                }
             }
             else if (g_Ctx.ActiveInputId == id) {
                 g_Ctx.ActiveInputId = 0;
@@ -1712,6 +1745,7 @@ namespace Shadow {
             bool shiftDown = g_Ctx.KeyStates[VK_SHIFT];
 
             auto DeleteSelection = [&]() {
+                if (isReadOnly) return false;
                 if (g_Ctx.InputSelectionStart != -1 && g_Ctx.InputSelectionEnd != -1 && g_Ctx.InputSelectionStart != g_Ctx.InputSelectionEnd) {
                     int s = std::clamp(std::min(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)text.size());
                     int e = std::clamp(std::max(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)text.size());
@@ -1724,11 +1758,19 @@ namespace Shadow {
                 return false;
                 };
 
-            for (char c : g_Ctx.InputChars) {
-                DeleteSelection();
-                text.insert(text.begin() + g_Ctx.InputCursorPos, c);
-                g_Ctx.InputCursorPos++;
-                valueChanged = true;
+            if (!isReadOnly) {
+                for (char c : g_Ctx.InputChars) {
+                    if (flags & ShadowInputTextFlags_CharsNoBlank) if (c == ' ' || c == '\t') continue;
+                    if (flags & ShadowInputTextFlags_CharsUppercase) if (c >= 'a' && c <= 'z') c -= 32;
+                    if (flags & ShadowInputTextFlags_CharsDecimal) if (!(c >= '0' && c <= '9') && c != '.' && c != '+' && c != '-' && c != '*' && c != '/') continue;
+                    if (flags & ShadowInputTextFlags_CharsHexadecimal) if (!(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'f') && !(c >= 'A' && c <= 'F')) continue;
+                    if (flags & ShadowInputTextFlags_CharsScientific) if (!(c >= '0' && c <= '9') && c != '.' && c != '+' && c != '-' && c != '*' && c != '/' && c != 'e' && c != 'E') continue;
+
+                    DeleteSelection();
+                    text.insert(text.begin() + g_Ctx.InputCursorPos, c);
+                    g_Ctx.InputCursorPos++;
+                    valueChanged = true;
+                }
             }
 
             if (ctrlDown) {
@@ -1738,24 +1780,37 @@ namespace Shadow {
                     g_Ctx.InputCursorPos = static_cast<int>(text.size());
                 }
                 if (g_Ctx.KeyPressed['C'] || g_Ctx.KeyPressed['X']) {
-                    if (g_Ctx.InputSelectionStart != -1 && g_Ctx.InputSelectionEnd != -1 && g_Ctx.InputSelectionStart != g_Ctx.InputSelectionEnd) {
-                        int s = std::clamp(std::min(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)text.size());
-                        int e = std::clamp(std::max(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)text.size());
-                        SetClipboardText(text.substr(s, e - s));
-                        if (g_Ctx.KeyPressed['X']) DeleteSelection();
-                    }
-                    else if (g_Ctx.KeyPressed['C']) {
-                        SetClipboardText(text);
+                    if (!isPassword) {
+                        if (g_Ctx.InputSelectionStart != -1 && g_Ctx.InputSelectionEnd != -1 && g_Ctx.InputSelectionStart != g_Ctx.InputSelectionEnd) {
+                            int s = std::clamp(std::min(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)text.size());
+                            int e = std::clamp(std::max(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)text.size());
+                            SetClipboardText(text.substr(s, e - s));
+                            if (g_Ctx.KeyPressed['X'] && !isReadOnly) DeleteSelection();
+                        }
+                        else if (g_Ctx.KeyPressed['C']) {
+                            SetClipboardText(text);
+                        }
                     }
                 }
-                if (g_Ctx.KeyPressed['V']) {
+                if (g_Ctx.KeyPressed['V'] && !isReadOnly) {
                     std::string clip = GetClipboardText();
                     if (!clip.empty()) {
-                        clip.erase(std::remove_if(clip.begin(), clip.end(), [](char c) { return c < 32 || c >= 127; }), clip.end());
-                        DeleteSelection();
-                        text.insert(g_Ctx.InputCursorPos, clip);
-                        g_Ctx.InputCursorPos += static_cast<int>(clip.size());
-                        valueChanged = true;
+                        std::string filtered;
+                        for (char c : clip) {
+                            if (c < 32 || c >= 127) continue;
+                            if (flags & ShadowInputTextFlags_CharsNoBlank) if (c == ' ' || c == '\t') continue;
+                            if (flags & ShadowInputTextFlags_CharsUppercase) if (c >= 'a' && c <= 'z') c -= 32;
+                            if (flags & ShadowInputTextFlags_CharsDecimal) if (!(c >= '0' && c <= '9') && c != '.' && c != '+' && c != '-' && c != '*' && c != '/') continue;
+                            if (flags & ShadowInputTextFlags_CharsHexadecimal) if (!(c >= '0' && c <= '9') && !(c >= 'a' && c <= 'f') && !(c >= 'A' && c <= 'F')) continue;
+                            if (flags & ShadowInputTextFlags_CharsScientific) if (!(c >= '0' && c <= '9') && c != '.' && c != '+' && c != '-' && c != '*' && c != '/' && c != 'e' && c != 'E') continue;
+                            filtered += c;
+                        }
+                        if (!filtered.empty()) {
+                            DeleteSelection();
+                            text.insert(g_Ctx.InputCursorPos, filtered);
+                            g_Ctx.InputCursorPos += static_cast<int>(filtered.size());
+                            valueChanged = true;
+                        }
                     }
                 }
             }
@@ -1772,14 +1827,14 @@ namespace Shadow {
                     if (g_Ctx.InputCursorPos < static_cast<int>(text.size())) g_Ctx.InputCursorPos++;
                     if (shiftDown) g_Ctx.InputSelectionEnd = g_Ctx.InputCursorPos;
                 }
-                if (g_Ctx.KeyPressed[VK_BACK]) {
+                if (g_Ctx.KeyPressed[VK_BACK] && !isReadOnly) {
                     if (!DeleteSelection() && g_Ctx.InputCursorPos > 0) {
                         text.erase(g_Ctx.InputCursorPos - 1, 1);
                         g_Ctx.InputCursorPos--;
                         valueChanged = true;
                     }
                 }
-                if (g_Ctx.KeyPressed[VK_DELETE]) {
+                if (g_Ctx.KeyPressed[VK_DELETE] && !isReadOnly) {
                     if (!DeleteSelection() && g_Ctx.InputCursorPos < static_cast<int>(text.size())) {
                         text.erase(g_Ctx.InputCursorPos, 1);
                         valueChanged = true;
@@ -1798,7 +1853,21 @@ namespace Shadow {
                     if (shiftDown) g_Ctx.InputSelectionEnd = g_Ctx.InputCursorPos;
                 }
                 if (g_Ctx.KeyPressed[VK_RETURN] || g_Ctx.KeyPressed[VK_ESCAPE]) {
-                    g_Ctx.ActiveInputId = 0;
+                    if (g_Ctx.KeyPressed[VK_ESCAPE] && (flags & ShadowInputTextFlags_EscapeClearsAll)) {
+                        if (!text.empty() && !isReadOnly) {
+                            text.clear();
+                            g_Ctx.InputCursorPos = 0;
+                            g_Ctx.InputSelectionStart = -1;
+                            g_Ctx.InputSelectionEnd = -1;
+                            valueChanged = true;
+                        }
+                        else {
+                            g_Ctx.ActiveInputId = 0;
+                        }
+                    }
+                    else {
+                        g_Ctx.ActiveInputId = 0;
+                    }
                 }
             }
         }
@@ -1810,24 +1879,34 @@ namespace Shadow {
         float textX = pos.x + g_Ctx.Style.FramePadding.x;
         float textY = pos.y + g_Ctx.Style.FramePadding.y;
 
+        std::string displayText = text;
+        if (isPassword) displayText.assign(text.size(), '*');
+
         if (isActive && g_Ctx.InputSelectionStart != -1 && g_Ctx.InputSelectionEnd != -1 && g_Ctx.InputSelectionStart != g_Ctx.InputSelectionEnd) {
-            int s = std::clamp(std::min(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)text.size());
-            int e = std::clamp(std::max(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)text.size());
-            std::string preStr = text.substr(0, s);
-            std::string selStr = text.substr(s, e - s);
+            int s = std::clamp(std::min(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)displayText.size());
+            int e = std::clamp(std::max(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)displayText.size());
+            std::string preStr = displayText.substr(0, s);
+            std::string selStr = displayText.substr(s, e - s);
             float preW = MeasureTextSize(preStr).x;
             float selW = MeasureTextSize(selStr).x;
             DrawRectFilled({ textX + preW, pos.y + 2.f }, { selW, size.y - 4.f }, g_Ctx.Style.Colors[GuiCol_SliderGrab]);
         }
 
-        Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
-        DrawTextString(text, { textX, textY }, textColor);
+        if (text.empty() && !isActive && !hint.empty()) {
+            Color hintColor = g_Ctx.Style.Colors[GuiCol_TextDisabled];
+            DrawTextString(hint, { textX, textY }, hintColor);
+        }
+        else {
+            Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
+            DrawTextString(displayText, { textX, textY }, textColor);
+        }
 
         if (isActive) {
-            std::string preCursor = text.substr(0, g_Ctx.InputCursorPos);
+            std::string preCursor = displayText.substr(0, g_Ctx.InputCursorPos);
             float curW = MeasureTextSize(preCursor).x;
             if ((GetTickCount64() / 500) % 2 == 0) {
-                DrawRectFilled({ textX + curW, textY }, { 2.f, size.y - 4.f }, textColor);
+                Color cursorColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
+                DrawRectFilled({ textX + curW, textY }, { 2.f, size.y - 4.f }, cursorColor);
             }
         }
         PopClipRect();
@@ -2115,7 +2194,8 @@ namespace Shadow {
         g_Ctx.TabBarStack = 0;
         g_Ctx.TabItemStack = 0;
         g_Ctx.TreeNodeStack = 0;
-        g_Ctx.IndentX = 0.f; // 初始化时清空缩进状态，防止跨帧泄漏
+        g_Ctx.IndentX = 0.f;
+        g_Ctx.TreeNodeNoIndentStack.clear();
 
         g_Ctx.DisabledStack.clear();
 
@@ -2335,7 +2415,7 @@ namespace Shadow {
                     g_Ctx.InputBuffers[hexId] = std::format("{:02X}{:02X}{:02X}{:02X}", r8, g8, b8, a8);
                 }
 
-                bool hexChanged = InputTextEx(hexId, hexPos, hexSize, g_Ctx.InputBuffers[hexId], true);
+                bool hexChanged = InputTextEx(hexId, hexPos, hexSize, g_Ctx.InputBuffers[hexId], ShadowInputTextFlags_CharsHexadecimal | ShadowInputTextFlags_CharsUppercase, true);
                 if (hexChanged) {
                     ApplyHexInput();
                 }
@@ -3236,6 +3316,161 @@ namespace Shadow {
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
 
+    inline bool Selectable(std::string_view name, bool* p_selected = nullptr) {
+        if (!g_Ctx.InActiveTab) return false;
+        std::string_view display; size_t id; ParseLabel(name, display, id);
+        g_Ctx.WidgetCount++;
+
+        float rightMargin = GetRightMargin();
+        float width = std::max(10.f, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - g_Ctx.Cursor.x);
+        Vec2 size = { width, g_Ctx.ItemHeight };
+
+        if (!IsRectVisible(g_Ctx.Cursor, size)) {
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            return false;
+        }
+
+        bool disabled = IsDisabled();
+        bool hovered = !disabled && IsMouseHovering(g_Ctx.Cursor, size);
+        bool clicked = hovered && g_Ctx.MouseClicked;
+
+        if (clicked && p_selected) {
+            *p_selected = !*p_selected;
+        }
+
+        bool selected = p_selected ? *p_selected : false;
+
+        Color bgColor = { 0, 0, 0, 0 }; // 默认透明
+        if (disabled) {
+            if (selected) bgColor = g_Ctx.Style.Colors[GuiCol_ControlDisabled];
+        }
+        else {
+            if (hovered && selected) bgColor = g_Ctx.Style.Colors[GuiCol_TabHovered];
+            else if (hovered) bgColor = g_Ctx.Style.Colors[GuiCol_FrameBgHovered];
+            else if (selected) bgColor = g_Ctx.Style.Colors[GuiCol_TabActive];
+        }
+
+        if (bgColor.a > 0.0f) {
+            DrawRectFilled(g_Ctx.Cursor, size, bgColor);
+        }
+
+        Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
+        DrawTextString(display, { g_Ctx.Cursor.x + g_Ctx.Style.FramePadding.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, textColor);
+
+        SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, id, disabled);
+        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
+        g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+
+        return clicked;
+    }
+
+    inline bool Selectable(std::string_view name, bool selected) {
+        bool temp = selected;
+        return Selectable(name, &temp);
+    }
+
+    inline bool InputTextWithHint(std::string_view name, std::string_view hint, std::string& text, ShadowInputTextFlags flags = 0) {
+        if (!g_Ctx.InActiveTab) return false;
+        std::string_view display; size_t id; ParseLabel(name, display, id);
+        g_Ctx.WidgetCount++;
+
+        if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            return false;
+        }
+
+        bool disabled = IsDisabled();
+        Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
+        DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, textColor);
+
+        float controlOffsetX = GetControlOffsetX();
+        float rightMargin = GetRightMargin();
+
+        Vec2 boxPos = { g_Ctx.WindowPos.x + controlOffsetX, g_Ctx.Cursor.y };
+        float boxWidth = std::max(50.f, g_Ctx.WindowSize.x - controlOffsetX - rightMargin);
+        Vec2 boxSize = { boxWidth, g_Ctx.ItemHeight };
+
+        bool changed = InputTextEx(id, boxPos, boxSize, text, flags, false, hint);
+
+        SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + g_Ctx.ItemHeight }, id, disabled);
+        g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
+        g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+
+        return changed;
+    }
+
+    inline bool InputText(std::string_view name, std::string& text, ShadowInputTextFlags flags = 0) {
+        return InputTextWithHint(name, "", text, flags);
+    }
+
+    inline bool InputFloat(std::string_view name, float* v, float step = 0.0f, float step_fast = 0.0f, std::string_view format = "{:.3f}", ShadowInputTextFlags flags = 0) {
+        if (!g_Ctx.InActiveTab) return false;
+        std::string_view display; size_t id; ParseLabel(name, display, id);
+        g_Ctx.WidgetCount++;
+
+        if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, g_Ctx.ItemHeight })) {
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            return false;
+        }
+
+        bool disabled = IsDisabled();
+        Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
+        DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, textColor);
+
+        size_t inputId = id ^ HashString("_inputFloat");
+
+        if (g_Ctx.ActiveInputId != inputId) {
+            if ((flags & ShadowInputTextFlags_DisplayEmptyRefVal) && std::abs(*v) < 0.000001f) {
+                g_Ctx.InputBuffers[inputId] = "";
+            }
+            else {
+                g_Ctx.InputBuffers[inputId] = std::vformat(format, std::make_format_args(*v));
+            }
+        }
+
+        float controlOffsetX = GetControlOffsetX();
+        float rightMargin = GetRightMargin();
+
+        Vec2 boxPos = { g_Ctx.WindowPos.x + controlOffsetX, g_Ctx.Cursor.y };
+        float boxWidth = std::max(50.f, g_Ctx.WindowSize.x - controlOffsetX - rightMargin);
+        Vec2 boxSize = { boxWidth, g_Ctx.ItemHeight };
+
+        // 默认叠加科学计数法限制标志（已包含普通十进制支持）
+        ShadowInputTextFlags effectiveFlags = flags | ShadowInputTextFlags_CharsScientific;
+
+        bool changed = InputTextEx(inputId, boxPos, boxSize, g_Ctx.InputBuffers[inputId], effectiveFlags);
+        bool valueChanged = false;
+
+        if (changed && !disabled) {
+            std::string& str = g_Ctx.InputBuffers[inputId];
+            if (str.empty() && (flags & ShadowInputTextFlags_ParseEmptyRefVal)) {
+                *v = 0.0f;
+                valueChanged = true;
+            }
+            else if (!str.empty()) {
+                float parsed;
+                auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), parsed);
+                // 仅当能够合法解析时才真正改变值(避免用户在打字输入 '-' 瞬间归零)
+                if (ec == std::errc()) {
+                    *v = parsed;
+                    valueChanged = true;
+                }
+            }
+        }
+
+        SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + g_Ctx.ItemHeight }, id, disabled);
+        g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
+        g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+
+        return valueChanged;
+    }
+
     inline bool Button(std::string_view name) {
         if (!g_Ctx.InActiveTab) return false;
         std::string_view display; size_t id; ParseLabel(name, display, id);
@@ -3388,7 +3623,7 @@ namespace Shadow {
             DrawRectFilled({ sliderPos.x + size.x, sliderPos.y }, { 1.f, size.y }, border);
         }
 
-        bool changed = InputTextEx(sliderInputId, valBoxPos, valBoxSize, g_Ctx.InputBuffers[sliderInputId]);
+        bool changed = InputTextEx(sliderInputId, valBoxPos, valBoxSize, g_Ctx.InputBuffers[sliderInputId], ShadowInputTextFlags_CharsDecimal);
 
         if (changed && !disabled) {
             const std::string& str = g_Ctx.InputBuffers[sliderInputId];

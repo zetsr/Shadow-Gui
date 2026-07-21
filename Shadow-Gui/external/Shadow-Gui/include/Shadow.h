@@ -184,6 +184,27 @@ namespace Shadow {
         float Scale;
     };
 
+    enum class ShadowDrawCmdType {
+        Line,
+        Rect,
+        RectFilled,
+        Text
+    };
+
+    struct ShadowDrawCmd {
+        ShadowDrawCmdType type;
+        Vec2 pos;
+        Vec2 size;
+        Color color;
+        float thickness;
+        std::string text;
+        SDK::UFont* font;
+        float fontScale;
+        bool clippingEnabled;
+        Vec2 clipMin;
+        Vec2 clipMax;
+    };
+
     struct GuiContext {
         SDK::UCanvas* Canvas = nullptr;
         SDK::UFont* DefaultFont = nullptr;
@@ -285,39 +306,29 @@ namespace Shadow {
         ShadowTabBarFlags CurrentTabBarFlags = ShadowTabBarFlags_None;
         size_t CurrentTabBarId = 0;
 
-        // Tab 顺序层：key = TabBarId，value = 该 TabBar 下按"UI显示顺序"排列的 Tab id 列表
         std::unordered_map<size_t, std::vector<size_t>> TabOrderMap;
-        // 记录每个 TabBar 本帧内，代码调用 BeginTabItem 出现的顺序（用于把新 Tab 插入 TabOrderMap）
         std::unordered_map<size_t, std::vector<size_t>> TabAppearedThisFrame;
 
-        // 记录每个 Tab 的显示信息（本帧内，供 Reorderable 拖拽计算使用）
         std::unordered_map<size_t, std::vector<TabDisplayInfo>> TabBarDisplayCache;
-        // 每个 TabBar 的稳定布局表：key = tabBarId, value = (tabId -> 左边界X偏移，相对 TabBarOrigin.x，不含滚动/拖拽)
         std::unordered_map<size_t, std::unordered_map<size_t, float>> TabBarLayoutX;
-        // 每个 Tab 的宽度缓存：key = tabId (全局唯一即可，因为 HashString 基本不冲突)
         std::unordered_map<size_t, float> TabWidthCache;
 
-        // 拖拽重排状态
         size_t DraggingTabId = 0;
         size_t DraggingTabBarId = 0;
         float DraggingTabGrabOffsetX = 0.f;
         float DraggingTabCurrentX = 0.f;
 
-        // TabBar 水平滚动
         std::unordered_map<size_t, float> TabBarScrollX;
         size_t DraggingTabBarScrollId = 0;
         float TabBarScrollDragOffset = 0.f;
 
-        // 保存本帧 TabBar 的几何信息，供 BeginTabItem / EndTabBar 使用
-        Vec2 TabBarOrigin = { 0.f, 0.f };   // TabBar 起始绘制点（含滚动偏移前的基准点）
-        float TabBarViewWidth = 0.f;        // TabBar 可视宽度（用于裁剪 + 滚动条判断）
-        float TabBarContentWidth = 0.f;     // 本帧内所有 Tab 累积的总宽度（下一帧使用）
-        float TabBarContentWidthAccum = 0.f;// 本帧累积中的宽度（当前帧计算用）
-        bool TabBarNeedsScrollbar = false;  // 上一帧是否需要滚动条（本帧渲染依据）
+        Vec2 TabBarOrigin = { 0.f, 0.f };
+        float TabBarViewWidth = 0.f;
+        float TabBarContentWidth = 0.f;
+        float TabBarContentWidthAccum = 0.f;
+        bool TabBarNeedsScrollbar = false;
 
-        // 上一帧完整记录的 TabBar 占用矩形（供本帧 Begin() 读取，排除窗口垂直滚动干扰）
         std::vector<std::pair<Vec2, Vec2>> TabBarHoverRects;
-        // 本帧正在收集的 TabBar 占用矩形（由 EndTabBar 写入，帧末尾会被搬运到 TabBarHoverRects）
         std::vector<std::pair<Vec2, Vec2>> TabBarHoverRectsPending;
 
         float LastItemMaxX = 0.f;
@@ -356,6 +367,10 @@ namespace Shadow {
         float BackupLastItemMaxX = 0.f;
         bool BackupIsScrollApplied = false;
         ShadowWindowFlags BackupCurrentWindowFlags = ShadowWindowFlags_None;
+
+        std::vector<ShadowDrawCmd> TooltipDrawCommands;
+
+        float CurrentScrollbarWidth = 0.f;
     };
 
     inline GuiContext g_Ctx;
@@ -1020,6 +1035,11 @@ namespace Shadow {
     }
 
     inline void DrawLine(Vec2 start, Vec2 end, Color color, float thickness = 1.0f) {
+        if (g_Ctx.InTooltip) {
+            g_Ctx.TooltipDrawCommands.push_back({ ShadowDrawCmdType::Line, start, end, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
+            return;
+        }
+
         if (!g_Ctx.Canvas || !g_Ctx.Canvas->DefaultTexture) return;
 
         float dx = end.x - start.x;
@@ -1047,6 +1067,11 @@ namespace Shadow {
     }
 
     inline void DrawRect(Vec2 pos, Vec2 size, Color color) {
+        if (g_Ctx.InTooltip) {
+            g_Ctx.TooltipDrawCommands.push_back({ ShadowDrawCmdType::Rect, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
+            return;
+        }
+
         if (!g_Ctx.Canvas) return;
         if (!IsRectVisible(pos, size)) return;
         ClipRect(pos, size);
@@ -1077,6 +1102,11 @@ namespace Shadow {
     }
 
     inline void DrawRectFilled(Vec2 pos, Vec2 size, Color color) {
+        if (g_Ctx.InTooltip) {
+            g_Ctx.TooltipDrawCommands.push_back({ ShadowDrawCmdType::RectFilled, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
+            return;
+        }
+
         if (!g_Ctx.Canvas) return;
         if (!IsRectVisible(pos, size)) return;
         ClipRect(pos, size);
@@ -1231,6 +1261,12 @@ namespace Shadow {
             font = g_Ctx.FontStack.back().Font;
             scaleVal = g_Ctx.FontStack.back().Scale;
         }
+
+        if (g_Ctx.InTooltip) {
+            g_Ctx.TooltipDrawCommands.push_back({ ShadowDrawCmdType::Text, pos, {0, 0}, color, 1.0f, std::string(text), font, scaleVal, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
+            return;
+        }
+
         if (!g_Ctx.Canvas || !font) return;
 
         Vec2 clippedPos = pos;
@@ -1291,7 +1327,7 @@ namespace Shadow {
     }
 
     inline float GetRightMargin() {
-        return g_Ctx.Style.WindowPadding.x + g_Ctx.Style.ScrollbarSize + g_Ctx.Style.ScrollbarMargin;
+        return g_Ctx.Style.WindowPadding.x + g_Ctx.CurrentScrollbarWidth + g_Ctx.Style.ScrollbarMargin;
     }
 
     inline bool IsDisabled() {
@@ -1650,6 +1686,182 @@ namespace Shadow {
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + g_Ctx.ItemHeight }, ++g_Ctx.WidgetCount, disabled);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+    }
+
+    inline void TextWrapped(Color color, std::string_view text) {
+        if (!g_Ctx.InActiveTab) return;
+
+        // 1. 修正 Alpha 与 Disabled 颜色应用逻辑，与 TextColored 保持一致
+        bool disabled = IsDisabled();
+        Color drawColor;
+        if (disabled) {
+            Color disabledColor = g_Ctx.Style.Colors[GuiCol_TextDisabled];
+            drawColor = { disabledColor.r, disabledColor.g, disabledColor.b, disabledColor.a * color.a };
+        }
+        else {
+            Color textColor = g_Ctx.Style.Colors[GuiCol_Text];
+            drawColor = { color.r, color.g, color.b, color.a * textColor.a };
+        }
+
+        // 2. 计算当前允许的最大行宽
+        float wrapMaxX = g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - GetRightMargin();
+        if (g_Ctx.ClippingEnabled) {
+            wrapMaxX = std::min(wrapMaxX, g_Ctx.ClipMax.x);
+        }
+
+        float maxLineWidth = wrapMaxX - g_Ctx.Cursor.x;
+        if (maxLineWidth <= 1.0f) maxLineWidth = 1.0f;
+
+        // 转换为宽字符串以精确处理 UTF-8 / 多字节字符与字符级宽度
+        std::wstring wtext = ToWString(text);
+
+        float startY = g_Ctx.Cursor.y;
+        float maxLineX = g_Ctx.Cursor.x;
+
+        std::wstring currentLine;
+        float currentLineWidth = 0.f;
+
+        // Lambda: 刷新并绘制当前行
+        auto FlushLine = [&](bool addSpacing) {
+            if (!currentLine.empty()) {
+                int size_needed = WideCharToMultiByte(CP_UTF8, 0, currentLine.c_str(), static_cast<int>(currentLine.size()), nullptr, 0, nullptr, nullptr);
+                std::string utf8Line(size_needed, 0);
+                WideCharToMultiByte(CP_UTF8, 0, currentLine.c_str(), static_cast<int>(currentLine.size()), &utf8Line[0], size_needed, nullptr, nullptr);
+
+                if (IsRectVisible(g_Ctx.Cursor, { currentLineWidth, g_Ctx.ItemHeight })) {
+                    DrawTextString(utf8Line, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, drawColor);
+                }
+                maxLineX = std::max(maxLineX, g_Ctx.Cursor.x + currentLineWidth);
+            }
+            if (addSpacing) {
+                g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+            }
+            currentLine.clear();
+            currentLineWidth = 0.f;
+            };
+
+        size_t i = 0;
+        size_t len = wtext.length();
+
+        while (i < len) {
+            // 处理显式换行符 \n
+            if (wtext[i] == L'\n') {
+                FlushLine(true);
+                i++;
+                continue;
+            }
+
+            // 提取词 Token 或 空格 Token
+            size_t wordStart = i;
+            bool isSpace = (wtext[i] == L' ');
+            if (isSpace) {
+                while (i < len && wtext[i] == L' ') {
+                    i++;
+                }
+            }
+            else {
+                while (i < len && wtext[i] != L' ' && wtext[i] != L'\n') {
+                    i++;
+                }
+            }
+
+            std::wstring token = wtext.substr(wordStart, i - wordStart);
+
+            if (isSpace) {
+                float tokenWidth = 0.f;
+                for (wchar_t ch : token) {
+                    tokenWidth += MeasureCharWidth(ch);
+                }
+                if (currentLineWidth + tokenWidth <= maxLineWidth) {
+                    currentLine += token;
+                    currentLineWidth += tokenWidth;
+                }
+                else {
+                    // 行尾空格放不下时直接换行，并忽略新行开头的多余空格
+                    FlushLine(true);
+                }
+            }
+            else {
+                float tokenWidth = 0.f;
+                for (wchar_t ch : token) {
+                    tokenWidth += MeasureCharWidth(ch);
+                }
+
+                if (currentLineWidth + tokenWidth <= maxLineWidth) {
+                    // 单词整体可放入当前行
+                    currentLine += token;
+                    currentLineWidth += tokenWidth;
+                }
+                else if (currentLineWidth > 0.f) {
+                    // 当前行已有内容但放不下该词，先换行
+                    FlushLine(true);
+                    if (tokenWidth <= maxLineWidth) {
+                        currentLine = token;
+                        currentLineWidth = tokenWidth;
+                    }
+                    else {
+                        // 新行也放不下整个词（如中文连续文本或超长单词），回退按字符逐个折行
+                        for (wchar_t ch : token) {
+                            float chWidth = MeasureCharWidth(ch);
+                            if (currentLineWidth + chWidth > maxLineWidth && currentLineWidth > 0.f) {
+                                FlushLine(true);
+                            }
+                            currentLine += ch;
+                            currentLineWidth += chWidth;
+                        }
+                    }
+                }
+                else {
+                    // 当前行空但词宽仍大于 maxLineWidth，按字符逐个折行
+                    for (wchar_t ch : token) {
+                        float chWidth = MeasureCharWidth(ch);
+                        if (currentLineWidth + chWidth > maxLineWidth && currentLineWidth > 0.f) {
+                            FlushLine(true);
+                        }
+                        currentLine += ch;
+                        currentLineWidth += chWidth;
+                    }
+                }
+            }
+        }
+
+        // 绘制剩余未刷新的文本
+        if (!currentLine.empty()) {
+            FlushLine(false);
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+        }
+
+        SetLastItemInfo({ g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x, startY }, { maxLineX, g_Ctx.Cursor.y - g_Ctx.Style.ItemSpacing.y }, ++g_Ctx.WidgetCount, disabled);
+        g_Ctx.LastItemMaxX = maxLineX;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+    }
+
+    inline void Separator() {
+        if (!g_Ctx.InActiveTab) return;
+
+        float x1 = g_Ctx.Cursor.x;
+        float y = g_Ctx.Cursor.y + 2.f;
+        float x2 = g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - GetRightMargin();
+
+        if (IsRectVisible({ x1, g_Ctx.Cursor.y }, { x2 - x1, 4.f })) {
+            DrawLine({ x1, y }, { x2, y }, g_Ctx.Style.Colors[GuiCol_Separator], 1.0f);
+        }
+
+        SetLastItemInfo({ x1, g_Ctx.Cursor.y }, { x2, g_Ctx.Cursor.y + 4.f }, ++g_Ctx.WidgetCount, false);
+
+        g_Ctx.LastItemMaxX = x2;
+        g_Ctx.Cursor.y += 4.f + g_Ctx.Style.ItemSpacing.y;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
+    }
+
+    inline void Dummy(Vec2 size) {
+        if (!g_Ctx.InActiveTab) return;
+
+        SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, ++g_Ctx.WidgetCount, false);
+        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
+
+        g_Ctx.Cursor.y += size.y + g_Ctx.Style.ItemSpacing.y;
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x;
     }
 
@@ -2189,6 +2401,49 @@ namespace Shadow {
         g_Ctx.InTooltip = false;
     }
 
+    inline void RenderTooltipCommands() {
+        if (g_Ctx.TooltipDrawCommands.empty()) return;
+
+        bool backupInTooltip = g_Ctx.InTooltip;
+        bool backupClipping = g_Ctx.ClippingEnabled;
+        Vec2 backupClipMin = g_Ctx.ClipMin;
+        Vec2 backupClipMax = g_Ctx.ClipMax;
+        std::vector<FontContext> backupFontStack = g_Ctx.FontStack;
+
+        g_Ctx.InTooltip = false; // 临时解封禁止绘制锁定
+
+        for (const auto& cmd : g_Ctx.TooltipDrawCommands) {
+            // 恢复该指令生成时局部的裁剪区域状态
+            g_Ctx.ClippingEnabled = cmd.clippingEnabled;
+            g_Ctx.ClipMin = cmd.clipMin;
+            g_Ctx.ClipMax = cmd.clipMax;
+
+            if (cmd.type == ShadowDrawCmdType::Line) {
+                DrawLine(cmd.pos, cmd.size, cmd.color, cmd.thickness);
+            }
+            else if (cmd.type == ShadowDrawCmdType::Rect) {
+                DrawRect(cmd.pos, cmd.size, cmd.color);
+            }
+            else if (cmd.type == ShadowDrawCmdType::RectFilled) {
+                DrawRectFilled(cmd.pos, cmd.size, cmd.color);
+            }
+            else if (cmd.type == ShadowDrawCmdType::Text) {
+                // 恢复对应的独立字体栈
+                g_Ctx.FontStack.push_back({ cmd.font, cmd.fontScale });
+                DrawTextString(cmd.text, cmd.pos, cmd.color);
+                g_Ctx.FontStack.pop_back();
+            }
+        }
+
+        g_Ctx.TooltipDrawCommands.clear();
+
+        g_Ctx.InTooltip = backupInTooltip;
+        g_Ctx.ClippingEnabled = backupClipping;
+        g_Ctx.ClipMin = backupClipMin;
+        g_Ctx.ClipMax = backupClipMax;
+        g_Ctx.FontStack = backupFontStack;
+    }
+
     inline void End() {
         g_Ctx.BeginStack--;
 
@@ -2203,8 +2458,11 @@ namespace Shadow {
         float viewHeight = (g_Ctx.WindowPos.y + g_Ctx.WindowSize.y) - g_Ctx.ContentStartY - g_Ctx.Style.ResizeGripSize - 4.f;
         if (viewHeight < 10.f) viewHeight = 10.f;
 
-        // 问题3：ShadowWindowFlags_NoScrollbar 只隐藏滚动条的绘制/交互，滚动本身依然可用
+        g_Ctx.CurrentScrollbarWidth = 0.f;
+
         if (!noScrollbar && g_Ctx.ContentHeight > viewHeight) {
+            g_Ctx.CurrentScrollbarWidth = g_Ctx.Style.ScrollbarSize;
+
             float maxScroll = g_Ctx.ContentHeight - viewHeight;
             float scrollbarWidth = g_Ctx.Style.ScrollbarSize;
             float scrollbarMarginRight = g_Ctx.Style.ScrollbarMargin;
@@ -2223,13 +2481,11 @@ namespace Shadow {
             DrawRect(thumbPos, thumbSize, thumbColor);
         }
 
-        // 问题3：ShadowWindowFlags_NoResize 时不绘制缩放手柄
         if (!noResize) {
             float triSize = g_Ctx.Style.ResizeGripSize;
             float x = g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - triSize;
             float y = g_Ctx.WindowPos.y + g_Ctx.WindowSize.y - triSize;
 
-            // 问题2：三态颜色 —— 默认 / 悬停(调暗) / 按住激活
             Color triColor = g_Ctx.IsResizing
                 ? g_Ctx.Style.Colors[GuiCol_ResizeGripActive]
                 : (g_Ctx.IsHoveringResize ? g_Ctx.Style.Colors[GuiCol_ResizeGripHovered] : g_Ctx.Style.Colors[GuiCol_ResizeGrip]);
@@ -2247,7 +2503,9 @@ namespace Shadow {
         if (!g_Ctx.MouseDown) g_Ctx.IsResizing = false;
         RenderPopups();
 
-        // [修复] 去除 MouseReleased
+        // 绘制 Tooltip 置顶层 (解决遮挡)
+        RenderTooltipCommands();
+
         g_Ctx.MouseClicked = false;
         g_Ctx.RightMouseClicked = false;
 
@@ -2585,8 +2843,7 @@ namespace Shadow {
         }
 
         if (isActive) {
-            float viewHeight = (g_Ctx.WindowPos.y + g_Ctx.WindowSize.y) - g_Ctx.ContentStartY - g_Ctx.Style.ResizeGripSize - 4.f;
-            float activeScrollbarWidth = (g_Ctx.ContentHeight > viewHeight) ? (g_Ctx.Style.ScrollbarSize + g_Ctx.Style.ScrollbarMargin) : 0.f;
+            float activeScrollbarWidth = g_Ctx.CurrentScrollbarWidth;
 
             PushClipRect(
                 { g_Ctx.WindowPos.x, g_Ctx.ContentStartY },

@@ -286,7 +286,12 @@ namespace Hook {
                         Shadow::EndDisabled();
 
                         Shadow::Text(U8("这是一段普通文本"));
+                        Shadow::Separator();
                         Shadow::TextDisabled(U8("这是一段禁用颜色的文本"));
+                        Shadow::Text(U8("下方会出现巨大空间"));
+                        Shadow::Dummy({100.f, 50.f});
+                        Shadow::TextWrapped({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("这是一段超长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长的文本。"));
+                        Shadow::TextWrapped({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA The Test Message And Hello The Test Message And Hello The Test Message And Hello"));
 
                         // Shadow::PopFont();
                     }

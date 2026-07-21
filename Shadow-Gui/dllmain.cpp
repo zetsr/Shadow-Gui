@@ -106,14 +106,16 @@ namespace Hook {
         return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
     }
 
-    void HelpMarker(std::string_view desc) {
+    void HelpMarker(std::string_view desc, float TextWrap = 200.f) {
         Shadow::SameLine();
 
         Shadow::TextColored(Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_TextDisabled], "(?)");
 
         if (Shadow::IsItemHovered(Shadow::ShadowHoveredFlags_DelayNone)) {
             Shadow::BeginTooltip();
-            Shadow::Text(desc.data());
+            Shadow::PushTextWrapPos(TextWrap);
+            Shadow::TextWrapped({ 1.0f, 1.0f, 1.0f, 1.0f }, desc.data());
+            Shadow::PopTextWrapPos();
             Shadow::EndTooltip();
         }
     }
@@ -286,11 +288,17 @@ namespace Hook {
                         Shadow::EndDisabled();
 
                         Shadow::Text(U8("这是一段普通文本"));
+
                         Shadow::Separator();
+
                         Shadow::TextDisabled(U8("这是一段禁用颜色的文本"));
                         Shadow::Text(U8("下方会出现巨大空间"));
                         Shadow::Dummy({100.f, 50.f});
+
+                        Shadow::PushTextWrapPos(200.f);
                         Shadow::TextWrapped({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("这是一段超长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长的文本。"));
+                        Shadow::PopTextWrapPos();
+                        
                         Shadow::TextWrapped({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA The Test Message And Hello The Test Message And Hello The Test Message And Hello"));
 
                         // Shadow::PopFont();
@@ -303,7 +311,7 @@ namespace Hook {
                         Shadow::Slider(U8("移动速度##slider_1"), &fSpeed, 1.0f, 10.0f, 0.1f, Shadow::ShadowSliderFlags_NoRightAlign);
                         Shadow::Slider(U8("移动速度##slider_2"), &fSpeed, 1.0f, 10.0f, 0.1f, Shadow::ShadowSliderFlags_NoRightAlign);
                         Shadow::HotKey(U8("自瞄按键##hotkey_1"), &keyAimbot, &bAimbotActive, &modeAimbot, Shadow::ShadowHotkeyFlags_NoRightAlign | Shadow::ShadowHotkeyFlags_NoStateDisplay);
-                        HelpMarker(U8("开启后按下热键会自动锁定敌方目标。"));
+                        HelpMarker(U8("开启后按下热键会自动锁定敌方目标。此外，还有很多工作。测试一下换行。"), 100.f);
 
                         if (Shadow::Button(U8("重置速度##btn_1"))) {
                             fSpeed = 1.0f;

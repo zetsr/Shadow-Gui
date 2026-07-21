@@ -371,6 +371,8 @@ namespace Shadow {
         std::vector<ShadowDrawCmd> TooltipDrawCommands;
 
         float CurrentScrollbarWidth = 0.f;
+
+        std::vector<float> TextWrapPosStack;
     };
 
     inline GuiContext g_Ctx;
@@ -1190,6 +1192,30 @@ namespace Shadow {
         }
     }
 
+    inline void PushTextWrapPos(float wrap_pos_x = 0.0f) {
+        // 如果传入的是 0.0f（默认参数）或负数，则使用当前窗口的默认右边界
+        if (wrap_pos_x <= 0.0f) {
+            float right_margin = g_Ctx.Style.WindowPadding.x + g_Ctx.CurrentScrollbarWidth + g_Ctx.Style.ScrollbarMargin;
+            wrap_pos_x = g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - right_margin;
+        }
+        else {
+            wrap_pos_x = g_Ctx.Cursor.x + wrap_pos_x;
+        }
+
+        // 如果堆栈不为空，需要将新的位置与上一个位置进行比较，取较小值，确保嵌套时换行越来越靠左。
+        if (!g_Ctx.TextWrapPosStack.empty()) {
+            wrap_pos_x = std::min(wrap_pos_x, g_Ctx.TextWrapPosStack.back());
+        }
+
+        g_Ctx.TextWrapPosStack.push_back(wrap_pos_x);
+    }
+
+    inline void PopTextWrapPos() {
+        if (!g_Ctx.TextWrapPosStack.empty()) {
+            g_Ctx.TextWrapPosStack.pop_back();
+        }
+    }
+
     inline std::string ClipTextString(std::string_view text, Vec2 pos, Vec2& outPos, bool& shouldDraw) {
         shouldDraw = true;
         outPos = pos;
@@ -1650,6 +1676,7 @@ namespace Shadow {
         else if (g_Ctx.FontStack.size() > 0) errorMsg = std::format("ERROR: PushFont() called {} time(s) without matching PopFont()!", g_Ctx.FontStack.size());
         else if (g_Ctx.ClipStack.size() > 0) errorMsg = std::format("ERROR: PushClipRect() called {} time(s) without matching PopClipRect()!", g_Ctx.ClipStack.size());
         else if (g_Ctx.DisabledStack.size() > 0) errorMsg = std::format("ERROR: BeginDisabled() called {} time(s) without matching EndDisabled()!", g_Ctx.DisabledStack.size());
+        else if (g_Ctx.TextWrapPosStack.size() > 0) errorMsg = std::format("ERROR: PushTextWrapPos() called {} time(s) without matching PopTextWrapPos()!", g_Ctx.TextWrapPosStack.size());
 
         if (!errorMsg.empty()) {
             bool oldClipping = g_Ctx.ClippingEnabled;
@@ -1710,6 +1737,12 @@ namespace Shadow {
             wrapMaxX = std::min(wrapMaxX, g_Ctx.ClipMax.x);
         }
 
+        // [修改] 如果文本换行堆栈非空，则使用栈顶的值作为最终的换行X坐标。
+        // 这必须在之前的默认计算之后进行，以允许 PushTextWrapPos 覆盖默认行为。
+        if (!g_Ctx.TextWrapPosStack.empty()) {
+            wrapMaxX = g_Ctx.TextWrapPosStack.back();
+        }
+
         float maxLineWidth = wrapMaxX - g_Ctx.Cursor.x;
         if (maxLineWidth <= 1.0f) maxLineWidth = 1.0f;
 
@@ -1722,7 +1755,8 @@ namespace Shadow {
         std::wstring currentLine;
         float currentLineWidth = 0.f;
 
-        // Lambda: 刷新并绘制当前行
+        // ... 后续代码完全不变 ...
+        // (从 Lambda FlushLine 到函数结尾的所有代码保持不变)
         auto FlushLine = [&](bool addSpacing) {
             if (!currentLine.empty()) {
                 int size_needed = WideCharToMultiByte(CP_UTF8, 0, currentLine.c_str(), static_cast<int>(currentLine.size()), nullptr, 0, nullptr, nullptr);

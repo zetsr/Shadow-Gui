@@ -256,6 +256,7 @@ namespace Shadow {
         int BeginStack = 0;
         int TabBarStack = 0;
         int TabItemStack = 0;
+        int TreeNodeStack = 0;
         std::string LastErrorMsg;
 
         bool IsResizing = false;
@@ -1457,6 +1458,7 @@ namespace Shadow {
         if (!g_Ctx.InActiveTab) return false;
         std::string_view display; size_t id; ParseLabel(name, display, id);
         g_Ctx.WidgetCount++;
+        g_Ctx.TreeNodeStack++; // [新增] 追踪 TreeNode 层级深度
 
         // 首次出现时根据 DefaultOpen 标志初始化
         if (g_Ctx.TreeNodeOpenStates.find(id) == g_Ctx.TreeNodeOpenStates.end()) {
@@ -1465,7 +1467,7 @@ namespace Shadow {
 
         bool isOpen = g_Ctx.TreeNodeOpenStates[id];
         bool isFramed = (flags & ShadowTreeNodeFlags_Framed) != 0;
-        bool isFitText = (flags & ShadowTreeNodeFlags_FitText) != 0; // [新增] 判断自适应
+        bool isFitText = (flags & ShadowTreeNodeFlags_FitText) != 0;
 
         float arrowSize = g_Ctx.ItemHeight * 0.55f;
         float textWidth = MeasureTextSize(display).x;
@@ -1475,11 +1477,9 @@ namespace Shadow {
 
         if (isFramed) {
             if (isFitText) {
-                // [修改] 开启 FitText 时，宽度仅包裹：左侧留白 + 箭头大小 + 间隙 + 文字宽度 + 右侧留白
                 interactSize.x = g_Ctx.Style.FramePadding.x + arrowSize + 8.f + textWidth + g_Ctx.Style.FramePadding.x;
             }
             else {
-                // 未开启 FitText 时，默认延展到窗口最右侧
                 float rightMargin = GetRightMargin();
                 interactSize.x = std::max(interactSize.x, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - g_Ctx.Cursor.x);
             }
@@ -1533,7 +1533,8 @@ namespace Shadow {
             DrawTriangleFilled(p1, p2, p3, arrowColor);
         }
 
-        float textStartX = arrowX + arrowSize + 8.f;
+        // [修改] 利用 std::round 强制截去包含 0.55f 乘积运算时产生的小数坐标偏移
+        float textStartX = std::round(arrowX + arrowSize + 8.f);
         DrawTextString(display, { textStartX, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, textColor);
 
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + g_Ctx.ItemHeight }, id, disabled);
@@ -1546,8 +1547,9 @@ namespace Shadow {
         return isOpen;
     }
 
-    // 7. 新增函数：TreePop
     inline void TreePop() {
+        if (!g_Ctx.InActiveTab) return; // [新增] 若控件被隐藏剔除，放弃执行，以确保与 TreeNode 的前置校验匹配
+        g_Ctx.TreeNodeStack--; // [新增]
         g_Ctx.IndentX = std::max(0.f, g_Ctx.IndentX - 20.f);
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
@@ -1841,10 +1843,13 @@ namespace Shadow {
         else if (g_Ctx.TabBarStack < 0) errorMsg = std::format("ERROR: EndTabBar() called {} time(s) without matching BeginTabBar()!", -g_Ctx.TabBarStack);
         else if (g_Ctx.TabItemStack > 0) errorMsg = std::format("ERROR: BeginTabItem() called {} time(s) without matching EndTabItem()!", g_Ctx.TabItemStack);
         else if (g_Ctx.TabItemStack < 0) errorMsg = std::format("ERROR: EndTabItem() called {} time(s) without matching BeginTabItem()!", -g_Ctx.TabItemStack);
+        else if (g_Ctx.TreeNodeStack > 0) errorMsg = std::format("ERROR: TreeNode() called {} time(s) without matching TreePop()!", g_Ctx.TreeNodeStack);
+        else if (g_Ctx.TreeNodeStack < 0) errorMsg = std::format("ERROR: TreePop() called {} time(s) without matching TreeNode()!", -g_Ctx.TreeNodeStack);
         else if (g_Ctx.FontStack.size() > 0) errorMsg = std::format("ERROR: PushFont() called {} time(s) without matching PopFont()!", g_Ctx.FontStack.size());
         else if (g_Ctx.ClipStack.size() > 0) errorMsg = std::format("ERROR: PushClipRect() called {} time(s) without matching PopClipRect()!", g_Ctx.ClipStack.size());
         else if (g_Ctx.DisabledStack.size() > 0) errorMsg = std::format("ERROR: BeginDisabled() called {} time(s) without matching EndDisabled()!", g_Ctx.DisabledStack.size());
         else if (g_Ctx.TextWrapPosStack.size() > 0) errorMsg = std::format("ERROR: PushTextWrapPos() called {} time(s) without matching PopTextWrapPos()!", g_Ctx.TextWrapPosStack.size());
+        else if (g_Ctx.InTooltip) errorMsg = "ERROR: BeginTooltip() called without matching EndTooltip()!";
 
         if (!errorMsg.empty()) {
             bool oldClipping = g_Ctx.ClippingEnabled;
@@ -2109,7 +2114,8 @@ namespace Shadow {
         g_Ctx.BeginStack = 0;
         g_Ctx.TabBarStack = 0;
         g_Ctx.TabItemStack = 0;
-        g_Ctx.IndentX = 0.f; // [新增] 初始化时清空缩进状态，防止跨帧泄漏
+        g_Ctx.TreeNodeStack = 0;
+        g_Ctx.IndentX = 0.f; // 初始化时清空缩进状态，防止跨帧泄漏
 
         g_Ctx.DisabledStack.clear();
 

@@ -26,6 +26,30 @@
 
 ### 示例 / Example
 
+```cpp
+if (Shadow::Begin(U8("测试菜单 / Demo Menu##main_window"), Shadow::ShadowWindowFlags_TextAlignCenter)) {
+
+    if (Shadow::BeginTabBar("MainTabs##tabs", Shadow::ShadowTabBarFlags_NoScrollbar)) {
+
+        if (Shadow::BeginTabItem(U8("设置 / Settings##tab0"))) {
+
+            Shadow::Switch(U8("测试开关 / Test Switch"), &bTest); 
+            Shadow::SameLine(); 
+            Shadow::ColorPicker(U8("测试开关 / Test Switch"), 
+                &cTest.r, &cTest.g, &cTest.b, &cTest.a, 
+                Shadow::ShadowColorPickerFlags_NoText | Shadow::ShadowColorPickerFlags_NoRightAlign
+            );
+
+        }
+        Shadow::EndTabItem();
+
+    }
+    Shadow::EndTabBar();
+}
+Shadow::End();
+```
+<img width="576" height="433" alt="1" src="https://github.com/user-attachments/assets/29bbf19e-d53d-41b3-8b64-985293be887c" />
+
 #### 输入处理 / Input Processing
 
 ```cpp

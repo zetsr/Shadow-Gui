@@ -1,6 +1,6 @@
 # ✨ Shadow Gui
 
-<img width="1059" height="701" alt="QQ20260710-205858" src="https://github.com/user-attachments/assets/2853dbf8-210c-4189-82eb-c9635ca197b0" />
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/200b2854-f347-4485-8e2d-5842520eccf2" />
 
 ### ☕ 赞助 / Buy me a coffee
 

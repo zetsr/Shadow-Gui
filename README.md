@@ -26,6 +26,8 @@
 
 ### 示例 / Example
 
+#### 画一个简单的窗口
+
 ```cpp
 if (Shadow::Begin(U8("测试菜单 / Demo Menu##main_window"), Shadow::ShadowWindowFlags_TextAlignCenter)) {
 
@@ -49,6 +51,67 @@ if (Shadow::Begin(U8("测试菜单 / Demo Menu##main_window"), Shadow::ShadowWin
 Shadow::End();
 ```
 <img width="576" height="433" alt="1" src="https://github.com/user-attachments/assets/29bbf19e-d53d-41b3-8b64-985293be887c" />
+
+#### 画一个列表窗口
+
+```cpp
+if (Shadow::Begin(U8("测试菜单 / Demo Menu##main_window"), Shadow::ShadowWindowFlags_TextAlignCenter)) {
+
+    if (Shadow::BeginTabBar("MainTabs##tabs", Shadow::ShadowTabBarFlags_NoScrollbar)) {
+
+        if (Shadow::BeginTabItem(U8("设置 / Settings##tab0"))) {
+            static std::string input_buffer = U8("");      
+            static std::vector<std::string> item_list = { 
+                U8("默认项目 1"),
+                U8("默认项目 2")
+            };
+            static int selected_index = -1;
+            static std::string input_str = U8("输入要新建的项目名称...");
+
+            Shadow::InputTextWithHint(U8("##ItemInput"), input_str, input_buffer, Shadow::ShadowInputTextFlags_NoName, { Shadow::MeasureTextSize(input_str).x + Shadow::g_Ctx.Style.WindowPadding.x });
+
+            if (Shadow::Button(U8("创建"))) {
+                if (!input_buffer.empty()) {
+                    item_list.push_back(input_buffer); 
+                    input_buffer.clear();              
+                }
+            }
+
+            Shadow::SameLine();
+            if (Shadow::Button(U8("删除"))) {
+                if (selected_index >= 0 && selected_index < static_cast<int>(item_list.size())) {
+                    item_list.erase(item_list.begin() + selected_index);
+
+                    selected_index = -1;
+                }
+            }
+
+            if (Shadow::BeginListBox(U8("##DynamicItemListBox"), { 300.f, 180.f })) {
+                for (int i = 0; i < static_cast<int>(item_list.size()); ++i) {
+                    bool is_selected = (selected_index == i);
+
+                    if (Shadow::Selectable(item_list[i], &is_selected)) {
+                        selected_index = i;
+                    }
+                }
+            }
+            Shadow::EndListBox();
+
+            if (selected_index >= 0 && selected_index < static_cast<int>(item_list.size())) {
+                Shadow::TextColored({ 0.4f, 0.8f, 1.0f, 1.0f }, U8("当前选中: ") + item_list[selected_index]);
+            }
+            else {
+                Shadow::TextDisabled(U8("当前未选中任何项目"));
+            }
+        }
+        Shadow::EndTabItem();
+
+    }
+    Shadow::EndTabBar();
+}
+Shadow::End();
+```
+<img width="501" height="400" alt="1" src="https://github.com/user-attachments/assets/83729fff-26a0-4f24-ab87-2c4d1462e0bd" />
 
 #### 输入处理 / Input Processing
 

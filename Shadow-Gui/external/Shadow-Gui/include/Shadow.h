@@ -3510,10 +3510,8 @@ namespace Shadow {
         bool disabled = IsDisabled();
         bool hovered = !disabled && IsMouseHovering(g_Ctx.Cursor, interactSize);
 
-        bool value_changed = false;
         if (hovered && g_Ctx.MouseClicked) {
             *value = !(*value);
-            value_changed = true;
         }
 
         Color bgColor = disabled ? g_Ctx.Style.Colors[GuiCol_ControlDisabled] : (hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
@@ -3534,11 +3532,11 @@ namespace Shadow {
         g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
 
-        return value_changed;
+        return *value;
     }
 
-    inline void Switch(std::string_view name, bool* value, Vec2 size_arg = { 0.f, 0.f }) {
-        if (!g_Ctx.InActiveTab) return;
+    inline bool Switch(std::string_view name, bool* value, Vec2 size_arg = { 0.f, 0.f }) {
+        if (!g_Ctx.InActiveTab) return false;
         std::string_view display; size_t id; ParseLabel(name, display, id);
         g_Ctx.WidgetCount++;
 
@@ -3551,7 +3549,7 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, { g_Ctx.WindowSize.x, itemHeight })) {
             g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
             g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
-            return;
+            return false;
         }
 
         float textWidth = MeasureTextSize(display).x;
@@ -3591,6 +3589,8 @@ namespace Shadow {
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
         g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+
+        return *value;
     }
 
     inline bool Selectable(std::string_view name, bool* p_selected = nullptr, Vec2 size_arg = { 0.f, 0.f }) {

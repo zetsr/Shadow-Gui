@@ -179,6 +179,78 @@ namespace Shadow {
             Shadow::Slider(std::string(U8("##")).append(label), v, min_v, max_v, 0.f, Shadow::ShadowSliderFlags_NoText | Shadow::ShadowSliderFlags_NoRightAlign);
         }
 
+        // 12. 范围滑块组合 (Min/Max Slider 模拟)
+        inline void RangeSliderFloat(std::string_view label, float& min_v, float& max_v, float min_limit, float max_limit) {
+            Shadow::Text(label);
+            Shadow::SameLine(120.f);
+            Shadow::Text(U8("Min"));
+            Shadow::SameLine();
+            Shadow::Slider(std::string(U8("##min")).append(label), &min_v, min_limit, max_v, 0.f, Shadow::ShadowSliderFlags_NoText | Shadow::ShadowSliderFlags_NoRightAlign);
+            Shadow::SameLine();
+            Shadow::Text(U8("Max"));
+            Shadow::SameLine();
+            Shadow::Slider(std::string(U8("##max")).append(label), &max_v, min_v, max_limit, 0.f, Shadow::ShadowSliderFlags_NoText | Shadow::ShadowSliderFlags_NoRightAlign);
+        }
+
+        // 13. 分页导航控件 (Pagination)
+        inline bool Pagination(int& current_page, int total_pages) {
+            bool changed = false;
+            if (Shadow::Button(U8("< Prev")) && current_page > 1) {
+                current_page--; changed = true;
+            }
+            Shadow::SameLine();
+            Shadow::Text(std::format("Page {} of {}", current_page, total_pages));
+            Shadow::SameLine();
+            if (Shadow::Button(U8("Next >")) && current_page < total_pages) {
+                current_page++; changed = true;
+            }
+            return changed;
+        }
+
+        // 14. 多选列表树 (Multi-Select List)
+        inline bool MultiSelectList(std::string_view label, const std::vector<std::string>& items, std::vector<bool>& selections) {
+            bool changed = false;
+            if (Shadow::TreeNode(label, Shadow::ShadowTreeNodeFlags_Framed)) {
+                for (size_t i = 0; i < items.size(); ++i) {
+                    if (i >= selections.size()) break;
+
+                    bool temp_val = selections[i];
+                    if (Shadow::Checkbox(std::string(items[i]).append(U8("##multi_")).append(label), &temp_val)) {
+                        selections[i] = temp_val;
+                        changed = true;
+                    }
+                }
+            }
+            Shadow::TreePop();
+            return changed;
+        }
+
+        // 15. 标签输入与管理 (Tags Input)
+        inline void TagsInput(std::string_view label, std::vector<std::string>& tags, std::string& input_buffer) {
+            Shadow::Text(label);
+            Shadow::SameLine();
+            Shadow::InputTextWithHint(std::string(U8("##")).append(label), U8("Add tag & click +"), input_buffer, Shadow::ShadowInputTextFlags_NoName, { Shadow::MeasureTextSize(input_buffer.size() > 0 ? input_buffer : "Add tag & click +").x + Shadow::g_Ctx.Style.WindowPadding.x});
+            Shadow::SameLine();
+            if (Shadow::Button(std::string(U8("+##")).append(label)) && !input_buffer.empty()) {
+                tags.push_back(input_buffer);
+                input_buffer.clear();
+            }
+
+            // 绘制标签列表
+            for (size_t i = 0; i < tags.size(); ++i) {
+                Advanced::Badge(tags[i], Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_Button], Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_Text]);
+                Shadow::SameLine();
+                if (Shadow::Button(std::string(U8("x##")).append(std::to_string(i)).append(label))) {
+                    tags.erase(tags.begin() + i);
+                    i--; // 抵消自增
+                }
+                if (i < tags.size() - 1) {
+                    Shadow::SameLine();
+                }
+            }
+            if (!tags.empty()) Shadow::Dummy({ 0, 5.f });
+        }
+
     } // namespace Advanced
 
     // ============================================================================
@@ -196,7 +268,7 @@ namespace Shadow {
             if (Shadow::BeginTabBar(U8("DemoTabBar"), tab_flags)) {
 
                 // ----------------------------------------------------------------
-                // 第一页面: 全部标准控件与其全功能Flag测试
+                // 第一页面: 全部标准控件与其全功能Flag测试 (补充了组合Flag演示)
                 // ----------------------------------------------------------------
                 if (Shadow::BeginTabItem(U8("Standard Controls"))) {
 
@@ -250,11 +322,24 @@ namespace Shadow {
 
                         Shadow::Combo(U8("Combo FitText"), &combo_idx, combo_items, Shadow::ShadowComboFlags_FitText);
                         Shadow::HelpMarker(U8("Combo width adapts to selected text length (ShadowComboFlags_FitText)."));
+
+                        // Combo Flags 组合演示
+                        Shadow::Combo(U8("Combo NoText+NoRightAlign"), &combo_idx, combo_items, Shadow::ShadowComboFlags_NoText | Shadow::ShadowComboFlags_NoRightAlign);
+                        Shadow::HelpMarker(U8("Combines NoText and NoRightAlign."));
+
+                        Shadow::Combo(U8("Combo FitText+NoRightAlign"), &combo_idx, combo_items, Shadow::ShadowComboFlags_FitText | Shadow::ShadowComboFlags_NoRightAlign);
+                        Shadow::HelpMarker(U8("Combines FitText and NoRightAlign."));
+
+                        Shadow::Combo(U8("Combo NoText+FitText"), &combo_idx, combo_items, Shadow::ShadowComboFlags_NoText | Shadow::ShadowComboFlags_FitText);
+                        Shadow::HelpMarker(U8("Combines NoText and FitText."));
+
+                        Shadow::Combo(U8("Combo NoText+NoRightAlign+FitText"), &combo_idx, combo_items, Shadow::ShadowComboFlags_NoText | Shadow::ShadowComboFlags_NoRightAlign | Shadow::ShadowComboFlags_FitText);
+                        Shadow::HelpMarker(U8("Combines NoText, NoRightAlign, and FitText."));
                     }
                     Shadow::TreePop();
 
                     if (Shadow::TreeNode(U8("Sliders"))) {
-                        static float s1 = 0.5f, s2 = 1.0f, s3 = 50.f;
+                        static float s1 = 0.5f, s2 = 1.0f, s3 = 50.f, s4 = 75.f;
                         Shadow::Slider(U8("Standard Slider"), &s1, 0.f, 1.f);
                         Shadow::HelpMarker(U8("Basic float slider (ShadowSliderFlags_None)."));
 
@@ -263,6 +348,10 @@ namespace Shadow {
 
                         Shadow::Slider(U8("Slider NoRightAlign"), &s3, 0.f, 100.f, 1.f, Shadow::ShadowSliderFlags_NoRightAlign);
                         Shadow::HelpMarker(U8("Slider that doesn't stretch to right margin (ShadowSliderFlags_NoRightAlign)."));
+
+                        // Slider Flags 组合演示
+                        Shadow::Slider(U8("Slider NoText+NoRightAlign"), &s4, 0.f, 100.f, 0.f, Shadow::ShadowSliderFlags_NoText | Shadow::ShadowSliderFlags_NoRightAlign);
+                        Shadow::HelpMarker(U8("Combines NoText and NoRightAlign."));
                     }
                     Shadow::TreePop();
 
@@ -302,6 +391,23 @@ namespace Shadow {
                         Shadow::InputText(U8("Auto Select All"), txt2, Shadow::ShadowInputTextFlags_AutoSelectAll);
                         Shadow::HelpMarker(U8("Highlights all text on click (ShadowInputTextFlags_AutoSelectAll)."));
 
+                        // InputText Flags 组合演示
+                        static std::string txt_combo1 = U8("my_secret");
+                        Shadow::InputText(U8("Pwd+AutoSel+EscClr"), txt_combo1, Shadow::ShadowInputTextFlags_Password | Shadow::ShadowInputTextFlags_AutoSelectAll | Shadow::ShadowInputTextFlags_EscapeClearsAll);
+                        Shadow::HelpMarker(U8("Combines Password, AutoSelectAll, and EscapeClearsAll."));
+
+                        static std::string txt_combo2 = U8("12345");
+                        Shadow::InputText(U8("Dec+NoBlank+AutoSel"), txt_combo2, Shadow::ShadowInputTextFlags_CharsDecimal | Shadow::ShadowInputTextFlags_CharsNoBlank | Shadow::ShadowInputTextFlags_AutoSelectAll);
+                        Shadow::HelpMarker(U8("Combines CharsDecimal, CharsNoBlank, and AutoSelectAll."));
+
+                        static std::string txt_combo3 = U8("readonly");
+                        Shadow::InputText(U8("ReadOnly+AutoSel"), txt_combo3, Shadow::ShadowInputTextFlags_ReadOnly | Shadow::ShadowInputTextFlags_AutoSelectAll);
+                        Shadow::HelpMarker(U8("Combines ReadOnly and AutoSelectAll."));
+
+                        static std::string txt_combo4 = U8("UPPER_NO_SPACE");
+                        Shadow::InputText(U8("Upper+NoBlank"), txt_combo4, Shadow::ShadowInputTextFlags_CharsUppercase | Shadow::ShadowInputTextFlags_CharsNoBlank);
+                        Shadow::HelpMarker(U8("Combines CharsUppercase and CharsNoBlank."));
+
                         static float f1 = 3.14f;
                         Shadow::InputFloat(U8("Float Input"), &f1);
                         Shadow::HelpMarker(U8("Standard float input."));
@@ -321,6 +427,10 @@ namespace Shadow {
 
                         Shadow::ColorPicker(U8("Picker NoRightAlign"), &r, &g, &b, &a, Shadow::ShadowColorPickerFlags_NoRightAlign);
                         Shadow::HelpMarker(U8("Picker packed tightly (ShadowColorPickerFlags_NoRightAlign)."));
+
+                        // ColorPicker Flags 组合演示
+                        Shadow::ColorPicker(U8("Picker NoText+NoRightAlign"), &r, &g, &b, &a, Shadow::ShadowColorPickerFlags_NoText | Shadow::ShadowColorPickerFlags_NoRightAlign);
+                        Shadow::HelpMarker(U8("Combines NoText and NoRightAlign."));
                     }
                     Shadow::TreePop();
 
@@ -344,6 +454,19 @@ namespace Shadow {
 
                         Shadow::HotKey(U8("Hotkey NoStateDisplay"), &hk2, &hk2_active, &hk2_mode, Shadow::ShadowHotkeyFlags_NoStateDisplay);
                         Shadow::HelpMarker(U8("Hotkey without status indicator dot (ShadowHotkeyFlags_NoStateDisplay)."));
+
+                        // Hotkeys Flags 组合演示
+                        Shadow::HotKey(U8("HK NoText+NoRightAlign"), &hk2, &hk2_active, &hk2_mode, Shadow::ShadowHotkeyFlags_NoText | Shadow::ShadowHotkeyFlags_NoRightAlign);
+                        Shadow::HelpMarker(U8("Combines NoText and NoRightAlign."));
+
+                        Shadow::HotKey(U8("HK NoText+NoStateDisp"), &hk2, &hk2_active, &hk2_mode, Shadow::ShadowHotkeyFlags_NoText | Shadow::ShadowHotkeyFlags_NoStateDisplay);
+                        Shadow::HelpMarker(U8("Combines NoText and NoStateDisplay."));
+
+                        Shadow::HotKey(U8("HK NoRightAlign+NoStateDisp"), &hk2, &hk2_active, &hk2_mode, Shadow::ShadowHotkeyFlags_NoRightAlign | Shadow::ShadowHotkeyFlags_NoStateDisplay);
+                        Shadow::HelpMarker(U8("Combines NoRightAlign and NoStateDisplay."));
+
+                        Shadow::HotKey(U8("HK All Flags Combo"), &hk2, &hk2_active, &hk2_mode, Shadow::ShadowHotkeyFlags_NoText | Shadow::ShadowHotkeyFlags_NoRightAlign | Shadow::ShadowHotkeyFlags_NoStateDisplay);
+                        Shadow::HelpMarker(U8("Combines NoText, NoRightAlign, and NoStateDisplay."));
                     }
                     Shadow::TreePop();
 
@@ -374,20 +497,17 @@ namespace Shadow {
                         Shadow::Spacing();
                         Shadow::HelpMarker(U8("Spacing() adds vertical padding between items."));
 
-                        // Text Wrap Stack
                         Shadow::PushTextWrapPos(150.f);
                         Shadow::Text(U8("This text is forcibly wrapped at 150 pixels due to PushTextWrapPos."));
                         Shadow::PopTextWrapPos();
                         Shadow::HelpMarker(U8("PushTextWrapPos / PopTextWrapPos Demonstration."));
 
-                        // Clip Rect Stack
                         Shadow::Vec2 cur = Shadow::g_Ctx.Cursor;
                         Shadow::PushClipRect(cur, { cur.x + 100.f, cur.y + Shadow::g_Ctx.ItemHeight });
                         Shadow::Text(U8("This long text will be physically clipped at 100px width."));
                         Shadow::PopClipRect();
                         Shadow::HelpMarker(U8("PushClipRect / PopClipRect Demonstration."));
 
-                        // Font Stack
                         Shadow::PushFont(Shadow::g_Ctx.DefaultFont, 1.25f);
                         Shadow::Text(U8("Text with Font scale 1.25x"));
                         Shadow::PopFont();
@@ -429,6 +549,12 @@ namespace Shadow {
                             Shadow::Text(U8("Children inside this node are not indented horizontally."));
                         }
                         Shadow::TreePop();
+
+                        // TreeNode Flags 组合演示
+                        if (Shadow::TreeNode(U8("All Flags Combo Node"), Shadow::ShadowTreeNodeFlags_Framed | Shadow::ShadowTreeNodeFlags_DefaultOpen | Shadow::ShadowTreeNodeFlags_FitText | Shadow::ShadowTreeNodeFlags_NoIndent)) {
+                            Shadow::Text(U8("This node combines Framed, DefaultOpen, FitText, and NoIndent."));
+                        }
+                        Shadow::TreePop();
                     }
                     Shadow::TreePop();
 
@@ -453,10 +579,16 @@ namespace Shadow {
                             Shadow::BeginTooltip(); Shadow::Text(U8("Stationary Hover Tooltip")); Shadow::EndTooltip();
                         }
 
+                        // Hover Flags 组合演示
+                        Shadow::Button(U8("Hover Me (DelayNormal + Stationary)"));
+                        if (Shadow::IsItemHovered(Shadow::ShadowHoveredFlags_DelayNormal | Shadow::ShadowHoveredFlags_Stationary)) {
+                            Shadow::BeginTooltip(); Shadow::Text(U8("DelayNormal + Stationary Hover Tooltip")); Shadow::EndTooltip();
+                        }
+
                         Shadow::BeginDisabled(true);
-                        Shadow::Button(U8("Disabled Button Hover"));
-                        if (Shadow::IsItemHovered(Shadow::ShadowHoveredFlags_AllowWhenDisabled)) {
-                            Shadow::BeginTooltip(); Shadow::Text(U8("Hover triggered despite being disabled!")); Shadow::EndTooltip();
+                        Shadow::Button(U8("Hover Disabled (DelayShort + Allow)"));
+                        if (Shadow::IsItemHovered(Shadow::ShadowHoveredFlags_DelayShort | Shadow::ShadowHoveredFlags_AllowWhenDisabled)) {
+                            Shadow::BeginTooltip(); Shadow::Text(U8("DelayShort + AllowWhenDisabled Hover Tooltip")); Shadow::EndTooltip();
                         }
                         Shadow::EndDisabled();
                     }
@@ -538,9 +670,6 @@ namespace Shadow {
 
                     if (Shadow::TreeNode(U8("ListBox Demos"))) {
 
-                        // ============================================
-                        // 示例1：ListBox 内部使用 Selectable
-                        // ============================================
                         if (Shadow::TreeNode(U8("ListBox with Selectables"))) {
                             static int selectedItem = 0;
                             std::vector<std::string> items = {
@@ -559,15 +688,10 @@ namespace Shadow {
                             }
                             Shadow::EndListBox();
                             Shadow::HelpMarker(U8("ListBox demonstrating internal Selectable usage for item selection."));
-
-                            // 显示当前选中项
                             Shadow::Text(std::format("Selected: {}", items[selectedItem]));
                         }
                         Shadow::TreePop();
 
-                        // ============================================
-                        // 示例2：ListBox 内部使用 Color Text
-                        // ============================================
                         if (Shadow::TreeNode(U8("ListBox with Color Texts"))) {
                             struct ColorEntry {
                                 std::string name;
@@ -581,14 +705,7 @@ namespace Shadow {
                                 { U8("Yellow"), { 1.0f, 1.0f, 0.0f, 1.0f } },
                                 { U8("Cyan"),   { 0.0f, 1.0f, 1.0f, 1.0f } },
                                 { U8("Magenta"),{ 1.0f, 0.0f, 1.0f, 1.0f } },
-                                { U8("Orange"), { 1.0f, 0.5f, 0.0f, 1.0f } },
-                                { U8("Purple"), { 0.5f, 0.0f, 0.5f, 1.0f } },
-                                { U8("Pink"),   { 1.0f, 0.7f, 0.7f, 1.0f } },
-                                { U8("Lime"),   { 0.5f, 1.0f, 0.0f, 1.0f } },
-                                { U8("Teal"),   { 0.0f, 0.5f, 0.5f, 1.0f } },
-                                { U8("Brown"),  { 0.6f, 0.3f, 0.0f, 1.0f } },
-                                { U8("Gray"),   { 0.5f, 0.5f, 0.5f, 1.0f } },
-                                { U8("White"),  { 1.0f, 1.0f, 1.0f, 1.0f } }
+                                { U8("Orange"), { 1.0f, 0.5f, 0.0f, 1.0f } }
                             };
 
                             if (Shadow::BeginListBox(U8("ColorTextListBox"), { 200.f, 150.f })) {
@@ -601,9 +718,6 @@ namespace Shadow {
                         }
                         Shadow::TreePop();
 
-                        // ============================================
-                        // 示例3：ListBox 内部使用 Color Picker
-                        // ============================================
                         if (Shadow::TreeNode(U8("ListBox with Color Pickers"))) {
                             static std::vector<Shadow::Color> customColors = {
                                 { 1.0f, 0.0f, 0.0f, 1.0f },  // Red
@@ -625,14 +739,7 @@ namespace Shadow {
                                 }
                             }
                             Shadow::EndListBox();
-                            Shadow::HelpMarker(U8("ListBox demonstrating embedded ColorPicker controls. Use scroll to see all items."));
-
-                            // 显示当前所有颜色预览
-                            Shadow::Text(U8("Color Previews:"));
-                            for (int i = 0; i < static_cast<int>(customColors.size()); i++) {
-                                Shadow::SameLine();
-                                Advanced::ColorButton(std::format("prev_{}", i), customColors[i]);
-                            }
+                            Shadow::HelpMarker(U8("ListBox demonstrating embedded ColorPicker controls."));
                         }
                         Shadow::TreePop();
 
@@ -643,10 +750,10 @@ namespace Shadow {
                 Shadow::EndTabItem(); // 无条件EndTabItem
 
                 // ----------------------------------------------------------------
-                // 第二页面: 高级自定义组合控件 (至少10种)
+                // 第二页面: 高级自定义组合控件 (一共19种)
                 // ----------------------------------------------------------------
                 if (Shadow::BeginTabItem(U8("Advanced Custom Controls"))) {
-                    Advanced::SectionHeader(U8("Advanced Custom Composites (Total 11+)"));
+                    Advanced::SectionHeader(U8("Advanced Custom Composites (Total 19+)"));
 
                     Advanced::PropertyRow(U8("Player Speed"), U8("420.0 (Readonly Property Demo)"));
                     Shadow::HelpMarker(U8("This is Advanced Control 1: PropertyRow"));
@@ -695,8 +802,25 @@ namespace Shadow {
                     Advanced::LabeledSlider(U8("Intensity Filter"), &slider_val, 0.f, 1.f);
                     Shadow::HelpMarker(U8("This is Advanced Control 10: LabeledSlider"));
 
-                    Advanced::SectionHeader(U8("End of Advanced Demo"));
+                    Advanced::SectionHeader(U8("New Additions: Utility & Layout"));
                     Shadow::HelpMarker(U8("This is Advanced Control 11: SectionHeader"));
+
+                    // 12. 范围滑块组合
+                    static float min_val = 10.f, max_val = 90.f;
+                    Advanced::RangeSliderFloat(U8("Spawn Range"), min_val, max_val, 0.f, 100.f);
+                    Shadow::HelpMarker(U8("This is Advanced Control 12: RangeSliderFloat"));
+
+                    // 13. 分页导航
+                    static int page = 1;
+                    Advanced::Pagination(page, 10);
+                    Shadow::HelpMarker(U8("This is Advanced Control 13: Pagination"));
+
+                    // 14. 标签输入与管理
+                    static std::vector<std::string> my_tags = { U8("Player"), U8("Enemy") };
+                    static std::string tag_input = U8("");
+                    Advanced::TagsInput(U8("Entity Tags"), my_tags, tag_input);
+
+                    Advanced::SectionHeader(U8("End of Advanced Demo"));
                 }
                 Shadow::EndTabItem(); // 无条件EndTabItem
 
@@ -706,5 +830,4 @@ namespace Shadow {
         }
         Shadow::End(); // 无条件End
     }
-
 } // namespace Shadow

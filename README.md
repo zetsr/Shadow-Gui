@@ -232,7 +232,7 @@ bool Shadow::Button(std::string_view name);
 Draws a checkbox and binds a boolean variable to store its state.
 
 ```cpp
-void Shadow::Checkbox(std::string_view name, bool* value);
+bool Shadow::Checkbox(std::string_view name, bool* value);
 
 ```
 
@@ -242,7 +242,7 @@ void Shadow::Checkbox(std::string_view name, bool* value);
 Draws a switch and binds a boolean variable to store its state.
 
 ```cpp
-void Shadow::Switch(std::string_view name, bool* value);
+bool Shadow::Switch(std::string_view name, bool* value);
 
 ```
 

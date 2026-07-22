@@ -134,40 +134,8 @@ namespace Hook {
         Shadow::UpdateAllHotkeyStates();
 
         if (bShowMenu) {
-            if (Shadow::Begin(U8("测试菜单 / Demo Menu##main_window"), Shadow::ShadowWindowFlags_TextAlignCenter)) {
+            Shadow::ShowDemoWindow();
 
-                if (Shadow::BeginTabBar("MainTabs##tabs", Shadow::ShadowTabBarFlags_NoScrollbar)) {
-
-                    if (Shadow::BeginTabItem(U8("设置 / Settings##tab0"))) {
-
-                        static bool bTest = false;
-                        static bool bTest2 = false;
-
-                        if (Shadow::TreeNode("TEST 1", Shadow::ShadowTreeNodeFlags_FitText | Shadow::ShadowTreeNodeFlags_Framed, { 0.f, 50.f })) {
-
-                            if (Shadow::Switch(U8("测试开关 / Test Switch"), &bTest)) {
-
-                                if (Shadow::TreeNode("TEST 2", Shadow::ShadowTreeNodeFlags_FitText | Shadow::ShadowTreeNodeFlags_Framed, { 0.f, 50.f })) {
-                                    if (Shadow::Checkbox(U8("测试"), &bTest2)) {
-                                        Shadow::Text("123");
-
-                                    }
-
-                                }
-
-                                Shadow::TreePop();
-
-                            }
-                        }
-                        Shadow::TreePop();
-
-                    }
-                    Shadow::EndTabItem();
-
-                }
-                Shadow::EndTabBar();
-            }
-            Shadow::End();
         }
     }
 

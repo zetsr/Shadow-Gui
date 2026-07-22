@@ -113,7 +113,6 @@ namespace Shadow {
         ShadowSliderFlags_None = 0,
         ShadowSliderFlags_NoText = 1 << 0,
         ShadowSliderFlags_NoRightAlign = 1 << 1,
-        ShadowHotkeyFlags_NoStateDisplay = 1 << 2,
     };
     using ShadowSliderFlags = int;
 
@@ -121,6 +120,7 @@ namespace Shadow {
         ShadowHotkeyFlags_None = 0,
         ShadowHotkeyFlags_NoText = 1 << 0,
         ShadowHotkeyFlags_NoRightAlign = 1 << 1,
+        ShadowHotkeyFlags_NoStateDisplay = 1 << 2,
     };
     using ShadowHotkeyFlags = int;
 

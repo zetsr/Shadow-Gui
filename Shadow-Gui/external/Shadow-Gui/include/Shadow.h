@@ -235,6 +235,24 @@ namespace Shadow {
         Vec2 p1, p2, p3;
     };
 
+    struct ListBoxState {
+        Vec2 ParentWindowPos;
+        Vec2 ParentWindowSize;
+        Vec2 ParentCursor;
+        float ParentContentStartY;
+        float ParentScrollY;
+        float ParentContentHeight;
+        bool ParentIsScrollApplied;
+        ShadowWindowFlags ParentWindowFlags;
+        float ParentCurrentScrollbarWidth;
+        Vec2 ParentWindowPadding;
+        float ParentIndentX;
+
+        size_t Id;
+        Vec2 Pos;
+        Vec2 Size;
+    };
+
     struct GuiContext {
         SDK::UCanvas* Canvas = nullptr;
         SDK::UFont* DefaultFont = nullptr;
@@ -409,6 +427,21 @@ namespace Shadow {
         float IndentX = 0.f;
         float BackupIndentX = 0.f;
         std::vector<bool> TreeNodeNoIndentStack;
+
+        bool BackupClippingEnabled = false;
+        Vec2 BackupClipMin = { 0.f, 0.f };
+        Vec2 BackupClipMax = { 0.f, 0.f };
+        std::vector<std::pair<Vec2, Vec2>> BackupClipStack;
+
+        int ListBoxStack = 0;
+        std::vector<ListBoxState> ListBoxStateStack;
+        std::unordered_map<size_t, float> ListBoxScrollY;
+        std::unordered_map<size_t, float> ListBoxContentHeight;
+        size_t DraggingListBoxScrollId = 0;
+        float ListBoxScrollDragOffset = 0.f;
+
+        size_t HoveredListBoxIdCurrentFrame = 0;
+        size_t HoveredListBoxIdPreviousFrame = 0;
     };
 
     inline GuiContext g_Ctx;
@@ -1615,11 +1648,12 @@ namespace Shadow {
             return false;
         }
 
-        // 检查是否被处于激活状态的控件打断（拖动滚动条、颜色板等）
+        // [修改] 检查是否被处于激活状态的控件打断（增加 ListBox 滚动条拖拽阻塞）
         bool hasActiveItem = g_Ctx.ActiveInputId != 0 || g_Ctx.DraggingSliderId != 0 ||
             g_Ctx.ActiveDropdownId != 0 || g_Ctx.ActiveColorPickerId != 0 ||
             g_Ctx.IsDragging || g_Ctx.IsResizing || g_Ctx.IsDraggingScrollbar ||
-            g_Ctx.DraggingTabId != 0 || g_Ctx.DraggingTabBarScrollId != 0;
+            g_Ctx.DraggingTabId != 0 || g_Ctx.DraggingTabBarScrollId != 0 ||
+            g_Ctx.DraggingListBoxScrollId != 0;
 
         if (hasActiveItem && !(flags & ShadowHoveredFlags_AllowWhenBlockedByActiveItem)) {
             // 例外：如果当前激活的正是该控件本身，则放行
@@ -1708,6 +1742,192 @@ namespace Shadow {
         }
 
         return true;
+    }
+
+    inline bool BeginListBox(std::string_view name, Vec2 size) {
+        g_Ctx.ListBoxStack++;
+        if (!g_Ctx.InActiveTab) return false;
+        std::string_view display; size_t id; ParseLabel(name, display, id);
+        g_Ctx.WidgetCount++;
+
+        // [新增] 如果具备有效的显示名称，先将其作为标题独立渲染在 Box 上方，消除视觉混淆
+        if (!display.empty()) {
+            DrawTextString(display, { g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, g_Ctx.Style.Colors[GuiCol_Text]);
+            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+        }
+
+        float boxWidth = size.x;
+        if (boxWidth <= 0.f) {
+            boxWidth = std::max(10.f, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - GetRightMargin() - g_Ctx.Cursor.x);
+        }
+        float boxHeight = size.y;
+        if (boxHeight <= 0.f) {
+            boxHeight = g_Ctx.ItemHeight * 5.f;
+        }
+
+        Vec2 boxPos = g_Ctx.Cursor;
+
+        // 备份父级容器状态
+        ListBoxState backup;
+        backup.ParentWindowPos = g_Ctx.WindowPos;
+        backup.ParentWindowSize = g_Ctx.WindowSize;
+        backup.ParentCursor = g_Ctx.Cursor;
+        backup.ParentContentStartY = g_Ctx.ContentStartY;
+        backup.ParentScrollY = g_Ctx.ScrollY;
+        backup.ParentContentHeight = g_Ctx.ContentHeight;
+        backup.ParentIsScrollApplied = g_Ctx.IsScrollApplied;
+        backup.ParentWindowFlags = g_Ctx.CurrentWindowFlags;
+        backup.ParentCurrentScrollbarWidth = g_Ctx.CurrentScrollbarWidth;
+        backup.ParentWindowPadding = g_Ctx.Style.WindowPadding;
+        backup.ParentIndentX = g_Ctx.IndentX; // [新增] 保存先前的缩进状态
+        backup.Id = id;
+        backup.Pos = boxPos;
+        backup.Size = { boxWidth, boxHeight };
+
+        g_Ctx.ListBoxStateStack.push_back(backup);
+
+        // [新增] 清空缩进距离，使 ListBox 内部的控件强制靠边对齐
+        g_Ctx.IndentX = 0.f;
+
+        // 绘制背景与边框
+        DrawRectFilled(boxPos, { boxWidth, boxHeight }, g_Ctx.Style.Colors[GuiCol_FrameBg]);
+        DrawRect(boxPos, { boxWidth, boxHeight }, g_Ctx.Style.Colors[GuiCol_Border]);
+
+        // 应用子级容器状态
+        g_Ctx.WindowPos = boxPos;
+        g_Ctx.WindowSize = { boxWidth, boxHeight };
+        g_Ctx.CurrentWindowFlags = ShadowWindowFlags_NoResize | ShadowWindowFlags_NoMove | ShadowWindowFlags_NoTitleBar;
+        g_Ctx.Style.WindowPadding = { g_Ctx.Style.FramePadding.x, g_Ctx.Style.FramePadding.y };
+
+        g_Ctx.Cursor = { boxPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, boxPos.y + g_Ctx.Style.WindowPadding.y };
+        g_Ctx.ContentStartY = g_Ctx.Cursor.y;
+
+        float maxScroll = std::max(0.f, g_Ctx.ListBoxContentHeight[id] - boxHeight);
+        float& scrollY = g_Ctx.ListBoxScrollY[id];
+        scrollY = std::clamp(scrollY, 0.f, maxScroll);
+        g_Ctx.ScrollY = scrollY;
+        g_Ctx.IsScrollApplied = true;
+
+        if (maxScroll > 0.f) {
+            g_Ctx.CurrentScrollbarWidth = g_Ctx.Style.ScrollbarSize;
+        }
+        else {
+            g_Ctx.CurrentScrollbarWidth = 0.f;
+        }
+
+        bool hoveringListBox = IsMouseHovering(boxPos, { boxWidth, boxHeight });
+        if (hoveringListBox) {
+            // [新增] 标记 ListBox 被悬停控制，阻挡主菜单获取焦点
+            g_Ctx.HoveredListBoxIdCurrentFrame = id;
+
+            // 处理滚轮事件并在消费后清空标志位
+            if (g_Ctx.MouseWheel != 0.f) {
+                scrollY -= g_Ctx.MouseWheel * 30.f;
+                scrollY = std::clamp(scrollY, 0.f, maxScroll);
+                g_Ctx.ScrollY = scrollY;
+                g_Ctx.MouseWheel = 0.f;
+            }
+        }
+
+        g_Ctx.Cursor.y -= g_Ctx.ScrollY;
+
+        PushClipRect(boxPos, { boxPos.x + boxWidth, boxPos.y + boxHeight });
+
+        return true;
+    }
+
+    inline void EndListBox() {
+        g_Ctx.ListBoxStack--;
+        if (!g_Ctx.InActiveTab) return;
+        if (g_Ctx.ListBoxStateStack.empty()) return;
+
+        ListBoxState backup = g_Ctx.ListBoxStateStack.back();
+        g_Ctx.ListBoxStateStack.pop_back();
+
+        float actualCursorY = g_Ctx.Cursor.y + (g_Ctx.IsScrollApplied ? g_Ctx.ScrollY : 0.f);
+        g_Ctx.ListBoxContentHeight[backup.Id] = actualCursorY - g_Ctx.ContentStartY + g_Ctx.Style.WindowPadding.y;
+
+        PopClipRect();
+
+        float viewHeight = backup.Size.y;
+        float contentHeight = g_Ctx.ListBoxContentHeight[backup.Id];
+        float maxScroll = std::max(0.f, contentHeight - viewHeight);
+        float& scrollY = g_Ctx.ListBoxScrollY[backup.Id];
+
+        g_Ctx.CurrentScrollbarWidth = 0.f;
+
+        // 如果内容超高，渲染并处理右侧独立滚动条
+        if (contentHeight > viewHeight) {
+            float scrollbarWidth = g_Ctx.Style.ScrollbarSize;
+            float scrollbarMarginRight = g_Ctx.Style.ScrollbarMargin;
+
+            Vec2 trackPos = { backup.Pos.x + backup.Size.x - scrollbarWidth - scrollbarMarginRight, backup.Pos.y };
+            Vec2 trackSize = { scrollbarWidth, viewHeight };
+
+            DrawRect(trackPos, trackSize, g_Ctx.Style.Colors[GuiCol_FrameBg]);
+
+            float thumbHeight = std::max(20.f, (viewHeight / contentHeight) * trackSize.y);
+            float thumbY = trackPos.y + (maxScroll > 0.f ? (scrollY / maxScroll) * (trackSize.y - thumbHeight) : 0.f);
+            Vec2 thumbPos = { trackPos.x, thumbY };
+            Vec2 thumbSize = { scrollbarWidth, thumbHeight };
+
+            bool hoveringThumb = IsMouseHovering(thumbPos, thumbSize);
+            bool hoveringTrack = IsMouseHovering(trackPos, trackSize);
+
+            if (g_Ctx.MouseClicked && hoveringThumb) {
+                g_Ctx.DraggingListBoxScrollId = backup.Id;
+                g_Ctx.ListBoxScrollDragOffset = g_Ctx.MousePos.y - thumbPos.y;
+                g_Ctx.MouseClicked = false; // [新增] 点击即销毁，阻断鼠标向主菜单透传
+            }
+            else if (g_Ctx.MouseClicked && hoveringTrack) {
+                if (g_Ctx.MousePos.y < thumbPos.y) scrollY -= viewHeight;
+                else scrollY += viewHeight;
+                scrollY = std::clamp(scrollY, 0.f, maxScroll);
+                g_Ctx.MouseClicked = false; // [新增]
+            }
+
+            if (g_Ctx.DraggingListBoxScrollId == backup.Id) {
+                if (g_Ctx.MouseDown) {
+                    float newThumbY = g_Ctx.MousePos.y - g_Ctx.ListBoxScrollDragOffset;
+                    float ratio = (newThumbY - trackPos.y) / std::max(1.f, trackSize.y - thumbHeight);
+                    scrollY = std::clamp(ratio * maxScroll, 0.f, maxScroll);
+                }
+                else {
+                    g_Ctx.DraggingListBoxScrollId = 0;
+                }
+            }
+
+            Color thumbColor = (g_Ctx.DraggingListBoxScrollId == backup.Id)
+                ? g_Ctx.Style.Colors[GuiCol_SliderGrab]
+                : (hoveringThumb ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_Border]);
+            DrawRect(thumbPos, thumbSize, thumbColor);
+        }
+        else {
+            if (g_Ctx.DraggingListBoxScrollId == backup.Id) {
+                g_Ctx.DraggingListBoxScrollId = 0;
+            }
+        }
+
+        // 恢复父级容器状态
+        g_Ctx.WindowPos = backup.ParentWindowPos;
+        g_Ctx.WindowSize = backup.ParentWindowSize;
+        g_Ctx.Cursor = backup.ParentCursor;
+        g_Ctx.ContentStartY = backup.ParentContentStartY;
+        g_Ctx.ScrollY = backup.ParentScrollY;
+        g_Ctx.ContentHeight = backup.ParentContentHeight;
+        g_Ctx.IsScrollApplied = backup.ParentIsScrollApplied;
+        g_Ctx.CurrentWindowFlags = backup.ParentWindowFlags;
+        g_Ctx.CurrentScrollbarWidth = backup.ParentCurrentScrollbarWidth;
+        g_Ctx.Style.WindowPadding = backup.ParentWindowPadding;
+        g_Ctx.IndentX = backup.ParentIndentX; // [新增] 恢复之前外层的树级或者缩进层级
+
+        // 设置本 ListBox 占用尺寸
+        SetLastItemInfo(backup.Pos, { backup.Pos.x + backup.Size.x, backup.Pos.y + backup.Size.y }, backup.Id, false);
+        g_Ctx.LastItemMaxX = backup.Pos.x + backup.Size.x;
+
+        // 推进光标
+        g_Ctx.Cursor.y += backup.Size.y + g_Ctx.Style.ItemSpacing.y;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
 
     inline bool InputTextEx(size_t id, Vec2 pos, Vec2 size, std::string& text, ShadowInputTextFlags flags = 0, bool is_popup = false, std::string_view hint = "") {
@@ -1924,6 +2144,8 @@ namespace Shadow {
         else if (g_Ctx.TabItemStack < 0) errorMsg = std::format("ERROR: EndTabItem() called {} time(s) without matching BeginTabItem()!", -g_Ctx.TabItemStack);
         else if (g_Ctx.TreeNodeStack > 0) errorMsg = std::format("ERROR: TreeNode() called {} time(s) without matching TreePop()!", g_Ctx.TreeNodeStack);
         else if (g_Ctx.TreeNodeStack < 0) errorMsg = std::format("ERROR: TreePop() called {} time(s) without matching TreeNode()!", -g_Ctx.TreeNodeStack);
+        else if (g_Ctx.ListBoxStack > 0) errorMsg = std::format("ERROR: BeginListBox() called {} time(s) without matching EndListBox()!", g_Ctx.ListBoxStack);
+        else if (g_Ctx.ListBoxStack < 0) errorMsg = std::format("ERROR: EndListBox() called {} time(s) without matching BeginListBox()!", -g_Ctx.ListBoxStack);
         else if (g_Ctx.FontStack.size() > 0) errorMsg = std::format("ERROR: PushFont() called {} time(s) without matching PopFont()!", g_Ctx.FontStack.size());
         else if (g_Ctx.ClipStack.size() > 0) errorMsg = std::format("ERROR: PushClipRect() called {} time(s) without matching PopClipRect()!", g_Ctx.ClipStack.size());
         else if (g_Ctx.DisabledStack.size() > 0) errorMsg = std::format("ERROR: BeginDisabled() called {} time(s) without matching EndDisabled()!", g_Ctx.DisabledStack.size());
@@ -2194,6 +2416,7 @@ namespace Shadow {
         g_Ctx.TabBarStack = 0;
         g_Ctx.TabItemStack = 0;
         g_Ctx.TreeNodeStack = 0;
+        g_Ctx.ListBoxStack = 0;
         g_Ctx.IndentX = 0.f;
         g_Ctx.TreeNodeNoIndentStack.clear();
 
@@ -2219,6 +2442,10 @@ namespace Shadow {
         g_Ctx.HoveredIdCurrentFrame = 0;
         g_Ctx.LastHoveredIdEval = 0;
         g_Ctx.WidgetCount = 0;
+
+        // [新增] 更新 ListBox 焦点追踪
+        g_Ctx.HoveredListBoxIdPreviousFrame = g_Ctx.HoveredListBoxIdCurrentFrame;
+        g_Ctx.HoveredListBoxIdCurrentFrame = 0;
 
         if (GetTickCount64() > g_Ctx.SharedDelayExpirationTime) {
             g_Ctx.SharedDelayActive = false;
@@ -2480,7 +2707,8 @@ namespace Shadow {
         Vec2 triPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - triSize, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y - triSize };
         g_Ctx.IsHoveringResize = (!noResize && !noMouseInputs) ? IsMouseHoveringRaw(triPos, { triSize, triSize }) : false;
 
-        bool isOtherDragging = (g_Ctx.DraggingSliderId != 0) || g_Ctx.IsDraggingSV || g_Ctx.IsDraggingHue || g_Ctx.IsDraggingAlpha || g_Ctx.IsDraggingColorPicker || g_Ctx.IsDraggingScrollbar || g_Ctx.DraggingTabId != 0 || g_Ctx.DraggingTabBarScrollId != 0;
+        // [修改] 增加 g_Ctx.DraggingListBoxScrollId != 0 阻断主菜单被拖拽
+        bool isOtherDragging = (g_Ctx.DraggingSliderId != 0) || g_Ctx.IsDraggingSV || g_Ctx.IsDraggingHue || g_Ctx.IsDraggingAlpha || g_Ctx.IsDraggingColorPicker || g_Ctx.IsDraggingScrollbar || g_Ctx.DraggingTabId != 0 || g_Ctx.DraggingTabBarScrollId != 0 || g_Ctx.DraggingListBoxScrollId != 0;
 
         if (hoveringWholeWindow && g_Ctx.MouseClicked) {
             g_Ctx.ActiveInputId = 0;
@@ -2501,7 +2729,9 @@ namespace Shadow {
             }
         }
 
-        if (!noMouseInputs && hoveringWholeWindow && g_Ctx.MouseWheel != 0.f && !hasPopupOpen && !hoveringAnyTabBar) {
+        bool overListBox = (g_Ctx.HoveredListBoxIdPreviousFrame != 0);
+
+        if (!noMouseInputs && hoveringWholeWindow && g_Ctx.MouseWheel != 0.f && !hasPopupOpen && !hoveringAnyTabBar && !overListBox) {
             g_Ctx.ScrollY -= g_Ctx.MouseWheel * 30.f;
             g_Ctx.ScrollY = std::clamp(g_Ctx.ScrollY, 0.f, maxScroll);
         }
@@ -2523,14 +2753,16 @@ namespace Shadow {
 
             if (hoveringTrack || hoveringThumb) { hoveringScrollbar = true; }
 
-            if (!noMouseInputs && g_Ctx.MouseClicked && hoveringThumb) {
-                g_Ctx.IsDraggingScrollbar = true;
-                g_Ctx.ScrollDragOffset = g_Ctx.MousePos.y - thumbPos.y;
-            }
-            else if (!noMouseInputs && g_Ctx.MouseClicked && hoveringTrack) {
-                if (g_Ctx.MousePos.y < thumbPos.y) g_Ctx.ScrollY -= viewHeight;
-                else g_Ctx.ScrollY += viewHeight;
-                g_Ctx.ScrollY = std::clamp(g_Ctx.ScrollY, 0.f, maxScroll);
+            if (!overListBox) {
+                if (!noMouseInputs && g_Ctx.MouseClicked && hoveringThumb) {
+                    g_Ctx.IsDraggingScrollbar = true;
+                    g_Ctx.ScrollDragOffset = g_Ctx.MousePos.y - thumbPos.y;
+                }
+                else if (!noMouseInputs && g_Ctx.MouseClicked && hoveringTrack) {
+                    if (g_Ctx.MousePos.y < thumbPos.y) g_Ctx.ScrollY -= viewHeight;
+                    else g_Ctx.ScrollY += viewHeight;
+                    g_Ctx.ScrollY = std::clamp(g_Ctx.ScrollY, 0.f, maxScroll);
+                }
             }
 
             if (g_Ctx.IsDraggingScrollbar) {
@@ -2593,7 +2825,7 @@ namespace Shadow {
             }
         }
 
-        g_Ctx.IndentX = 0.f; // [修改] 在创建完新窗口后将缩进置零
+        g_Ctx.IndentX = 0.f;
         g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, g_Ctx.WindowPos.y + titleBarHeight + g_Ctx.Style.WindowPadding.y };
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;
 
@@ -2615,7 +2847,15 @@ namespace Shadow {
         g_Ctx.BackupLastItemMaxX = g_Ctx.LastItemMaxX;
         g_Ctx.BackupIsScrollApplied = g_Ctx.IsScrollApplied;
         g_Ctx.BackupCurrentWindowFlags = g_Ctx.CurrentWindowFlags;
-        g_Ctx.BackupIndentX = g_Ctx.IndentX; // [新增] 保存先前的缩进状态
+        g_Ctx.BackupIndentX = g_Ctx.IndentX;
+
+        g_Ctx.BackupClippingEnabled = g_Ctx.ClippingEnabled;
+        g_Ctx.BackupClipMin = g_Ctx.ClipMin;
+        g_Ctx.BackupClipMax = g_Ctx.ClipMax;
+        g_Ctx.BackupClipStack = g_Ctx.ClipStack;
+
+        g_Ctx.ClippingEnabled = false;
+        g_Ctx.ClipStack.clear();
 
         g_Ctx.WindowPos = { g_Ctx.MousePos.x + 15.f, g_Ctx.MousePos.y + 15.f };
 
@@ -2628,7 +2868,7 @@ namespace Shadow {
         DrawRectFilled(g_Ctx.WindowPos, bgSize, g_Ctx.Style.Colors[GuiCol_PopupBg]);
 
         g_Ctx.WindowSize = bgSize;
-        g_Ctx.IndentX = 0.f; // [新增] Tooltip 内部的缩进独立
+        g_Ctx.IndentX = 0.f;
         g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, g_Ctx.WindowPos.y + g_Ctx.Style.WindowPadding.y };
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;
         g_Ctx.ScrollY = 0.f;
@@ -2653,7 +2893,12 @@ namespace Shadow {
         g_Ctx.LastItemMaxX = g_Ctx.BackupLastItemMaxX;
         g_Ctx.IsScrollApplied = g_Ctx.BackupIsScrollApplied;
         g_Ctx.CurrentWindowFlags = g_Ctx.BackupCurrentWindowFlags;
-        g_Ctx.IndentX = g_Ctx.BackupIndentX; // [新增] 恢复主面板的缩进层级
+        g_Ctx.IndentX = g_Ctx.BackupIndentX;
+
+        g_Ctx.ClippingEnabled = g_Ctx.BackupClippingEnabled;
+        g_Ctx.ClipMin = g_Ctx.BackupClipMin;
+        g_Ctx.ClipMax = g_Ctx.BackupClipMax;
+        g_Ctx.ClipStack = g_Ctx.BackupClipStack;
 
         g_Ctx.InTooltip = false;
     }
@@ -2849,6 +3094,7 @@ namespace Shadow {
         Vec2 tabRowPos = g_Ctx.TabBarOrigin;
         Vec2 tabRowSize = { viewWidth, g_Ctx.ItemHeight };
         bool hoveringTabRow = IsMouseHovering(tabRowPos, tabRowSize);
+        bool overListBox = (g_Ctx.HoveredListBoxIdCurrentFrame != 0); // [新增] 判断本帧内是否悬停了 ListBox
 
         if (reorderable && g_Ctx.DraggingTabId != 0 && g_Ctx.DraggingTabBarId == tabBarId) {
             if (g_Ctx.MouseDown) {
@@ -2914,7 +3160,6 @@ namespace Shadow {
                     Color bgColor = g_Ctx.Style.Colors[GuiCol_TabActive];
                     Color textColor = g_Ctx.Style.Colors[GuiCol_TextHighlight];
 
-                    // [修改] 挂载拖拽 Tab 本身的字体上下文
                     if (tabInfo.font) { PushFont(tabInfo.font, tabInfo.fontScale); }
 
                     PushClipRect(clipMin, { g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth, clipMax.y });
@@ -2922,7 +3167,6 @@ namespace Shadow {
                     DrawTextString(tabInfo.display, { tabInfo.pos.x + g_Ctx.Style.TabExtraWidth / 2.f, tabInfo.pos.y + g_Ctx.Style.FramePadding.y }, textColor);
                     PopClipRect();
 
-                    // [修改] 解除挂载
                     if (tabInfo.font) { PopFont(); }
                     break;
                 }
@@ -2945,16 +3189,19 @@ namespace Shadow {
             bool hoveringThumb = IsMouseHoveringRaw(thumbPos, thumbSize);
             bool hoveringTrack = IsMouseHoveringRaw(trackPos, trackSize);
 
-            if (g_Ctx.MouseClicked && hoveringThumb) {
-                g_Ctx.DraggingTabBarScrollId = tabBarId;
-                g_Ctx.TabBarScrollDragOffset = g_Ctx.MousePos.x - thumbPos.x;
-                g_Ctx.MouseClicked = false;
-            }
-            else if (g_Ctx.MouseClicked && hoveringTrack) {
-                if (g_Ctx.MousePos.x < thumbPos.x) scrollX -= viewWidth * 0.5f;
-                else scrollX += viewWidth * 0.5f;
-                scrollX = std::clamp(scrollX, 0.f, maxScrollX);
-                g_Ctx.MouseClicked = false;
+            // [修改] 如果处于 ListBox 范围内，阻止标签页横向滚动条响应点击
+            if (!overListBox) {
+                if (g_Ctx.MouseClicked && hoveringThumb) {
+                    g_Ctx.DraggingTabBarScrollId = tabBarId;
+                    g_Ctx.TabBarScrollDragOffset = g_Ctx.MousePos.x - thumbPos.x;
+                    g_Ctx.MouseClicked = false;
+                }
+                else if (g_Ctx.MouseClicked && hoveringTrack) {
+                    if (g_Ctx.MousePos.x < thumbPos.x) scrollX -= viewWidth * 0.5f;
+                    else scrollX += viewWidth * 0.5f;
+                    scrollX = std::clamp(scrollX, 0.f, maxScrollX);
+                    g_Ctx.MouseClicked = false;
+                }
             }
 
             if (g_Ctx.DraggingTabBarScrollId == tabBarId) {
@@ -2974,7 +3221,8 @@ namespace Shadow {
             DrawRect(thumbPos, thumbSize, thumbColor);
 
             bool hoveringForWheel = hoveringTabRow || hoveringTrack;
-            if (hoveringForWheel && g_Ctx.MouseWheel != 0.f) {
+            // [修改] 拦截滚轮
+            if (hoveringForWheel && g_Ctx.MouseWheel != 0.f && !overListBox) {
                 scrollX -= g_Ctx.MouseWheel * 30.f;
                 scrollX = std::clamp(scrollX, 0.f, maxScrollX);
                 g_Ctx.MouseWheel = 0.f;
@@ -2984,7 +3232,8 @@ namespace Shadow {
             scrollBarBottom = trackPos.y + trackSize.y;
         }
         else if (fittingScroll) {
-            if (hoveringTabRow && g_Ctx.MouseWheel != 0.f) {
+            // [修改] 拦截滚轮
+            if (hoveringTabRow && g_Ctx.MouseWheel != 0.f && !overListBox) {
                 scrollX -= g_Ctx.MouseWheel * 30.f;
                 scrollX = std::clamp(scrollX, 0.f, maxScrollX);
                 g_Ctx.MouseWheel = 0.f;

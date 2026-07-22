@@ -536,6 +536,109 @@ namespace Shadow {
                     }
                     Shadow::TreePop();
 
+                    if (Shadow::TreeNode(U8("ListBox Demos"))) {
+
+                        // ============================================
+                        // 示例1：ListBox 内部使用 Selectable
+                        // ============================================
+                        if (Shadow::TreeNode(U8("ListBox with Selectables"))) {
+                            static int selectedItem = 0;
+                            std::vector<std::string> items = {
+                                U8("Apple"), U8("Banana"), U8("Cherry"),
+                                U8("Date"), U8("Elderberry"), U8("Fig"),
+                                U8("Grape"), U8("Honeydew"), U8("Kiwi"), U8("Lemon")
+                            };
+
+                            if (Shadow::BeginListBox(U8("FruitListBox"), { 200.f, 150.f })) {
+                                for (int i = 0; i < static_cast<int>(items.size()); i++) {
+                                    bool isSelected = (selectedItem == i);
+                                    if (Shadow::Selectable(items[i], &isSelected)) {
+                                        selectedItem = i;
+                                    }
+                                }
+                            }
+                            Shadow::EndListBox();
+                            Shadow::HelpMarker(U8("ListBox demonstrating internal Selectable usage for item selection."));
+
+                            // 显示当前选中项
+                            Shadow::Text(std::format("Selected: {}", items[selectedItem]));
+                        }
+                        Shadow::TreePop();
+
+                        // ============================================
+                        // 示例2：ListBox 内部使用 Color Text
+                        // ============================================
+                        if (Shadow::TreeNode(U8("ListBox with Color Texts"))) {
+                            struct ColorEntry {
+                                std::string name;
+                                Shadow::Color color;
+                            };
+
+                            std::vector<ColorEntry> colors = {
+                                { U8("Red"),    { 1.0f, 0.0f, 0.0f, 1.0f } },
+                                { U8("Green"),  { 0.0f, 1.0f, 0.0f, 1.0f } },
+                                { U8("Blue"),   { 0.0f, 0.0f, 1.0f, 1.0f } },
+                                { U8("Yellow"), { 1.0f, 1.0f, 0.0f, 1.0f } },
+                                { U8("Cyan"),   { 0.0f, 1.0f, 1.0f, 1.0f } },
+                                { U8("Magenta"),{ 1.0f, 0.0f, 1.0f, 1.0f } },
+                                { U8("Orange"), { 1.0f, 0.5f, 0.0f, 1.0f } },
+                                { U8("Purple"), { 0.5f, 0.0f, 0.5f, 1.0f } },
+                                { U8("Pink"),   { 1.0f, 0.7f, 0.7f, 1.0f } },
+                                { U8("Lime"),   { 0.5f, 1.0f, 0.0f, 1.0f } },
+                                { U8("Teal"),   { 0.0f, 0.5f, 0.5f, 1.0f } },
+                                { U8("Brown"),  { 0.6f, 0.3f, 0.0f, 1.0f } },
+                                { U8("Gray"),   { 0.5f, 0.5f, 0.5f, 1.0f } },
+                                { U8("White"),  { 1.0f, 1.0f, 1.0f, 1.0f } }
+                            };
+
+                            if (Shadow::BeginListBox(U8("ColorTextListBox"), { 200.f, 150.f })) {
+                                for (const auto& entry : colors) {
+                                    Shadow::TextColored(entry.color, entry.name);
+                                }
+                            }
+                            Shadow::EndListBox();
+                            Shadow::HelpMarker(U8("ListBox demonstrating TextColored items with various colors."));
+                        }
+                        Shadow::TreePop();
+
+                        // ============================================
+                        // 示例3：ListBox 内部使用 Color Picker
+                        // ============================================
+                        if (Shadow::TreeNode(U8("ListBox with Color Pickers"))) {
+                            static std::vector<Shadow::Color> customColors = {
+                                { 1.0f, 0.0f, 0.0f, 1.0f },  // Red
+                                { 0.0f, 1.0f, 0.0f, 1.0f },  // Green
+                                { 0.0f, 0.0f, 1.0f, 1.0f },  // Blue
+                                { 1.0f, 1.0f, 0.0f, 1.0f },  // Yellow
+                                { 0.0f, 1.0f, 1.0f, 1.0f }   // Cyan
+                            };
+
+                            if (Shadow::BeginListBox(U8("ColorPickerListBox"), { 300.f, 180.f })) {
+                                for (int i = 0; i < static_cast<int>(customColors.size()); i++) {
+                                    Shadow::ColorPicker(
+                                        std::format("Color {}##cp", i + 1),
+                                        &customColors[i].r,
+                                        &customColors[i].g,
+                                        &customColors[i].b,
+                                        &customColors[i].a
+                                    );
+                                }
+                            }
+                            Shadow::EndListBox();
+                            Shadow::HelpMarker(U8("ListBox demonstrating embedded ColorPicker controls. Use scroll to see all items."));
+
+                            // 显示当前所有颜色预览
+                            Shadow::Text(U8("Color Previews:"));
+                            for (int i = 0; i < static_cast<int>(customColors.size()); i++) {
+                                Shadow::SameLine();
+                                Advanced::ColorButton(std::format("prev_{}", i), customColors[i]);
+                            }
+                        }
+                        Shadow::TreePop();
+
+                    }
+                    Shadow::TreePop();
+
                 }
                 Shadow::EndTabItem(); // 无条件EndTabItem
 

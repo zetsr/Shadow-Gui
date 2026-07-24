@@ -53,7 +53,8 @@ namespace Shadow {
 
         // 2. 密码切换框 (Checkbox + SameLine + InputText)
         inline void PasswordToggle(std::string_view label, std::string& pwd, bool& show) {
-            Shadow::Checkbox(std::string(T(U8("Show##"), U8("显示##"))).append(label), &show);
+            // 加入 show_ 前缀防止 Checkbox 的解析名与 InputText 冲突
+            Shadow::Checkbox(std::string(T(U8("Show##show_"), U8("显示##show_"))).append(label), &show);
             Shadow::SameLine();
             Shadow::ShadowInputTextFlags flags = show ? Shadow::ShadowInputTextFlags_None : Shadow::ShadowInputTextFlags_Password;
             Shadow::InputText(label, pwd, flags);
@@ -61,7 +62,8 @@ namespace Shadow {
 
         // 3. 搜索框 (Button + SameLine + InputTextWithHint)
         inline bool SearchBox(std::string_view label, std::string& query) {
-            bool clicked = Shadow::Button(std::string(T(U8("Search##"), U8("搜索##"))).append(label));
+            // 加入 search_btn_ 避免和 InputText 发生哈希碰撞
+            bool clicked = Shadow::Button(std::string(T(U8("Search##search_btn_"), U8("搜索##search_btn_"))).append(label));
             Shadow::SameLine();
             Shadow::InputTextWithHint(label, T(U8("Type to search..."), U8("输入以搜索...")), query);
             return clicked;
@@ -88,7 +90,10 @@ namespace Shadow {
         }
 
         // 5. 颜色色块按钮 (自定义实心块渲染 + 悬停交互)
-        inline bool ColorButton(std::string_view id, Shadow::Color col) {
+        inline bool ColorButton(std::string_view id_label, Shadow::Color col) {
+            std::string_view display; size_t real_id;
+            Shadow::ParseLabel(id_label, display, real_id); // 替代原本的全局 HashString
+
             Shadow::Vec2 cur = Shadow::g_Ctx.Cursor;
             Shadow::Vec2 size = { Shadow::g_Ctx.ItemHeight, Shadow::g_Ctx.ItemHeight };
             bool clicked = false;
@@ -99,7 +104,7 @@ namespace Shadow {
                 Shadow::DrawRectFilled(cur, size, col);
                 Shadow::DrawRect(cur, size, border);
             }
-            Shadow::SetLastItemInfo(cur, { cur.x + size.x, cur.y + size.y }, Shadow::HashString(id), false);
+            Shadow::SetLastItemInfo(cur, { cur.x + size.x, cur.y + size.y }, real_id, false);
             Shadow::g_Ctx.LastItemMaxX = cur.x + size.x;
             Shadow::g_Ctx.Cursor.y += size.y + Shadow::g_Ctx.Style.ItemSpacing.y;
             Shadow::g_Ctx.Cursor.x = Shadow::g_Ctx.WindowPos.x + Shadow::g_Ctx.Style.WindowPadding.x + Shadow::g_Ctx.IndentX;
@@ -112,13 +117,14 @@ namespace Shadow {
             if (Shadow::TreeNode(label, Shadow::ShadowTreeNodeFlags_Framed)) {
                 for (int i = 0; i < static_cast<int>(items.size()); ++i) {
                     bool isSelected = (selectedIndex == i);
-                    if (Shadow::Selectable(std::string(items[i]).append(U8("##")).append(label), &isSelected)) {
+                    // 混入独立的前缀索引以防止多项同名冲突
+                    if (Shadow::Selectable(std::string(items[i]).append(U8("##item_")).append(std::to_string(i)).append(label), &isSelected)) {
                         selectedIndex = i;
                         changed = true;
                     }
                 }
             }
-            Shadow::TreePop(); // 无条件Pop
+            Shadow::TreePop();
             return changed;
         }
 
@@ -150,13 +156,16 @@ namespace Shadow {
 
         // 9. 状态切换按钮 (动态变更文字和背景色的交互矩形)
         inline bool ToggleButton(std::string_view label, bool& state) {
+            std::string_view display; size_t real_id;
+            Shadow::ParseLabel(label, display, real_id); // 替代原本的全局 HashString
+
             Shadow::Color bg = state ? Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_ButtonHovered] : Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_Button];
             Shadow::Color fg = state ? Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_TextHighlight] : Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_TextDisabled];
 
-            std::string display = state ? std::string(T(U8("[ON] "), U8("[开] "))).append(label) : std::string(T(U8("[OFF] "), U8("[关] "))).append(label);
+            std::string display_str = state ? std::string(T(U8("[ON] "), U8("[开] "))).append(display) : std::string(T(U8("[OFF] "), U8("[关] "))).append(display);
 
             Shadow::Vec2 cur = Shadow::g_Ctx.Cursor;
-            Shadow::Vec2 textSize = Shadow::MeasureTextSize(display);
+            Shadow::Vec2 textSize = Shadow::MeasureTextSize(display_str);
             Shadow::Vec2 size = { textSize.x + Shadow::g_Ctx.Style.FramePadding.x * 2.f, Shadow::g_Ctx.ItemHeight };
 
             bool clicked = false;
@@ -165,9 +174,9 @@ namespace Shadow {
                 if (hovered && Shadow::g_Ctx.MouseClicked) { state = !state; clicked = true; }
                 Shadow::Color drawBg = hovered ? Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_FrameBgHovered] : bg;
                 Shadow::DrawRectFilled(cur, size, drawBg);
-                Shadow::DrawTextString(display, { cur.x + Shadow::g_Ctx.Style.FramePadding.x, cur.y + Shadow::g_Ctx.Style.FramePadding.y }, fg);
+                Shadow::DrawTextString(display_str, { cur.x + Shadow::g_Ctx.Style.FramePadding.x, cur.y + Shadow::g_Ctx.Style.FramePadding.y }, fg);
             }
-            Shadow::SetLastItemInfo(cur, { cur.x + size.x, cur.y + size.y }, Shadow::HashString(label), false);
+            Shadow::SetLastItemInfo(cur, { cur.x + size.x, cur.y + size.y }, real_id, false);
             Shadow::g_Ctx.LastItemMaxX = cur.x + size.x;
             Shadow::g_Ctx.Cursor.y += size.y + Shadow::g_Ctx.Style.ItemSpacing.y;
             Shadow::g_Ctx.Cursor.x = Shadow::g_Ctx.WindowPos.x + Shadow::g_Ctx.Style.WindowPadding.x + Shadow::g_Ctx.IndentX;
@@ -202,10 +211,10 @@ namespace Shadow {
             Shadow::Slider(std::string(U8("##max")).append(label), &max_v, min_v, max_limit, 0.f, Shadow::ShadowSliderFlags_NoText | Shadow::ShadowSliderFlags_NoRightAlign);
         }
 
-        // 13. 分页导航控件 (Pagination)
-        inline bool Pagination(int& current_page, int total_pages) {
+        // 13. 分页导航控件 (Pagination) - [修改] 增加了 label 标识符传参，防止多个分页控件串台
+        inline bool Pagination(std::string_view label, int& current_page, int total_pages) {
             bool changed = false;
-            if (Shadow::Button(T(U8("< Prev"), U8("< 上一页"))) && current_page > 1) {
+            if (Shadow::Button(std::string(T(U8("< Prev##"), U8("< 上一页##"))).append(label)) && current_page > 1) {
                 current_page--; changed = true;
             }
             Shadow::SameLine();
@@ -215,7 +224,7 @@ namespace Shadow {
 
             Shadow::Text(text);
             Shadow::SameLine();
-            if (Shadow::Button(T(U8("Next >"), U8("下一页 >"))) && current_page < total_pages) {
+            if (Shadow::Button(std::string(T(U8("Next >##"), U8("下一页 >##"))).append(label)) && current_page < total_pages) {
                 current_page++; changed = true;
             }
             return changed;
@@ -761,10 +770,10 @@ namespace Shadow {
                                         g_UseChinese
                                         ? (U8("颜色 ") + std::to_string(i + 1) + U8("##cp"))
                                         : (U8("Color ") + std::to_string(i + 1) + U8("##cp")),
-                                        & customColors[i].r,
-                                        & customColors[i].g,
-                                        & customColors[i].b,
-                                        & customColors[i].a
+                                        &customColors[i].r,
+                                        &customColors[i].g,
+                                        &customColors[i].b,
+                                        &customColors[i].a
                                     );
                                 }
                             }
@@ -844,7 +853,7 @@ namespace Shadow {
 
                     // 13. 分页导航
                     static int page = 1;
-                    Advanced::Pagination(page, 10);
+                    Advanced::Pagination("demo_pagination_1", page, 10);
                     Shadow::HelpMarker(T(U8("This is Advanced Control 13: Pagination"), U8("这是高级控件 13：Pagination (分页导航)")));
 
                     // 14. 标签输入与管理

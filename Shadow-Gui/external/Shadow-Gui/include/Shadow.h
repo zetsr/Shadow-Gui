@@ -254,6 +254,30 @@ namespace Shadow {
         Vec2 Size;
     };
 
+    struct ShadowWindow {
+        size_t Id = 0;
+        std::string Name;
+        Vec2 Pos = { 100.f, 100.f };
+        Vec2 Size = { 500.f, 400.f };
+        bool IsDragging = false;
+        Vec2 DragOffset = { 0.f, 0.f };
+        bool IsResizing = false;
+        Vec2 ResizeStartPos = { 0.f, 0.f };
+        Vec2 ResizeStartSize = { 0.f, 0.f };
+        bool IsHoveringResize = false;
+        float ScrollY = 0.f;
+        float ContentHeight = 0.f;
+        bool IsDraggingScrollbar = false;
+        float ScrollDragOffset = 0.f;
+        float ContentStartY = 0.f;
+        bool IsScrollApplied = false;
+        ShadowWindowFlags CurrentWindowFlags = ShadowWindowFlags_None;
+        float CurrentScrollbarWidth = 0.f;
+
+        std::vector<ShadowDrawCmd> DrawCommands;
+        uint64_t LastAccessedFrame = 0;
+    };
+
     struct GuiContext {
         SDK::UCanvas* Canvas = nullptr;
         SDK::UFont* DefaultFont = nullptr;
@@ -278,6 +302,21 @@ namespace Shadow {
         std::vector<std::string> DropdownItems;
         Vec2 DropdownPos = { 0.f, 0.f };
         Vec2 DropdownSize = { 0.f, 0.f };
+
+        // 窗口管理
+        std::unordered_map<size_t, ShadowWindow> Windows;
+        std::vector<size_t> WindowDisplayOrder;
+        ShadowWindow* CurrentWindow = nullptr;
+        uint64_t FrameCount = 0;
+        size_t HoveredWindowId = 0;
+        size_t FocusedWindowId = 0;
+
+        bool HasNextWindowPos = false;
+        Vec2 NextWindowPos = { 0.f, 0.f };
+
+        bool InPopup = false;
+        bool PopupsRenderedThisFrame = false;
+        std::vector<ShadowDrawCmd> PopupDrawCommands;
 
         Vec2 WindowPos = { 100.f, 100.f };
         Vec2 WindowSize = { 500.f, 400.f };
@@ -316,8 +355,7 @@ namespace Shadow {
         float ContentStartY = 0.f;
         bool IsScrollApplied = false;
 
-        size_t ActiveTabId = 0;
-        size_t CurrentTabId = 0;
+        std::unordered_map<size_t, size_t> ActiveTabIdMap;
         bool InActiveTab = true;
         Vec2 TabCursor = { 0.f, 0.f };
 
@@ -577,7 +615,14 @@ namespace Shadow {
     }
 
     inline void SetWindowPos(Vec2 pos) {
-        g_Ctx.WindowPos = pos;
+        if (g_Ctx.CurrentWindow) {
+            g_Ctx.CurrentWindow->Pos = pos;
+            g_Ctx.WindowPos = pos;
+        }
+        else {
+            g_Ctx.HasNextWindowPos = true;
+            g_Ctx.NextWindowPos = pos;
+        }
     }
 
     inline void SetNextWindowSizeConstraints(Vec2 min_size, Vec2 max_size) {
@@ -748,9 +793,21 @@ namespace Shadow {
     }
 
     inline bool IsMouseHovering(Vec2 pos, Vec2 size) {
-        // 如果当前窗口禁用了鼠标输入，直接返回 false
         if (g_Ctx.CurrentWindowFlags & ShadowWindowFlags_NoMouseInputs) {
             return false;
+        }
+
+        // 窗口 Z 轴遮挡处理：不属于当前悬停窗口的背景元素直接屏蔽交互（排除拖拽操作本身）
+        if (!g_Ctx.InPopup && !g_Ctx.InTooltip && g_Ctx.CurrentWindow) {
+            if (g_Ctx.HoveredWindowId != g_Ctx.CurrentWindow->Id) {
+                bool activeInThisWindow = g_Ctx.IsDragging || g_Ctx.IsResizing || g_Ctx.IsDraggingScrollbar ||
+                    g_Ctx.DraggingSliderId != 0 || g_Ctx.DraggingTabId != 0 ||
+                    g_Ctx.DraggingTabBarScrollId != 0 || g_Ctx.DraggingListBoxScrollId != 0;
+
+                if (!activeInThisWindow) {
+                    return false;
+                }
+            }
         }
 
         if (g_Ctx.ActiveDropdownId != 0) {
@@ -1110,12 +1167,7 @@ namespace Shadow {
         if (size.y < 0.f) size.y = 0.f;
     }
 
-    inline void DrawLine(Vec2 start, Vec2 end, Color color, float thickness = 1.0f) {
-        if (g_Ctx.InTooltip) {
-            g_Ctx.TooltipDrawCommands.push_back({ ShadowDrawCmdType::Line, start, end, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
-            return;
-        }
-
+    inline void InternalDrawLine(Vec2 start, Vec2 end, Color color, float thickness, bool clipEnabled, Vec2 clipMin, Vec2 clipMax) {
         if (!g_Ctx.Canvas || !g_Ctx.Canvas->DefaultTexture) return;
 
         float dx = end.x - start.x;
@@ -1131,27 +1183,23 @@ namespace Shadow {
 
         g_Ctx.Canvas->K2_DrawTexture(
             g_Ctx.Canvas->DefaultTexture,
-            uePos,
-            ueSize,
-            SDK::FVector2D{ 0.0f, 0.0f },
-            SDK::FVector2D{ 1.0f, 1.0f },
-            ueColor,
-            SDK::EBlendMode::BLEND_Translucent,
-            angle,
-            SDK::FVector2D{ 0.0f, 0.5f }
+            uePos, ueSize,
+            SDK::FVector2D{ 0.0f, 0.0f }, SDK::FVector2D{ 1.0f, 1.0f },
+            ueColor, SDK::EBlendMode::BLEND_Translucent,
+            angle, SDK::FVector2D{ 0.0f, 0.5f }
         );
     }
 
-    inline void DrawRect(Vec2 pos, Vec2 size, Color color) {
-        if (g_Ctx.InTooltip) {
-            g_Ctx.TooltipDrawCommands.push_back({ ShadowDrawCmdType::Rect, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
-            return;
-        }
-
+    inline void InternalDrawRect(Vec2 pos, Vec2 size, Color color, bool clipEnabled, Vec2 clipMin, Vec2 clipMax) {
         if (!g_Ctx.Canvas) return;
-        if (!IsRectVisible(pos, size)) return;
-        ClipRect(pos, size);
-        if (size.x <= 0.f || size.y <= 0.f) return;
+        if (clipEnabled) {
+            if (pos.x + size.x < clipMin.x || pos.x > clipMax.x || pos.y + size.y < clipMin.y || pos.y > clipMax.y) return;
+            if (pos.x < clipMin.x) { size.x -= (clipMin.x - pos.x); pos.x = clipMin.x; }
+            if (pos.y < clipMin.y) { size.y -= (clipMin.y - pos.y); pos.y = clipMin.y; }
+            if (pos.x + size.x > clipMax.x) size.x = clipMax.x - pos.x;
+            if (pos.y + size.y > clipMax.y) size.y = clipMax.y - pos.y;
+            if (size.x <= 0.f || size.y <= 0.f) return;
+        }
 
         SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
         SDK::FVector2D uePos{ static_cast<float>(pos.x), static_cast<float>(pos.y) };
@@ -1159,34 +1207,28 @@ namespace Shadow {
 
         if (g_Ctx.Canvas->DefaultTexture) {
             g_Ctx.Canvas->K2_DrawTexture(
-                g_Ctx.Canvas->DefaultTexture,
-                uePos,
-                ueSize,
-                SDK::FVector2D{ 0.0f, 0.0f },
-                SDK::FVector2D{ 1.0f, 1.0f },
-                ueColor,
-                SDK::EBlendMode::BLEND_Translucent,
-                0.0f,
-                SDK::FVector2D{ 0.0f, 0.0f }
+                g_Ctx.Canvas->DefaultTexture, uePos, ueSize,
+                SDK::FVector2D{ 0.0f, 0.0f }, SDK::FVector2D{ 1.0f, 1.0f },
+                ueColor, SDK::EBlendMode::BLEND_Translucent, 0.0f, SDK::FVector2D{ 0.0f, 0.0f }
             );
         }
 
-        DrawLine({ pos.x, pos.y }, { pos.x + size.x, pos.y }, color);
-        DrawLine({ pos.x + size.x, pos.y }, { pos.x + size.x, pos.y + size.y }, color);
-        DrawLine({ pos.x + size.x, pos.y + size.y }, { pos.x, pos.y + size.y }, color);
-        DrawLine({ pos.x, pos.y + size.y }, { pos.x, pos.y }, color);
+        InternalDrawLine({ pos.x, pos.y }, { pos.x + size.x, pos.y }, color, 1.0f, clipEnabled, clipMin, clipMax);
+        InternalDrawLine({ pos.x + size.x, pos.y }, { pos.x + size.x, pos.y + size.y }, color, 1.0f, clipEnabled, clipMin, clipMax);
+        InternalDrawLine({ pos.x + size.x, pos.y + size.y }, { pos.x, pos.y + size.y }, color, 1.0f, clipEnabled, clipMin, clipMax);
+        InternalDrawLine({ pos.x, pos.y + size.y }, { pos.x, pos.y }, color, 1.0f, clipEnabled, clipMin, clipMax);
     }
 
-    inline void DrawRectFilled(Vec2 pos, Vec2 size, Color color) {
-        if (g_Ctx.InTooltip) {
-            g_Ctx.TooltipDrawCommands.push_back({ ShadowDrawCmdType::RectFilled, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
-            return;
-        }
-
+    inline void InternalDrawRectFilled(Vec2 pos, Vec2 size, Color color, bool clipEnabled, Vec2 clipMin, Vec2 clipMax) {
         if (!g_Ctx.Canvas) return;
-        if (!IsRectVisible(pos, size)) return;
-        ClipRect(pos, size);
-        if (size.x <= 0.f || size.y <= 0.f) return;
+        if (clipEnabled) {
+            if (pos.x + size.x < clipMin.x || pos.x > clipMax.x || pos.y + size.y < clipMin.y || pos.y > clipMax.y) return;
+            if (pos.x < clipMin.x) { size.x -= (clipMin.x - pos.x); pos.x = clipMin.x; }
+            if (pos.y < clipMin.y) { size.y -= (clipMin.y - pos.y); pos.y = clipMin.y; }
+            if (pos.x + size.x > clipMax.x) size.x = clipMax.x - pos.x;
+            if (pos.y + size.y > clipMax.y) size.y = clipMax.y - pos.y;
+            if (size.x <= 0.f || size.y <= 0.f) return;
+        }
 
         SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
         SDK::FVector2D uePos{ static_cast<float>(pos.x), static_cast<float>(pos.y) };
@@ -1194,41 +1236,36 @@ namespace Shadow {
 
         if (g_Ctx.Canvas->DefaultTexture) {
             g_Ctx.Canvas->K2_DrawTexture(
-                g_Ctx.Canvas->DefaultTexture,
-                uePos,
-                ueSize,
-                SDK::FVector2D{ 0.0f, 0.0f },
-                SDK::FVector2D{ 1.0f, 1.0f },
-                ueColor,
-                SDK::EBlendMode::BLEND_Translucent,
-                0.0f,
-                SDK::FVector2D{ 0.0f, 0.0f }
+                g_Ctx.Canvas->DefaultTexture, uePos, ueSize,
+                SDK::FVector2D{ 0.0f, 0.0f }, SDK::FVector2D{ 1.0f, 1.0f },
+                ueColor, SDK::EBlendMode::BLEND_Translucent, 0.0f, SDK::FVector2D{ 0.0f, 0.0f }
             );
         }
     }
 
-    inline void DrawTriangleFilled(Vec2 p1, Vec2 p2, Vec2 p3, Color color) {
-        if (g_Ctx.InTooltip) {
-            ShadowDrawCmd cmd{};
-            cmd.type = ShadowDrawCmdType::TriangleFilled;
-            cmd.pos = { 0, 0 }; cmd.size = { 0, 0 };
-            cmd.color = color;
-            cmd.thickness = 1.0f;
-            cmd.font = nullptr;
-            cmd.fontScale = 1.0f;
-            cmd.clippingEnabled = g_Ctx.ClippingEnabled;
-            cmd.clipMin = g_Ctx.ClipMin;
-            cmd.clipMax = g_Ctx.ClipMax;
-            cmd.p1 = p1; cmd.p2 = p2; cmd.p3 = p3;
-            g_Ctx.TooltipDrawCommands.push_back(cmd);
-            return;
-        }
+    inline void InternalDrawText(const std::string& text, Vec2 pos, Color color, SDK::UFont* font, float fontScale) {
+        if (!g_Ctx.Canvas || !font) return;
 
+        float finalScale = fontScale * g_Ctx.Style.FontScaleDpi;
+        SDK::FVector2D scale{ static_cast<float>(finalScale), static_cast<float>(finalScale) };
+        SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
+        SDK::FVector2D uePos{ static_cast<float>(pos.x), static_cast<float>(pos.y) };
+
+        Color sCol = g_Ctx.Style.Colors[GuiCol_TextShadow];
+        Color oCol = g_Ctx.Style.Colors[GuiCol_TextOutline];
+        SDK::FLinearColor shadow{ sCol.r, sCol.g, sCol.b, sCol.a };
+        SDK::FLinearColor outline{ oCol.r, oCol.g, oCol.b, oCol.a };
+        SDK::FVector2D shadowOff{ 1.0f, 1.0f };
+
+        std::wstring wstr = ToWString(text);
+        g_Ctx.Canvas->K2_DrawText(font, SDK::FString(wstr.c_str()), uePos, scale, ueColor, 0.0f, shadow, shadowOff, false, false, false, outline);
+    }
+
+    inline void InternalDrawTriangleFilled(Vec2 p1, Vec2 p2, Vec2 p3, Color color, bool clipEnabled, Vec2 clipMin, Vec2 clipMax) {
         Vec2 v[3] = { p1, p2, p3 };
         if (v[0].y > v[1].y) std::swap(v[0], v[1]);
         if (v[0].y > v[2].y) std::swap(v[0], v[2]);
         if (v[1].y > v[2].y) std::swap(v[1], v[2]);
-
         if (std::abs(v[0].y - v[2].y) < 0.5f) return;
 
         auto interpolateX = [](float y, const Vec2& a, const Vec2& b) {
@@ -1243,7 +1280,6 @@ namespace Shadow {
             float fy = static_cast<float>(y) + 0.5f;
             float xa = interpolateX(fy, v[0], v[2]);
             float xb = (fy < v[1].y) ? interpolateX(fy, v[0], v[1]) : interpolateX(fy, v[1], v[2]);
-
             if (xa > xb) std::swap(xa, xb);
 
             float x_min = std::ceil(xa - 0.5f);
@@ -1251,9 +1287,73 @@ namespace Shadow {
             float w = x_max - x_min + 1.0f;
 
             if (w > 0.0f) {
-                DrawRectFilled({ x_min, static_cast<float>(y) }, { w, 1.0f }, color);
+                InternalDrawRectFilled({ x_min, static_cast<float>(y) }, { w, 1.0f }, color, clipEnabled, clipMin, clipMax);
             }
         }
+    }
+
+    inline void DrawLine(Vec2 start, Vec2 end, Color color, float thickness = 1.0f) {
+        if (g_Ctx.InTooltip) {
+            g_Ctx.TooltipDrawCommands.push_back({ ShadowDrawCmdType::Line, start, end, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
+            return;
+        }
+        if (g_Ctx.InPopup) {
+            g_Ctx.PopupDrawCommands.push_back({ ShadowDrawCmdType::Line, start, end, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
+            return;
+        }
+        if (g_Ctx.CurrentWindow) {
+            g_Ctx.CurrentWindow->DrawCommands.push_back({ ShadowDrawCmdType::Line, start, end, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
+            return;
+        }
+        InternalDrawLine(start, end, color, thickness, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax);
+    }
+
+    inline void DrawRect(Vec2 pos, Vec2 size, Color color) {
+        if (g_Ctx.InTooltip) {
+            g_Ctx.TooltipDrawCommands.push_back({ ShadowDrawCmdType::Rect, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
+            return;
+        }
+        if (g_Ctx.InPopup) {
+            g_Ctx.PopupDrawCommands.push_back({ ShadowDrawCmdType::Rect, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
+            return;
+        }
+        if (g_Ctx.CurrentWindow) {
+            g_Ctx.CurrentWindow->DrawCommands.push_back({ ShadowDrawCmdType::Rect, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
+            return;
+        }
+        InternalDrawRect(pos, size, color, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax);
+    }
+
+    inline void DrawRectFilled(Vec2 pos, Vec2 size, Color color) {
+        if (g_Ctx.InTooltip) {
+            g_Ctx.TooltipDrawCommands.push_back({ ShadowDrawCmdType::RectFilled, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
+            return;
+        }
+        if (g_Ctx.InPopup) {
+            g_Ctx.PopupDrawCommands.push_back({ ShadowDrawCmdType::RectFilled, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
+            return;
+        }
+        if (g_Ctx.CurrentWindow) {
+            g_Ctx.CurrentWindow->DrawCommands.push_back({ ShadowDrawCmdType::RectFilled, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
+            return;
+        }
+        InternalDrawRectFilled(pos, size, color, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax);
+    }
+
+    inline void DrawTriangleFilled(Vec2 p1, Vec2 p2, Vec2 p3, Color color) {
+        if (g_Ctx.InTooltip) {
+            g_Ctx.TooltipDrawCommands.push_back({ ShadowDrawCmdType::TriangleFilled, { 0, 0 }, { 0, 0 }, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, p1, p2, p3 });
+            return;
+        }
+        if (g_Ctx.InPopup) {
+            g_Ctx.PopupDrawCommands.push_back({ ShadowDrawCmdType::TriangleFilled, { 0, 0 }, { 0, 0 }, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, p1, p2, p3 });
+            return;
+        }
+        if (g_Ctx.CurrentWindow) {
+            g_Ctx.CurrentWindow->DrawCommands.push_back({ ShadowDrawCmdType::TriangleFilled, { 0, 0 }, { 0, 0 }, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, p1, p2, p3 });
+            return;
+        }
+        InternalDrawTriangleFilled(p1, p2, p3, color, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax);
     }
 
     inline Vec2 MeasureTextSize(std::string_view text) {
@@ -1411,11 +1511,6 @@ namespace Shadow {
             scaleVal = g_Ctx.FontStack.back().Scale;
         }
 
-        if (g_Ctx.InTooltip) {
-            g_Ctx.TooltipDrawCommands.push_back({ ShadowDrawCmdType::Text, pos, {0, 0}, color, 1.0f, std::string(text), font, scaleVal, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
-            return;
-        }
-
         if (!g_Ctx.Canvas || !font) return;
 
         Vec2 clippedPos = pos;
@@ -1423,22 +1518,19 @@ namespace Shadow {
         std::string clippedText = ClipTextString(text, pos, clippedPos, shouldDraw);
         if (!shouldDraw || clippedText.empty()) return;
 
-        float finalScale = scaleVal * g_Ctx.Style.FontScaleDpi;
-        SDK::FVector2D scale{ static_cast<float>(finalScale), static_cast<float>(finalScale) };
-
-        SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
-        SDK::FVector2D uePos{ static_cast<float>(clippedPos.x), static_cast<float>(clippedPos.y) };
-
-        Color sCol = g_Ctx.Style.Colors[GuiCol_TextShadow];
-        Color oCol = g_Ctx.Style.Colors[GuiCol_TextOutline];
-        SDK::FLinearColor shadow{ sCol.r, sCol.g, sCol.b, sCol.a };
-        SDK::FLinearColor outline{ oCol.r, oCol.g, oCol.b, oCol.a };
-        SDK::FVector2D shadowOff{ 1.0f, 1.0f };
-
-        std::wstring wstr = ToWString(clippedText);
-        g_Ctx.Canvas->K2_DrawText(font, SDK::FString(wstr.c_str()), uePos, scale, ueColor,
-            0.0f, shadow, shadowOff,
-            false, false, false, outline);
+        if (g_Ctx.InTooltip) {
+            g_Ctx.TooltipDrawCommands.push_back({ ShadowDrawCmdType::Text, clippedPos, {0, 0}, color, 1.0f, clippedText, font, scaleVal, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
+            return;
+        }
+        if (g_Ctx.InPopup) {
+            g_Ctx.PopupDrawCommands.push_back({ ShadowDrawCmdType::Text, clippedPos, {0, 0}, color, 1.0f, clippedText, font, scaleVal, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
+            return;
+        }
+        if (g_Ctx.CurrentWindow) {
+            g_Ctx.CurrentWindow->DrawCommands.push_back({ ShadowDrawCmdType::Text, clippedPos, {0, 0}, color, 1.0f, clippedText, font, scaleVal, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax });
+            return;
+        }
+        InternalDrawText(clippedText, clippedPos, color, font, scaleVal);
     }
 
     // --- 剪贴板操作 ---
@@ -2157,10 +2249,7 @@ namespace Shadow {
         else if (g_Ctx.InTooltip) errorMsg = "ERROR: BeginTooltip() called without matching EndTooltip()!";
 
         if (!errorMsg.empty()) {
-            bool oldClipping = g_Ctx.ClippingEnabled;
-            g_Ctx.ClippingEnabled = false;
-            DrawTextString(errorMsg, { 5.f, 5.f }, g_Ctx.Style.Colors[GuiCol_ErrorText]);
-            g_Ctx.ClippingEnabled = oldClipping;
+            InternalDrawText(errorMsg, { 5.f, 5.f }, g_Ctx.Style.Colors[GuiCol_ErrorText], g_Ctx.DefaultFont, 1.0f);
         }
     }
 
@@ -2423,6 +2512,32 @@ namespace Shadow {
             g_Ctx.StyleInitialized = true;
         }
 
+        g_Ctx.FrameCount++;
+
+        for (auto& pair : g_Ctx.Windows) {
+            pair.second.DrawCommands.clear();
+        }
+        g_Ctx.PopupDrawCommands.clear();
+        g_Ctx.PopupsRenderedThisFrame = false;
+        g_Ctx.HoveredWindowId = 0;
+
+        bool popupActive = g_Ctx.ActiveDropdownId != 0 || g_Ctx.ActiveColorPickerId != 0;
+        if (!popupActive) {
+            for (auto it = g_Ctx.WindowDisplayOrder.rbegin(); it != g_Ctx.WindowDisplayOrder.rend(); ++it) {
+                size_t id = *it;
+                auto& win = g_Ctx.Windows[id];
+                if (g_Ctx.FrameCount - win.LastAccessedFrame <= 1) {
+                    if (!(win.CurrentWindowFlags & ShadowWindowFlags_NoMouseInputs)) {
+                        if (g_Ctx.MousePos.x >= win.Pos.x && g_Ctx.MousePos.x <= win.Pos.x + win.Size.x &&
+                            g_Ctx.MousePos.y >= win.Pos.y && g_Ctx.MousePos.y <= win.Pos.y + win.Size.y) {
+                            g_Ctx.HoveredWindowId = id;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         g_Ctx.FontStack.clear();
         UpdateItemHeight();
 
@@ -2434,7 +2549,6 @@ namespace Shadow {
         g_Ctx.ListBoxStack = 0;
         g_Ctx.IndentX = 0.f;
         g_Ctx.TreeNodeNoIndentStack.clear();
-
         g_Ctx.DisabledStack.clear();
 
         g_Ctx.TabBarHoverRects = std::move(g_Ctx.TabBarHoverRectsPending);
@@ -2458,7 +2572,6 @@ namespace Shadow {
         g_Ctx.LastHoveredIdEval = 0;
         g_Ctx.WidgetCount = 0;
 
-        // [新增] 更新 ListBox 焦点追踪
         g_Ctx.HoveredListBoxIdPreviousFrame = g_Ctx.HoveredListBoxIdCurrentFrame;
         g_Ctx.HoveredListBoxIdCurrentFrame = 0;
 
@@ -2468,7 +2581,12 @@ namespace Shadow {
     }
 
     inline void RenderPopups() {
+        if (g_Ctx.PopupsRenderedThisFrame) return;
+
+        bool renderedAny = false;
+
         if (g_Ctx.ActiveDropdownId != 0 && g_Ctx.DropdownCurrentItem) {
+            renderedAny = true;
             float dropWidth = g_Ctx.DropdownSize.x;
             float dropHeight = g_Ctx.DropdownItems.size() * g_Ctx.ItemHeight;
             Vec2 dropPos = g_Ctx.DropdownPos;
@@ -2481,12 +2599,9 @@ namespace Shadow {
             for (size_t i = 0; i < g_Ctx.DropdownItems.size(); ++i) {
                 Vec2 itemPos = { dropPos.x, dropPos.y + i * g_Ctx.ItemHeight };
                 bool itemHovered = IsMouseHoveringRaw(itemPos, { dropWidth, g_Ctx.ItemHeight });
-
-                // 判断此项是否为当前的选中状态（Hotkey当前模式 / Combo当前选择项）
                 bool isCurrentItem = (*g_Ctx.DropdownCurrentItem == static_cast<int>(i));
 
                 if (itemHovered) {
-                    // 鼠标悬停时的最高亮背景色
                     DrawRectFilled(itemPos, { dropWidth, g_Ctx.ItemHeight }, g_Ctx.Style.Colors[GuiCol_FrameBgHovered]);
                     if (g_Ctx.MouseClicked) {
                         *g_Ctx.DropdownCurrentItem = static_cast<int>(i);
@@ -2495,7 +2610,6 @@ namespace Shadow {
                     }
                 }
                 else if (isCurrentItem) {
-                    // 当处于当前状态、且没有被鼠标指向时，使用较暗的高亮背景色
                     DrawRectFilled(itemPos, { dropWidth, g_Ctx.ItemHeight }, g_Ctx.Style.Colors[GuiCol_DropdownActive]);
                 }
 
@@ -2508,8 +2622,8 @@ namespace Shadow {
         }
 
         if (g_Ctx.ActiveColorPickerId != 0 && g_Ctx.ColorPickerR) {
+            renderedAny = true;
             Vec2 popupPos = g_Ctx.ColorPickerPos;
-
             float padding = g_Ctx.Style.CPPadding;
             float svSize = g_Ctx.Style.CPSVSize;
             float hueWidth = g_Ctx.Style.CPHueWidth;
@@ -2589,8 +2703,7 @@ namespace Shadow {
                 DrawRect({ popupPos.x - 2.f, popupPos.y - 2.f }, { popupWidth + 4.f, popupHeight + 4.f }, g_Ctx.Style.Colors[GuiCol_PopupBorder]);
                 DrawRect(popupPos, { popupWidth, popupHeight }, g_Ctx.Style.Colors[GuiCol_PopupBg]);
 
-                // 提取各样式颜色，消除硬编码
-                float pickerAlpha = g_Ctx.Style.Colors[GuiCol_ColorPickerLight].a; // 全局 Alpha 参考
+                float pickerAlpha = g_Ctx.Style.Colors[GuiCol_ColorPickerLight].a;
                 Color shadowCol = g_Ctx.Style.Colors[GuiCol_ColorPickerShadow];
                 Color cbLight = g_Ctx.Style.Colors[GuiCol_CheckerboardLight];
                 Color cbDark = g_Ctx.Style.Colors[GuiCol_CheckerboardDark];
@@ -2598,7 +2711,6 @@ namespace Shadow {
                 int svSteps = std::max(2, static_cast<int>(svSize));
                 float svStepSize = svSize / svSteps;
 
-                // 1. 绘制调色SV面板
                 for (int i = 0; i < svSteps; ++i) {
                     float s = (float)i / (svSteps - 1);
                     float r, g, b;
@@ -2608,11 +2720,9 @@ namespace Shadow {
                 for (int j = 0; j < svSteps; ++j) {
                     float v = 1.0f - (float)j / (svSteps - 1);
                     float alpha = 1.0f - v;
-                    // 使用 shadowCol 代替硬编码的黑块渐变层
                     DrawRectFilled({ svPos.x, svPos.y + j * svStepSize }, { svSize, svStepSize }, { shadowCol.r, shadowCol.g, shadowCol.b, alpha * shadowCol.a });
                 }
 
-                // 2. 绘制色相(Hue)长条
                 int hueSteps = std::max(2, static_cast<int>(svSize));
                 float hueStepSize = svSize / hueSteps;
                 for (int i = 0; i < hueSteps; ++i) {
@@ -2622,7 +2732,6 @@ namespace Shadow {
                     DrawRectFilled({ huePos.x, huePos.y + i * hueStepSize }, { hueWidth, hueStepSize }, { r, g, b, pickerAlpha });
                 }
 
-                // 3. 绘制透明度(Alpha)长条
                 int alphaSteps = std::max(2, static_cast<int>(svSize));
                 float alphaStepSize = svSize / alphaSteps;
                 int checkerSize = 5;
@@ -2665,8 +2774,6 @@ namespace Shadow {
                 Vec2 cursorSV = { svPos.x + g_Ctx.ColorPickerS * svSize, svPos.y + (1.f - g_Ctx.ColorPickerV) * svSize };
                 DrawRect({ cursorSV.x - 4.f, cursorSV.y - 4.f }, { 8.f, 8.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
                 DrawRect({ cursorSV.x - 3.f, cursorSV.y - 3.f }, { 6.f, 6.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
-
-                // 修复3：将吸管内部颜色块由 DrawRect (线框) 改为 DrawRectFilled (实心块)，并将写死的 Alpha 替换为具有动画效果的 pickerAlpha
                 DrawRectFilled({ cursorSV.x - 2.f, cursorSV.y - 2.f }, { 4.f, 4.f }, { *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB, pickerAlpha });
 
                 Vec2 cursorHue = { huePos.x - 2.f, huePos.y + g_Ctx.ColorPickerH * svSize - 2.f };
@@ -2682,14 +2789,74 @@ namespace Shadow {
                 if (popupHovered) g_Ctx.MouseClicked = false;
             }
         }
+        if (renderedAny) {
+            g_Ctx.PopupsRenderedThisFrame = true;
+        }
     }
 
     inline bool Begin(std::string_view name, ShadowWindowFlags flags = ShadowWindowFlags_None) {
         std::string_view display; size_t id;
         ParseLabel(name, display, id);
+
+        auto& win = g_Ctx.Windows[id];
+        if (win.Id == 0) {
+            win.Id = id;
+            win.Name = std::string(display);
+            g_Ctx.WindowDisplayOrder.push_back(id);
+            win.Pos = g_Ctx.WindowPos;
+            win.Size = g_Ctx.WindowSize;
+            win.CurrentWindowFlags = flags;
+        }
+        win.LastAccessedFrame = g_Ctx.FrameCount;
+        g_Ctx.CurrentWindow = &win;
+
+        bool mouseOverRaw = (g_Ctx.MousePos.x >= win.Pos.x && g_Ctx.MousePos.x <= win.Pos.x + win.Size.x &&
+            g_Ctx.MousePos.y >= win.Pos.y && g_Ctx.MousePos.y <= win.Pos.y + win.Size.y);
+
+        // Z-Order 置顶触发逻辑
+        if (mouseOverRaw && (g_Ctx.MouseClicked || g_Ctx.RightMouseClicked)) {
+            if (g_Ctx.HoveredWindowId == id || g_Ctx.HoveredWindowId == 0) {
+                g_Ctx.FocusedWindowId = id;
+                auto it = std::find(g_Ctx.WindowDisplayOrder.begin(), g_Ctx.WindowDisplayOrder.end(), id);
+                if (it != g_Ctx.WindowDisplayOrder.end()) {
+                    g_Ctx.WindowDisplayOrder.erase(it);
+                    g_Ctx.WindowDisplayOrder.push_back(id);
+                }
+            }
+        }
+
+        if (g_Ctx.HasNextWindowPos) {
+            win.Pos = g_Ctx.NextWindowPos;
+            g_Ctx.HasNextWindowPos = false;
+        }
+
+        g_Ctx.WindowPos = win.Pos;
+        g_Ctx.WindowSize = win.Size;
+        g_Ctx.IsDragging = win.IsDragging;
+        g_Ctx.DragOffset = win.DragOffset;
+        g_Ctx.IsResizing = win.IsResizing;
+        g_Ctx.ResizeStartPos = win.ResizeStartPos;
+        g_Ctx.ResizeStartSize = win.ResizeStartSize;
+        g_Ctx.IsHoveringResize = win.IsHoveringResize;
+        g_Ctx.ScrollY = win.ScrollY;
+        g_Ctx.ContentHeight = win.ContentHeight;
+        g_Ctx.IsDraggingScrollbar = win.IsDraggingScrollbar;
+        g_Ctx.ScrollDragOffset = win.ScrollDragOffset;
+        g_Ctx.ContentStartY = win.ContentStartY;
+        g_Ctx.IsScrollApplied = win.IsScrollApplied;
+        g_Ctx.CurrentScrollbarWidth = win.CurrentScrollbarWidth;
+        g_Ctx.CurrentWindowFlags = flags;
+        win.CurrentWindowFlags = flags;
+
+        // 清理从上一个窗口带过来的布局残留数据，防止 `SameLine` 或悬停状态错乱
+        g_Ctx.LastItemMaxX = 0.f;
+        g_Ctx.LastItemMin = { 0.f, 0.f };
+        g_Ctx.LastItemMax = { 0.f, 0.f };
+        g_Ctx.LastItemId = 0;
+        g_Ctx.LastItemDisabled = false;
+
         g_Ctx.BeginStack++;
         g_Ctx.IsScrollApplied = false;
-        g_Ctx.CurrentWindowFlags = flags;
 
         float min_x = g_Ctx.Style.WindowMinSize.x;
         float min_y = g_Ctx.Style.WindowMinSize.y;
@@ -2722,8 +2889,18 @@ namespace Shadow {
         Vec2 triPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - triSize, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y - triSize };
         g_Ctx.IsHoveringResize = (!noResize && !noMouseInputs) ? IsMouseHoveringRaw(triPos, { triSize, triSize }) : false;
 
-        // [修改] 增加 g_Ctx.DraggingListBoxScrollId != 0 阻断主菜单被拖拽
-        bool isOtherDragging = (g_Ctx.DraggingSliderId != 0) || g_Ctx.IsDraggingSV || g_Ctx.IsDraggingHue || g_Ctx.IsDraggingAlpha || g_Ctx.IsDraggingColorPicker || g_Ctx.IsDraggingScrollbar || g_Ctx.DraggingTabId != 0 || g_Ctx.DraggingTabBarScrollId != 0 || g_Ctx.DraggingListBoxScrollId != 0;
+        // 全局空间控件交互检测
+        bool isOtherDragging = (g_Ctx.DraggingSliderId != 0) || g_Ctx.IsDraggingSV || g_Ctx.IsDraggingHue || g_Ctx.IsDraggingAlpha || g_Ctx.IsDraggingColorPicker || g_Ctx.DraggingTabId != 0 || g_Ctx.DraggingTabBarScrollId != 0 || g_Ctx.DraggingListBoxScrollId != 0;
+
+        // 通过遍历检查是否"其他任何窗口"正在进行拖拽交互，拦截误触
+        for (const auto& pair : g_Ctx.Windows) {
+            if (pair.first != id) {
+                if (pair.second.IsDragging || pair.second.IsResizing || pair.second.IsDraggingScrollbar) {
+                    isOtherDragging = true;
+                    break;
+                }
+            }
+        }
 
         if (hoveringWholeWindow && g_Ctx.MouseClicked) {
             g_Ctx.ActiveInputId = 0;
@@ -2768,7 +2945,7 @@ namespace Shadow {
 
             if (hoveringTrack || hoveringThumb) { hoveringScrollbar = true; }
 
-            if (!overListBox) {
+            if (!overListBox && !isOtherDragging) {
                 if (!noMouseInputs && g_Ctx.MouseClicked && hoveringThumb) {
                     g_Ctx.IsDraggingScrollbar = true;
                     g_Ctx.ScrollDragOffset = g_Ctx.MousePos.y - thumbPos.y;
@@ -2802,17 +2979,18 @@ namespace Shadow {
         }
         if (g_Ctx.IsDragging && isOtherDragging) g_Ctx.IsDragging = false;
 
+        if (!noMove && !noMouseInputs && g_Ctx.IsDragging) {
+            g_Ctx.WindowPos.x = g_Ctx.MousePos.x - g_Ctx.DragOffset.x;
+            g_Ctx.WindowPos.y = g_Ctx.MousePos.y - g_Ctx.DragOffset.y;
+            if (!g_Ctx.MouseDown) g_Ctx.IsDragging = false;
+        }
+
         if (!noResize && !noMouseInputs && !g_Ctx.IsResizing && g_Ctx.IsHoveringResize && g_Ctx.MouseClicked && !isOtherDragging) {
             g_Ctx.IsResizing = true;
             g_Ctx.ResizeStartPos = g_Ctx.MousePos;
             g_Ctx.ResizeStartSize = g_Ctx.WindowSize;
         }
         if (g_Ctx.IsResizing && isOtherDragging) g_Ctx.IsResizing = false;
-
-        if (!noMove && !noMouseInputs && g_Ctx.IsDragging) {
-            g_Ctx.WindowPos.x = g_Ctx.MousePos.x - g_Ctx.DragOffset.x;
-            g_Ctx.WindowPos.y = g_Ctx.MousePos.y - g_Ctx.DragOffset.y;
-        }
 
         if (!noResize && !noMouseInputs && g_Ctx.IsResizing) {
             Vec2 delta = { g_Ctx.MousePos.x - g_Ctx.ResizeStartPos.x, g_Ctx.MousePos.y - g_Ctx.ResizeStartPos.y };
@@ -2921,48 +3099,24 @@ namespace Shadow {
     inline void RenderTooltipCommands() {
         if (g_Ctx.TooltipDrawCommands.empty()) return;
 
-        bool backupInTooltip = g_Ctx.InTooltip;
-        bool backupClipping = g_Ctx.ClippingEnabled;
-        Vec2 backupClipMin = g_Ctx.ClipMin;
-        Vec2 backupClipMax = g_Ctx.ClipMax;
-        std::vector<FontContext> backupFontStack = g_Ctx.FontStack;
-
-        g_Ctx.InTooltip = false; // 临时解封禁止绘制锁定
-
         for (const auto& cmd : g_Ctx.TooltipDrawCommands) {
-            // 恢复该指令生成时局部的裁剪区域状态
-            g_Ctx.ClippingEnabled = cmd.clippingEnabled;
-            g_Ctx.ClipMin = cmd.clipMin;
-            g_Ctx.ClipMax = cmd.clipMax;
-
             if (cmd.type == ShadowDrawCmdType::Line) {
-                DrawLine(cmd.pos, cmd.size, cmd.color, cmd.thickness);
+                InternalDrawLine(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
             }
             else if (cmd.type == ShadowDrawCmdType::Rect) {
-                DrawRect(cmd.pos, cmd.size, cmd.color);
+                InternalDrawRect(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
             }
             else if (cmd.type == ShadowDrawCmdType::RectFilled) {
-                DrawRectFilled(cmd.pos, cmd.size, cmd.color);
+                InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
             }
             else if (cmd.type == ShadowDrawCmdType::Text) {
-                // 恢复对应的独立字体栈
-                g_Ctx.FontStack.push_back({ cmd.font, cmd.fontScale });
-                DrawTextString(cmd.text, cmd.pos, cmd.color);
-                g_Ctx.FontStack.pop_back();
+                InternalDrawText(cmd.text, cmd.pos, cmd.color, cmd.font, cmd.fontScale);
             }
-            // [新增] 处理 Tooltip 延迟绘制的三角形
             else if (cmd.type == ShadowDrawCmdType::TriangleFilled) {
-                DrawTriangleFilled(cmd.p1, cmd.p2, cmd.p3, cmd.color);
+                InternalDrawTriangleFilled(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
             }
         }
-
         g_Ctx.TooltipDrawCommands.clear();
-
-        g_Ctx.InTooltip = backupInTooltip;
-        g_Ctx.ClippingEnabled = backupClipping;
-        g_Ctx.ClipMin = backupClipMin;
-        g_Ctx.ClipMax = backupClipMax;
-        g_Ctx.FontStack = backupFontStack;
     }
 
     inline void End() {
@@ -3012,7 +3166,6 @@ namespace Shadow {
                 : (g_Ctx.IsHoveringResize ? g_Ctx.Style.Colors[GuiCol_ResizeGripHovered] : g_Ctx.Style.Colors[GuiCol_ResizeGrip]);
 
             float pad = 3.f;
-            // [修改] 右下角的调整手柄更改为支持实心绘制的光栅化三角形
             Vec2 p1 = { x + pad, y + triSize - pad };
             Vec2 p2 = { x + triSize - pad, y + triSize - pad };
             Vec2 p3 = { x + triSize - pad, y + pad };
@@ -3021,18 +3174,32 @@ namespace Shadow {
         }
 
         if (!g_Ctx.MouseDown) g_Ctx.IsResizing = false;
+
+        g_Ctx.InPopup = true;
         RenderPopups();
+        g_Ctx.InPopup = false;
 
-        RenderTooltipCommands();
+        // 同步回 ShadowWindow 保存给下一帧，并交由 Render 提取渲染
+        if (g_Ctx.CurrentWindow) {
+            auto& win = *g_Ctx.CurrentWindow;
+            win.Pos = g_Ctx.WindowPos;
+            win.Size = g_Ctx.WindowSize;
+            win.IsDragging = g_Ctx.IsDragging;
+            win.DragOffset = g_Ctx.DragOffset;
+            win.IsResizing = g_Ctx.IsResizing;
+            win.ResizeStartPos = g_Ctx.ResizeStartPos;
+            win.ResizeStartSize = g_Ctx.ResizeStartSize;
+            win.IsHoveringResize = g_Ctx.IsHoveringResize;
+            win.ScrollY = g_Ctx.ScrollY;
+            win.ContentHeight = g_Ctx.ContentHeight;
+            win.IsDraggingScrollbar = g_Ctx.IsDraggingScrollbar;
+            win.ScrollDragOffset = g_Ctx.ScrollDragOffset;
+            win.ContentStartY = g_Ctx.ContentStartY;
+            win.IsScrollApplied = g_Ctx.IsScrollApplied;
+            win.CurrentScrollbarWidth = g_Ctx.CurrentScrollbarWidth;
+        }
 
-        g_Ctx.MouseClicked = false;
-        g_Ctx.RightMouseClicked = false;
-
-        memset(g_Ctx.KeyPressed, 0, sizeof(g_Ctx.KeyPressed));
-        CheckAndDrawErrors();
-        g_Ctx.InputChars.clear();
-
-        g_Ctx.MouseWheel = 0.f;
+        g_Ctx.CurrentWindow = nullptr;
     }
 
     inline bool BeginTabBar(std::string_view name, ShadowTabBarFlags flags = ShadowTabBarFlags_None) {
@@ -3331,26 +3498,32 @@ namespace Shadow {
 
         bool hovered = tabVisible && IsMouseHovering(tabPos, tabSize) && IsRectVisible(tabPos, tabSize);
 
+        // 通过 TabBarId 提取独立的当前活动标签页
+        size_t& currentActiveTabId = g_Ctx.ActiveTabIdMap[tabBarId];
+
         if (hovered && g_Ctx.MouseClicked) {
-            if (g_Ctx.ActiveTabId != id) {
+            if (currentActiveTabId != id) {
                 g_Ctx.FocusedSliderId = 0;
                 g_Ctx.ActiveInputId = 0;
+                // 重置当前窗口的滚轮
                 g_Ctx.ScrollY = 0.f;
             }
-            g_Ctx.ActiveTabId = id;
+            currentActiveTabId = id;
 
             if (reorderable) {
                 g_Ctx.DraggingTabId = id;
                 g_Ctx.DraggingTabBarId = tabBarId;
                 g_Ctx.DraggingTabGrabOffsetX = g_Ctx.MousePos.x - tabPos.x;
                 g_Ctx.DraggingTabCurrentX = tabPos.x;
-                isDraggingSelf = true; // [修改] 手动更新标记，防止当前帧继续触发下方的原生绘制，从而避免重叠闪烁
+                isDraggingSelf = true;
             }
             g_Ctx.MouseClicked = false;
         }
-        if (g_Ctx.ActiveTabId == 0) g_Ctx.ActiveTabId = id;
 
-        bool isActive = (g_Ctx.ActiveTabId == id);
+        // 初始情况默认选中第一个渲染的 Tab
+        if (currentActiveTabId == 0) currentActiveTabId = id;
+
+        bool isActive = (currentActiveTabId == id);
         g_Ctx.InActiveTab = isActive;
 
         if (!isDraggingSelf) {
@@ -3383,6 +3556,52 @@ namespace Shadow {
         }
         g_Ctx.TabItemStack--;
         g_Ctx.InActiveTab = true;
+    }
+
+    inline void Render() {
+        auto ExecCmds = [](const std::vector<ShadowDrawCmd>& cmds) {
+            for (const auto& cmd : cmds) {
+                if (cmd.type == ShadowDrawCmdType::Line) {
+                    InternalDrawLine(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
+                }
+                else if (cmd.type == ShadowDrawCmdType::Rect) {
+                    InternalDrawRect(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
+                }
+                else if (cmd.type == ShadowDrawCmdType::RectFilled) {
+                    InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
+                }
+                else if (cmd.type == ShadowDrawCmdType::Text) {
+                    InternalDrawText(cmd.text, cmd.pos, cmd.color, cmd.font, cmd.fontScale);
+                }
+                else if (cmd.type == ShadowDrawCmdType::TriangleFilled) {
+                    InternalDrawTriangleFilled(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
+                }
+            }
+            };
+
+        // 按 Z 轴从底层到顶层渲染独立窗口
+        for (size_t id : g_Ctx.WindowDisplayOrder) {
+            auto it = g_Ctx.Windows.find(id);
+            if (it != g_Ctx.Windows.end()) {
+                ExecCmds(it->second.DrawCommands);
+            }
+        }
+
+        // 渲染弹窗(最高级 Z 轴)
+        ExecCmds(g_Ctx.PopupDrawCommands);
+
+        // 渲染 Tooltip 悬浮提示
+        RenderTooltipCommands();
+
+        // 绘制可能出现的 Error 警告文本
+        CheckAndDrawErrors();
+
+        // 清理当前帧积攒的交互信号，供下一帧再次收集
+        g_Ctx.MouseClicked = false;
+        g_Ctx.RightMouseClicked = false;
+        memset(g_Ctx.KeyPressed, 0, sizeof(g_Ctx.KeyPressed));
+        g_Ctx.InputChars.clear();
+        g_Ctx.MouseWheel = 0.f;
     }
 
     inline bool Combo(std::string_view name, int* current_item, const std::vector<std::string>& items, ShadowComboFlags flags = ShadowComboFlags_None, Vec2 size_arg = { 0.f, 0.f }) {

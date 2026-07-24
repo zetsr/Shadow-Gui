@@ -23,6 +23,8 @@
 * Modify `#include "../../CppSDK/SDK.hpp"` in `Shadow.h` to the actual path
 * 在`UGameViewportClient::PostRender` 运行 `Shadow::NewFrame(Canvas);`
 * Run `Shadow::NewFrame(Canvas);` in `UGameViewportClient::PostRender`
+* 在`Shadow::NewFrame(Canvas);` 之后添加 `Shadow::Render();`
+* Run `Shadow::Render();` after `Shadow::NewFrame(Canvas);`
 
 ### 示例 / Example
 
@@ -198,6 +200,8 @@ void __fastcall hkPostRender(SDK::UGameViewportClient* rcx, SDK::UCanvas* canvas
         Shadow::EndTabBar();
     }
     Shadow::End();
+
+    Shadow::Render();
 }
 
 ```

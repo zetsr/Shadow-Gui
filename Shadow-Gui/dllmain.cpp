@@ -133,14 +133,26 @@ namespace Hook {
         Shadow::NewFrame(canvas);
         Shadow::UpdateAllHotkeyStates();
 
-        if (bShowMenu) {
-            Shadow::ShowDemoWindow();
+        if (!bShowMenu) return;
 
+        Shadow::ShowDemoWindow();
+
+        if (Shadow::Begin("Main Menu##main_window", Shadow::ShadowWindowFlags_NoResize)) {
+            if (Shadow::BeginTabBar("MainTabs##tabs", Shadow::ShadowTabBarFlags_Reorderable)) {
+                if (Shadow::BeginTabItem("Misc##tab0")) {
+                    Shadow::TextColored({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("你好！"));
+                }
+                Shadow::EndTabItem();
+            }
+            Shadow::EndTabBar();
         }
+        Shadow::End();
+
+        Shadow::Render();
     }
 
     void FindPostRender() {
-        std::string pattern = "48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89";
+        std::string pattern = "8B C2 35 ?? ?? ?? ?? 44";
 
              // ASA 8B C2 35 ?? ?? ?? ?? 44
         // DRACONIA 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89

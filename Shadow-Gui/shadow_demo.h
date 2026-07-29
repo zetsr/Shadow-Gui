@@ -78,13 +78,13 @@ namespace Shadow {
 
             Shadow::Color bg = Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_FrameBg];
             Shadow::Color fg = Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_SliderGrab];
-            Shadow::DrawRectFilled(cur, size, bg);
-            Shadow::DrawRectFilled(cur, { size.x * std::clamp(fraction, 0.f, 1.f), size.y }, fg);
+            Shadow::GetWindowDrawList()->AddRectFilled(cur, size, bg);
+            Shadow::GetWindowDrawList()->AddRectFilled(cur, { size.x * std::clamp(fraction, 0.f, 1.f), size.y }, fg);
 
             std::string text = overlay.empty() ? std::to_string(static_cast<int>(fraction * 100)) + "%" : std::string(overlay);
             Shadow::Vec2 textSize = Shadow::MeasureTextSize(text);
             Shadow::Vec2 textPos = { cur.x + (size.x - textSize.x) * 0.5f, cur.y + Shadow::g_Ctx.Style.FramePadding.y };
-            Shadow::DrawTextString(text, textPos, Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_Text]);
+            Shadow::GetWindowDrawList()->AddText(textPos, Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_Text], text);
 
             Shadow::Dummy(size);
         }
@@ -101,8 +101,8 @@ namespace Shadow {
                 bool hovered = Shadow::IsMouseHovering(cur, size);
                 if (hovered && Shadow::g_Ctx.MouseClicked) clicked = true;
                 Shadow::Color border = hovered ? Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_TextHighlight] : Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_Border];
-                Shadow::DrawRectFilled(cur, size, col);
-                Shadow::DrawRect(cur, size, border);
+                Shadow::GetWindowDrawList()->AddRectFilled(cur, size, col);
+                Shadow::GetWindowDrawList()->AddRect(cur, size, border);
             }
             Shadow::SetLastItemInfo(cur, { cur.x + size.x, cur.y + size.y }, real_id, false);
             Shadow::g_Ctx.LastItemMaxX = cur.x + size.x;
@@ -135,8 +135,8 @@ namespace Shadow {
             Shadow::Vec2 padding = { 8.f, 2.f };
             Shadow::Vec2 size = { textSize.x + padding.x * 2.f, textSize.y + padding.y * 2.f };
 
-            Shadow::DrawRectFilled(cur, size, bgCol);
-            Shadow::DrawTextString(text, { cur.x + padding.x, cur.y + padding.y }, textCol);
+            Shadow::GetWindowDrawList()->AddRectFilled(cur, size, bgCol);
+            Shadow::GetWindowDrawList()->AddText({ cur.x + padding.x, cur.y + padding.y }, textCol, text);
 
             Shadow::Dummy(size);
         }
@@ -173,8 +173,8 @@ namespace Shadow {
                 bool hovered = Shadow::IsMouseHovering(cur, size);
                 if (hovered && Shadow::g_Ctx.MouseClicked) { state = !state; clicked = true; }
                 Shadow::Color drawBg = hovered ? Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_FrameBgHovered] : bg;
-                Shadow::DrawRectFilled(cur, size, drawBg);
-                Shadow::DrawTextString(display_str, { cur.x + Shadow::g_Ctx.Style.FramePadding.x, cur.y + Shadow::g_Ctx.Style.FramePadding.y }, fg);
+                Shadow::GetWindowDrawList()->AddRectFilled(cur, size, drawBg);
+                Shadow::GetWindowDrawList()->AddText({ cur.x + Shadow::g_Ctx.Style.FramePadding.x, cur.y + Shadow::g_Ctx.Style.FramePadding.y }, fg, display_str);
             }
             Shadow::SetLastItemInfo(cur, { cur.x + size.x, cur.y + size.y }, real_id, false);
             Shadow::g_Ctx.LastItemMaxX = cur.x + size.x;

@@ -145,12 +145,22 @@ namespace Hook {
                     static bool bTest = false;
                     static Shadow::Color cTest = {1.0f, 1.0f, 1.0f, 1.0f};
 
-                    Shadow::Switch(U8("测试开关 / Test Switch"), &bTest);
-                    Shadow::SameLine();
-                    Shadow::ColorPicker(U8("测试开关 / Test Switch"),
-                        &cTest.r, &cTest.g, &cTest.b, &cTest.a,
-                        Shadow::ShadowColorPickerFlags_NoText | Shadow::ShadowColorPickerFlags_NoRightAlign
-                    );
+                    // 1. 先定义一个按钮来打开弹窗
+                    if (Shadow::Button(U8("打开测试弹窗"))) {
+                        Shadow::OpenPopup(Shadow::HashString("Test#BeginPopup_TEST"));
+                    }
+
+                    // 2. 然后显示弹窗
+                    if (Shadow::BeginPopup("Test#BeginPopup_TEST")) {
+                        Shadow::Switch(U8("测试开关 / Test Switch"), &bTest);
+                        Shadow::SameLine();
+                        Shadow::ColorPicker(U8("测试开关 / Test Switch"),
+                            &cTest.r, &cTest.g, &cTest.b, &cTest.a,
+                            Shadow::ShadowColorPickerFlags_NoText |
+                            Shadow::ShadowColorPickerFlags_NoRightAlign
+                        );
+                    }
+                    Shadow::EndPopup();
 
                 }
                 Shadow::EndTabItem();
@@ -231,7 +241,7 @@ namespace Hook {
     }
 
     void FindPostRender() {
-        std::string pattern = "8B C2 35 ?? ?? ?? ?? 44";
+        std::string pattern = "48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89";
 
              // ASA 8B C2 35 ?? ?? ?? ?? 44
         // DRACONIA 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89

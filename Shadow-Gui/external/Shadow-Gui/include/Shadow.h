@@ -278,6 +278,27 @@ namespace Shadow {
         uint64_t LastAccessedFrame = 0;
     };
 
+    struct PopupBackupState {
+        size_t Id;
+        Vec2 WindowPos;
+        Vec2 WindowSize;
+        Vec2 Cursor;
+        float ContentStartY;
+        float ScrollY;
+        float LastItemMaxX;
+        bool IsScrollApplied;
+        ShadowWindowFlags CurrentWindowFlags;
+        float IndentX;
+        bool ClippingEnabled;
+        Vec2 ClipMin;
+        Vec2 ClipMax;
+        std::vector<std::pair<Vec2, Vec2>> ClipStack;
+        ShadowWindow* CurrentWindow;
+
+        bool IsDragging; 
+        Vec2 DragOffset;
+    };
+
     struct GuiContext {
         SDK::UCanvas* Canvas = nullptr;
         SDK::UFont* DefaultFont = nullptr;
@@ -297,13 +318,11 @@ namespace Shadow {
         bool KeyPressed[256] = { false };
         int* AssigningHotkey = nullptr;
 
-        size_t ActiveDropdownId = 0;
-        int* DropdownCurrentItem = nullptr;
-        std::vector<std::string> DropdownItems;
-        Vec2 DropdownPos = { 0.f, 0.f };
-        Vec2 DropdownSize = { 0.f, 0.f };
+        std::vector<size_t> ActivePopups;
+        std::vector<PopupBackupState> PopupStack;
+        bool HasNextWindowSize = false;
+        Vec2 NextWindowSize = { 0.f, 0.f };
 
-        // 窗口管理
         std::unordered_map<size_t, ShadowWindow> Windows;
         std::vector<size_t> WindowDisplayOrder;
         ShadowWindow* CurrentWindow = nullptr;
@@ -315,7 +334,6 @@ namespace Shadow {
         Vec2 NextWindowPos = { 0.f, 0.f };
 
         bool InPopup = false;
-        bool PopupsRenderedThisFrame = false;
         std::vector<ShadowDrawCmd> PopupDrawCommands;
 
         Vec2 WindowPos = { 100.f, 100.f };
@@ -359,12 +377,10 @@ namespace Shadow {
         bool InActiveTab = true;
         Vec2 TabCursor = { 0.f, 0.f };
 
-        size_t ActiveColorPickerId = 0;
         float* ColorPickerR = nullptr;
         float* ColorPickerG = nullptr;
         float* ColorPickerB = nullptr;
         float* ColorPickerA = nullptr;
-        Vec2 ColorPickerPos = { 0.f, 0.f };
         float ColorPickerH = 0.f;
         float ColorPickerS = 0.f;
         float ColorPickerV = 0.f;
@@ -372,8 +388,6 @@ namespace Shadow {
         bool IsDraggingSV = false;
         bool IsDraggingHue = false;
         bool IsDraggingAlpha = false;
-        bool IsDraggingColorPicker = false;
-        Vec2 ColorPickerDragOffset = { 0.f, 0.f };
         bool IsTypingHex = false;
         std::string HexInputBuffer;
 
@@ -625,10 +639,20 @@ namespace Shadow {
         }
     }
 
+    inline void SetNextWindowPos(Vec2 pos) {
+        g_Ctx.HasNextWindowPos = true;
+        g_Ctx.NextWindowPos = pos;
+    }
+
     inline void SetNextWindowSizeConstraints(Vec2 min_size, Vec2 max_size) {
         g_Ctx.HasWindowSizeConstraints = true;
         g_Ctx.WindowSizeConstraintMin = min_size;
         g_Ctx.WindowSizeConstraintMax = max_size;
+    }
+
+    inline void SetNextWindowSize(Vec2 size) {
+        g_Ctx.HasNextWindowSize = true;
+        g_Ctx.NextWindowSize = size;
     }
 
     // 允许放行透传给游戏的按键列表
@@ -810,24 +834,30 @@ namespace Shadow {
             }
         }
 
-        if (g_Ctx.ActiveDropdownId != 0) {
-            float dropWidth = g_Ctx.DropdownSize.x;
-            float dropHeight = g_Ctx.DropdownItems.size() * g_Ctx.ItemHeight;
-            if (IsMouseHoveringRaw({ g_Ctx.DropdownPos.x - 1.f, g_Ctx.DropdownPos.y - 1.f }, { dropWidth + 2.f, dropHeight + 2.f })) {
-                return false;
+        // 弹窗存在且当前正在绘制背景控件时屏蔽交互（弹窗优先级最高，多层级弹窗互相遮挡判定）
+        if (!g_Ctx.ActivePopups.empty()) {
+            if (!g_Ctx.InPopup) {
+                return false; // 不是任何弹窗内的控件，直接屏蔽
+            }
+            if (!g_Ctx.PopupStack.empty()) {
+                size_t currentPopupId = g_Ctx.PopupStack.back().Id;
+                bool isObscured = false;
+                bool foundCurrent = false;
+                for (size_t pid : g_Ctx.ActivePopups) {
+                    if (foundCurrent) {
+                        // 在 ActivePopups 里排名靠后的属于更顶层的弹窗
+                        auto& higherWin = g_Ctx.Windows[pid];
+                        if (IsMouseHoveringRaw(higherWin.Pos, higherWin.Size)) {
+                            isObscured = true;
+                            break;
+                        }
+                    }
+                    if (pid == currentPopupId) foundCurrent = true;
+                }
+                if (isObscured) return false;
             }
         }
 
-        if (g_Ctx.ActiveColorPickerId != 0) {
-            Vec2 popupPos = g_Ctx.ColorPickerPos;
-            float hexBoxHeight = std::max(24.f, g_Ctx.ItemHeight + 4.f);
-            float popupWidth = g_Ctx.Style.CPPadding * 2.f + g_Ctx.Style.CPSVSize + g_Ctx.Style.CPSpacing * 2.f + g_Ctx.Style.CPHueWidth + g_Ctx.Style.CPAlphaWidth;
-            float popupHeight = g_Ctx.Style.CPPadding * 2.f + g_Ctx.Style.CPSVSize + g_Ctx.Style.CPSpacing + hexBoxHeight;
-
-            if (IsMouseHoveringRaw({ popupPos.x - 2.f, popupPos.y - 2.f }, { popupWidth + 4.f, popupHeight + 4.f })) {
-                return false;
-            }
-        }
         return IsMouseHoveringRaw(pos, size);
     }
 
@@ -984,7 +1014,7 @@ namespace Shadow {
         return false;
     }
 
-    // 修改注册函数，现在需要提供完整信息
+    // 注册函数
     inline void RegisterHotkey(int* hotkey, HotkeyMode* mode, bool* is_active) {
         // 检查是否已注册（通过hotkey指针判断）
         for (auto& info : g_RegisteredHotkeyInfos) {
@@ -1089,6 +1119,22 @@ namespace Shadow {
             break;
         }
         return 0;
+    }
+
+    inline void OpenPopup(size_t id) {
+        if (std::find(g_Ctx.ActivePopups.begin(), g_Ctx.ActivePopups.end(), id) == g_Ctx.ActivePopups.end()) {
+            g_Ctx.ActivePopups.push_back(id);
+        }
+    }
+
+    inline bool IsPopupOpen(size_t id) {
+        return std::find(g_Ctx.ActivePopups.begin(), g_Ctx.ActivePopups.end(), id) != g_Ctx.ActivePopups.end();
+    }
+
+    inline void CloseCurrentPopup() {
+        if (!g_Ctx.ActivePopups.empty()) {
+            g_Ctx.ActivePopups.pop_back();
+        }
     }
 
     inline void PushClipRect(Vec2 min, Vec2 max) {
@@ -1599,6 +1645,166 @@ namespace Shadow {
         }
     }
 
+    inline bool BeginPopup(std::string_view name, ShadowWindowFlags flags = ShadowWindowFlags_None) {
+        std::string_view display; size_t id;
+        ParseLabel(name, display, id);
+
+        if (!IsPopupOpen(id)) {
+            PopupBackupState dummy{};
+            dummy.Id = 0;
+            g_Ctx.PopupStack.push_back(dummy);
+            return false;
+        }
+
+        PopupBackupState backup{};
+        backup.Id = id;
+        backup.WindowPos = g_Ctx.WindowPos;
+        backup.WindowSize = g_Ctx.WindowSize;
+        backup.Cursor = g_Ctx.Cursor;
+        backup.ContentStartY = g_Ctx.ContentStartY;
+        backup.ScrollY = g_Ctx.ScrollY;
+        backup.LastItemMaxX = g_Ctx.LastItemMaxX;
+        backup.IsScrollApplied = g_Ctx.IsScrollApplied;
+        backup.CurrentWindowFlags = g_Ctx.CurrentWindowFlags;
+        backup.IndentX = g_Ctx.IndentX;
+        backup.ClippingEnabled = g_Ctx.ClippingEnabled;
+        backup.ClipMin = g_Ctx.ClipMin;
+        backup.ClipMax = g_Ctx.ClipMax;
+        backup.ClipStack = g_Ctx.ClipStack;
+        backup.CurrentWindow = g_Ctx.CurrentWindow;
+        backup.IsDragging = g_Ctx.IsDragging;
+        backup.DragOffset = g_Ctx.DragOffset;
+
+        g_Ctx.PopupStack.push_back(backup);
+
+        g_Ctx.InPopup = true;
+        g_Ctx.CurrentWindow = nullptr;
+
+        auto& win = g_Ctx.Windows[id];
+        if (win.Id == 0) {
+            win.Id = id;
+            win.Name = std::string(display);
+            win.Pos = g_Ctx.WindowPos;
+            win.Size = g_Ctx.WindowSize;
+        }
+        win.LastAccessedFrame = g_Ctx.FrameCount;
+
+        if (g_Ctx.HasNextWindowPos) {
+            win.Pos = g_Ctx.NextWindowPos;
+            g_Ctx.HasNextWindowPos = false;
+        }
+        g_Ctx.WindowPos = win.Pos;
+
+        if (g_Ctx.HasNextWindowSize) {
+            win.Size = g_Ctx.NextWindowSize;
+            g_Ctx.HasNextWindowSize = false;
+        }
+        g_Ctx.WindowSize = win.Size;
+
+        // 加载当前弹窗的拖拽状态
+        g_Ctx.IsDragging = win.IsDragging;
+        g_Ctx.DragOffset = win.DragOffset;
+
+        g_Ctx.CurrentWindowFlags = flags | ShadowWindowFlags_NoTitleBar | ShadowWindowFlags_NoResize | ShadowWindowFlags_NoScrollbar;
+
+        bool noMove = (g_Ctx.CurrentWindowFlags & ShadowWindowFlags_NoMove) != 0;
+        bool hoveringWholeWindow = IsMouseHoveringRaw(g_Ctx.WindowPos, g_Ctx.WindowSize);
+
+        bool isOtherDragging = (g_Ctx.DraggingSliderId != 0) || g_Ctx.IsDraggingSV || g_Ctx.IsDraggingHue || g_Ctx.IsDraggingAlpha || g_Ctx.DraggingTabId != 0 || g_Ctx.DraggingTabBarScrollId != 0 || g_Ctx.DraggingListBoxScrollId != 0;
+        for (const auto& pair : g_Ctx.Windows) {
+            if (pair.first != id) {
+                if (pair.second.IsDragging || pair.second.IsResizing || pair.second.IsDraggingScrollbar) {
+                    isOtherDragging = true;
+                    break;
+                }
+            }
+        }
+
+        // 只有当前弹窗是顶层弹窗时，才允许启动拖拽
+        bool isTopmostPopup = !g_Ctx.ActivePopups.empty() && g_Ctx.ActivePopups.back() == id;
+
+        if (!noMove && !g_Ctx.IsDragging && hoveringWholeWindow && g_Ctx.MouseClicked && !isOtherDragging && isTopmostPopup) {
+            g_Ctx.IsDragging = true;
+            g_Ctx.DragOffset.x = g_Ctx.MousePos.x - g_Ctx.WindowPos.x;
+            g_Ctx.DragOffset.y = g_Ctx.MousePos.y - g_Ctx.WindowPos.y;
+        }
+        if (g_Ctx.IsDragging && isOtherDragging) g_Ctx.IsDragging = false;
+
+        if (!noMove && g_Ctx.IsDragging) {
+            g_Ctx.WindowPos.x = g_Ctx.MousePos.x - g_Ctx.DragOffset.x;
+            g_Ctx.WindowPos.y = g_Ctx.MousePos.y - g_Ctx.DragOffset.y;
+            win.Pos = g_Ctx.WindowPos;
+            if (!g_Ctx.MouseDown) g_Ctx.IsDragging = false;
+        }
+
+        g_Ctx.LastItemMaxX = 0.f;
+        g_Ctx.LastItemMin = { 0.f, 0.f };
+        g_Ctx.LastItemMax = { 0.f, 0.f };
+        g_Ctx.LastItemId = 0;
+        g_Ctx.LastItemDisabled = false;
+
+        g_Ctx.ClippingEnabled = false;
+        g_Ctx.ClipStack.clear();
+
+        DrawRect(g_Ctx.WindowPos, g_Ctx.WindowSize, g_Ctx.Style.Colors[GuiCol_PopupBorder]);
+        DrawRectFilled({ g_Ctx.WindowPos.x + 1.f, g_Ctx.WindowPos.y + 1.f }, { g_Ctx.WindowSize.x - 2.f, g_Ctx.WindowSize.y - 2.f }, g_Ctx.Style.Colors[GuiCol_PopupBg]);
+
+        g_Ctx.IndentX = 0.f;
+        g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x, g_Ctx.WindowPos.y + g_Ctx.Style.WindowPadding.y };
+        g_Ctx.ContentStartY = g_Ctx.Cursor.y;
+        g_Ctx.ScrollY = 0.f;
+        g_Ctx.IsScrollApplied = false;
+
+        PushClipRect(g_Ctx.WindowPos, { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y });
+
+        return true;
+    }
+
+    inline void EndPopup() {
+        if (g_Ctx.PopupStack.empty()) return;
+
+        auto backup = g_Ctx.PopupStack.back();
+        g_Ctx.PopupStack.pop_back();
+
+        // 识别到是没有展示状态的弹窗压栈
+        if (backup.Id == 0) {
+            return;
+        }
+
+        PopClipRect();
+
+        auto& win = g_Ctx.Windows[backup.Id];
+        win.Size.y = g_Ctx.Cursor.y - g_Ctx.WindowPos.y + g_Ctx.Style.WindowPadding.y;
+        win.Size.x = std::max(win.Size.x, g_Ctx.LastItemMaxX - g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x);
+
+        // 保存自身的拖拽状态
+        win.IsDragging = g_Ctx.IsDragging;
+        win.DragOffset = g_Ctx.DragOffset;
+
+        // 恢复父级的状态
+        g_Ctx.WindowPos = backup.WindowPos;
+        g_Ctx.WindowSize = backup.WindowSize;
+        g_Ctx.Cursor = backup.Cursor;
+        g_Ctx.ContentStartY = backup.ContentStartY;
+        g_Ctx.ScrollY = backup.ScrollY;
+        g_Ctx.LastItemMaxX = backup.LastItemMaxX;
+        g_Ctx.IsScrollApplied = backup.IsScrollApplied;
+        g_Ctx.CurrentWindowFlags = backup.CurrentWindowFlags;
+        g_Ctx.IndentX = backup.IndentX;
+
+        g_Ctx.ClippingEnabled = backup.ClippingEnabled;
+        g_Ctx.ClipMin = backup.ClipMin;
+        g_Ctx.ClipMax = backup.ClipMax;
+        g_Ctx.ClipStack = backup.ClipStack;
+        g_Ctx.CurrentWindow = backup.CurrentWindow;
+        g_Ctx.IsDragging = backup.IsDragging;
+        g_Ctx.DragOffset = backup.DragOffset;
+
+        if (g_Ctx.PopupStack.empty()) {
+            g_Ctx.InPopup = false;
+        }
+    }
+
     inline bool TreeNode(std::string_view name, ShadowTreeNodeFlags flags = ShadowTreeNodeFlags_None, Vec2 size_arg = { 0.f, 0.f }) {
         if (!g_Ctx.InActiveTab) return false;
         std::string_view display; size_t id; ParseLabel(name, display, id);
@@ -1739,25 +1945,20 @@ namespace Shadow {
             return false;
         }
 
-        // 检查视口裁剪遮挡
         if (!IsRectVisible(min, { max.x - min.x, max.y - min.y })) {
             return false;
         }
 
-        // [修改] 检查是否被处于激活状态的控件打断（增加 ListBox 滚动条拖拽阻塞）
         bool hasActiveItem = g_Ctx.ActiveInputId != 0 || g_Ctx.DraggingSliderId != 0 ||
-            g_Ctx.ActiveDropdownId != 0 || g_Ctx.ActiveColorPickerId != 0 ||
+            !g_Ctx.ActivePopups.empty() ||
             g_Ctx.IsDragging || g_Ctx.IsResizing || g_Ctx.IsDraggingScrollbar ||
             g_Ctx.DraggingTabId != 0 || g_Ctx.DraggingTabBarScrollId != 0 ||
             g_Ctx.DraggingListBoxScrollId != 0;
 
         if (hasActiveItem && !(flags & ShadowHoveredFlags_AllowWhenBlockedByActiveItem)) {
-            // 例外：如果当前激活的正是该控件本身，则放行
             bool isSelfActive = false;
             if (id != 0) {
-                if (g_Ctx.DraggingSliderId == id ||
-                    g_Ctx.ActiveDropdownId == id ||
-                    g_Ctx.ActiveColorPickerId == id) {
+                if (g_Ctx.DraggingSliderId == id) {
                     isSelfActive = true;
                 }
                 size_t sliderInputId = id ^ HashString("_sliderInput");
@@ -1773,21 +1974,15 @@ namespace Shadow {
         bool hoveringRaw = IsMouseHoveringRaw(min, { max.x - min.x, max.y - min.y });
         bool hoveringClipped = IsMouseHovering(min, { max.x - min.x, max.y - min.y });
 
-        // 物理位置根本不在控件内
         if (!hoveringRaw) return false;
-
-        // 被 Popup 弹窗挡住但没有对应的豁免 Flag
         if (!hoveringClipped && !(flags & ShadowHoveredFlags_AllowWhenBlockedByPopup)) {
             return false;
         }
 
-        // --- 开始处理悬停时间和静止逻辑 ---
-        // 赋予无 id 控件 (如 Text) 一个独有编号
         size_t currentId = (id != 0) ? id : (static_cast<size_t>(g_Ctx.WidgetCount) + 1000000ULL);
         g_Ctx.HoveredIdCurrentFrame = currentId;
         uint64_t currentTime = GetTickCount64();
 
-        // 状态更新锁定 (防止同一帧重复调用导致重置)
         if (g_Ctx.LastHoveredIdEval != currentId) {
             if (g_Ctx.HoveredIdPreviousFrame != currentId) {
                 g_Ctx.HoveredIdTimerStart = currentTime;
@@ -1801,7 +1996,6 @@ namespace Shadow {
             g_Ctx.HoveredIdStationaryTriggered = true;
         }
 
-        // 静止锁定判定：要求至少停顿过一次
         if (flags & ShadowHoveredFlags_Stationary) {
             if (!g_Ctx.HoveredIdStationaryTriggered) {
                 return false;
@@ -1815,10 +2009,8 @@ namespace Shadow {
         if (requiredDelay > 0) {
             bool useSharedDelay = !(flags & ShadowHoveredFlags_NoSharedDelay);
             if (useSharedDelay && g_Ctx.SharedDelayActive && currentTime <= g_Ctx.SharedDelayExpirationTime) {
-                // 共享延迟生效（无缝切换），直接跳过等待
             }
             else {
-                // 需要鼠标真正“停驻”并开始读秒，计时起点取悬停或鼠标静止的最晚时间
                 uint64_t waitTime = currentTime - std::max(g_Ctx.HoveredIdTimerStart, g_Ctx.MouseStationaryStartTime);
                 if (!g_Ctx.HoveredIdDelayTriggered) {
                     if (waitTime >= requiredDelay) {
@@ -1830,10 +2022,9 @@ namespace Shadow {
                 }
             }
 
-            // 延续全局的丝滑切换共享窗口
             if (useSharedDelay && (g_Ctx.HoveredIdDelayTriggered || requiredDelay == 0)) {
                 g_Ctx.SharedDelayActive = true;
-                g_Ctx.SharedDelayExpirationTime = currentTime + 250; // 维持0.25秒的继承窗口
+                g_Ctx.SharedDelayExpirationTime = currentTime + 250;
             }
         }
 
@@ -2234,6 +2425,7 @@ namespace Shadow {
         std::string errorMsg;
         if (g_Ctx.BeginStack > 0) errorMsg = std::format("ERROR: Begin() called {} time(s) without matching End()!", g_Ctx.BeginStack);
         else if (g_Ctx.BeginStack < 0) errorMsg = std::format("ERROR: End() called {} time(s) without matching Begin()!", -g_Ctx.BeginStack);
+        else if (g_Ctx.PopupStack.size() > 0) errorMsg = std::format("ERROR: BeginPopup() called {} time(s) without matching EndPopup()!", g_Ctx.PopupStack.size());
         else if (g_Ctx.TabBarStack > 0) errorMsg = std::format("ERROR: BeginTabBar() called {} time(s) without matching EndTabBar()!", g_Ctx.TabBarStack);
         else if (g_Ctx.TabBarStack < 0) errorMsg = std::format("ERROR: EndTabBar() called {} time(s) without matching BeginTabBar()!", -g_Ctx.TabBarStack);
         else if (g_Ctx.TabItemStack > 0) errorMsg = std::format("ERROR: BeginTabItem() called {} time(s) without matching EndTabItem()!", g_Ctx.TabItemStack);
@@ -2514,14 +2706,37 @@ namespace Shadow {
 
         g_Ctx.FrameCount++;
 
+        // [新增] 全局级别的处理：点击弹窗外部区域自动关闭弹窗
+        if (g_Ctx.MouseClicked && !g_Ctx.ActivePopups.empty()) {
+            bool clickedInsideAny = false;
+            // 从最顶层的弹窗开始往下检测
+            for (int i = (int)g_Ctx.ActivePopups.size() - 1; i >= 0; --i) {
+                size_t pid = g_Ctx.ActivePopups[i];
+                auto& win = g_Ctx.Windows[pid];
+                if (g_Ctx.MousePos.x >= win.Pos.x && g_Ctx.MousePos.x <= win.Pos.x + win.Size.x &&
+                    g_Ctx.MousePos.y >= win.Pos.y && g_Ctx.MousePos.y <= win.Pos.y + win.Size.y) {
+                    // 点击在了某个弹窗内部，把比它还要上层的子弹窗关闭
+                    g_Ctx.ActivePopups.resize(i + 1);
+                    clickedInsideAny = true;
+                    break;
+                }
+            }
+            if (!clickedInsideAny) {
+                // 点击在所有弹窗外部，清空全部并吞掉这次点击，防止击穿导致误触底层控件
+                g_Ctx.ActivePopups.clear();
+                g_Ctx.ActiveInputId = 0;
+                g_Ctx.MouseClicked = false;
+            }
+        }
+
         for (auto& pair : g_Ctx.Windows) {
             pair.second.DrawCommands.clear();
         }
         g_Ctx.PopupDrawCommands.clear();
-        g_Ctx.PopupsRenderedThisFrame = false;
         g_Ctx.HoveredWindowId = 0;
+        g_Ctx.PopupStack.clear();
 
-        bool popupActive = g_Ctx.ActiveDropdownId != 0 || g_Ctx.ActiveColorPickerId != 0;
+        bool popupActive = !g_Ctx.ActivePopups.empty();
         if (!popupActive) {
             for (auto it = g_Ctx.WindowDisplayOrder.rbegin(); it != g_Ctx.WindowDisplayOrder.rend(); ++it) {
                 size_t id = *it;
@@ -2580,220 +2795,6 @@ namespace Shadow {
         }
     }
 
-    inline void RenderPopups() {
-        if (g_Ctx.PopupsRenderedThisFrame) return;
-
-        bool renderedAny = false;
-
-        if (g_Ctx.ActiveDropdownId != 0 && g_Ctx.DropdownCurrentItem) {
-            renderedAny = true;
-            float dropWidth = g_Ctx.DropdownSize.x;
-            float dropHeight = g_Ctx.DropdownItems.size() * g_Ctx.ItemHeight;
-            Vec2 dropPos = g_Ctx.DropdownPos;
-
-            DrawRect({ dropPos.x - 1.f, dropPos.y - 1.f }, { dropWidth + 2.f, dropHeight + 2.f }, g_Ctx.Style.Colors[GuiCol_PopupBorder]);
-            DrawRect(dropPos, { dropWidth, dropHeight }, g_Ctx.Style.Colors[GuiCol_PopupBg]);
-
-            bool hoveringDropdown = IsMouseHoveringRaw(dropPos, { dropWidth, dropHeight });
-
-            for (size_t i = 0; i < g_Ctx.DropdownItems.size(); ++i) {
-                Vec2 itemPos = { dropPos.x, dropPos.y + i * g_Ctx.ItemHeight };
-                bool itemHovered = IsMouseHoveringRaw(itemPos, { dropWidth, g_Ctx.ItemHeight });
-                bool isCurrentItem = (*g_Ctx.DropdownCurrentItem == static_cast<int>(i));
-
-                if (itemHovered) {
-                    DrawRectFilled(itemPos, { dropWidth, g_Ctx.ItemHeight }, g_Ctx.Style.Colors[GuiCol_FrameBgHovered]);
-                    if (g_Ctx.MouseClicked) {
-                        *g_Ctx.DropdownCurrentItem = static_cast<int>(i);
-                        g_Ctx.ActiveDropdownId = 0;
-                        g_Ctx.MouseClicked = false;
-                    }
-                }
-                else if (isCurrentItem) {
-                    DrawRectFilled(itemPos, { dropWidth, g_Ctx.ItemHeight }, g_Ctx.Style.Colors[GuiCol_DropdownActive]);
-                }
-
-                Color textColor = isCurrentItem ? g_Ctx.Style.Colors[GuiCol_TextHighlight] : g_Ctx.Style.Colors[GuiCol_Text];
-                DrawTextString(g_Ctx.DropdownItems[i], { itemPos.x + g_Ctx.Style.FramePadding.x, itemPos.y + g_Ctx.Style.FramePadding.y }, textColor);
-            }
-
-            if (g_Ctx.MouseClicked && !hoveringDropdown) { g_Ctx.ActiveDropdownId = 0; }
-            if (hoveringDropdown) { g_Ctx.MouseClicked = false; }
-        }
-
-        if (g_Ctx.ActiveColorPickerId != 0 && g_Ctx.ColorPickerR) {
-            renderedAny = true;
-            Vec2 popupPos = g_Ctx.ColorPickerPos;
-            float padding = g_Ctx.Style.CPPadding;
-            float svSize = g_Ctx.Style.CPSVSize;
-            float hueWidth = g_Ctx.Style.CPHueWidth;
-            float alphaWidth = g_Ctx.Style.CPAlphaWidth;
-            float spacing = g_Ctx.Style.CPSpacing;
-
-            float hexBoxHeight = std::max(24.f, g_Ctx.ItemHeight + 4.f);
-            float popupWidth = padding * 2.f + svSize + spacing * 2.f + hueWidth + alphaWidth;
-            float popupHeight = padding * 2.f + svSize + spacing + hexBoxHeight;
-
-            bool popupHovered = IsMouseHoveringRaw({ popupPos.x - 2.f, popupPos.y - 2.f }, { popupWidth + 4.f, popupHeight + 4.f });
-            if (g_Ctx.MouseClicked && !popupHovered) {
-                g_Ctx.ActiveColorPickerId = 0;
-                g_Ctx.ActiveInputId = 0;
-            }
-
-            if (g_Ctx.ActiveColorPickerId != 0) {
-                Vec2 svPos = { popupPos.x + padding, popupPos.y + padding };
-                Vec2 huePos = { svPos.x + svSize + spacing, svPos.y };
-                Vec2 alphaPos = { huePos.x + hueWidth + spacing, svPos.y };
-                Vec2 hexPos = { svPos.x, svPos.y + svSize + spacing };
-                Vec2 hexSize = { popupWidth - padding * 2.f, hexBoxHeight };
-
-                bool svHovered = IsMouseHoveringRaw(svPos, { svSize, svSize });
-                bool hueHovered = IsMouseHoveringRaw(huePos, { hueWidth, svSize });
-                bool alphaHovered = IsMouseHoveringRaw(alphaPos, { alphaWidth, svSize });
-                bool hexHovered = IsMouseHoveringRaw(hexPos, hexSize);
-
-                if (g_Ctx.MouseDown) {
-                    if (!g_Ctx.IsDraggingSV && !g_Ctx.IsDraggingHue && !g_Ctx.IsDraggingAlpha && !g_Ctx.IsDraggingColorPicker) {
-                        if (svHovered) g_Ctx.IsDraggingSV = true;
-                        else if (hueHovered) g_Ctx.IsDraggingHue = true;
-                        else if (alphaHovered) g_Ctx.IsDraggingAlpha = true;
-                        else if (popupHovered && !hexHovered) {
-                            if (g_Ctx.MouseClicked) {
-                                g_Ctx.IsDraggingColorPicker = true;
-                                g_Ctx.ColorPickerDragOffset.x = g_Ctx.MousePos.x - popupPos.x;
-                                g_Ctx.ColorPickerDragOffset.y = g_Ctx.MousePos.y - popupPos.y;
-                                g_Ctx.MouseClicked = false;
-                            }
-                        }
-                    }
-
-                    if (g_Ctx.IsDraggingSV) {
-                        g_Ctx.ColorPickerS = std::clamp((g_Ctx.MousePos.x - svPos.x) / svSize, 0.f, 1.f);
-                        g_Ctx.ColorPickerV = 1.0f - std::clamp((g_Ctx.MousePos.y - svPos.y) / svSize, 0.f, 1.f);
-                        HSVtoRGB(g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV, *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB);
-                    }
-                    else if (g_Ctx.IsDraggingHue) {
-                        g_Ctx.ColorPickerH = std::clamp((g_Ctx.MousePos.y - huePos.y) / svSize, 0.f, 1.f);
-                        HSVtoRGB(g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV, *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB);
-                    }
-                    else if (g_Ctx.IsDraggingAlpha) {
-                        if (g_Ctx.ColorPickerA) {
-                            *g_Ctx.ColorPickerA = 1.0f - std::clamp((g_Ctx.MousePos.y - alphaPos.y) / svSize, 0.f, 1.f);
-                        }
-                    }
-                    else if (g_Ctx.IsDraggingColorPicker) {
-                        g_Ctx.ColorPickerPos.x = g_Ctx.MousePos.x - g_Ctx.ColorPickerDragOffset.x;
-                        g_Ctx.ColorPickerPos.y = g_Ctx.MousePos.y - g_Ctx.ColorPickerDragOffset.y;
-                        popupPos = g_Ctx.ColorPickerPos;
-
-                        svPos = { popupPos.x + padding, popupPos.y + padding };
-                        huePos = { svPos.x + svSize + spacing, svPos.y };
-                        alphaPos = { huePos.x + hueWidth + spacing, svPos.y };
-                        hexPos = { svPos.x, svPos.y + svSize + spacing };
-                        popupHovered = IsMouseHoveringRaw({ popupPos.x - 2.f, popupPos.y - 2.f }, { popupWidth + 4.f, popupHeight + 4.f });
-                    }
-                }
-                else {
-                    g_Ctx.IsDraggingSV = false;
-                    g_Ctx.IsDraggingHue = false;
-                    g_Ctx.IsDraggingAlpha = false;
-                    g_Ctx.IsDraggingColorPicker = false;
-                }
-
-                DrawRect({ popupPos.x - 2.f, popupPos.y - 2.f }, { popupWidth + 4.f, popupHeight + 4.f }, g_Ctx.Style.Colors[GuiCol_PopupBorder]);
-                DrawRect(popupPos, { popupWidth, popupHeight }, g_Ctx.Style.Colors[GuiCol_PopupBg]);
-
-                float pickerAlpha = g_Ctx.Style.Colors[GuiCol_ColorPickerLight].a;
-                Color shadowCol = g_Ctx.Style.Colors[GuiCol_ColorPickerShadow];
-                Color cbLight = g_Ctx.Style.Colors[GuiCol_CheckerboardLight];
-                Color cbDark = g_Ctx.Style.Colors[GuiCol_CheckerboardDark];
-
-                int svSteps = std::max(2, static_cast<int>(svSize));
-                float svStepSize = svSize / svSteps;
-
-                for (int i = 0; i < svSteps; ++i) {
-                    float s = (float)i / (svSteps - 1);
-                    float r, g, b;
-                    HSVtoRGB(g_Ctx.ColorPickerH, s, 1.0f, r, g, b);
-                    DrawRectFilled({ svPos.x + i * svStepSize, svPos.y }, { svStepSize, svSize }, { r, g, b, pickerAlpha });
-                }
-                for (int j = 0; j < svSteps; ++j) {
-                    float v = 1.0f - (float)j / (svSteps - 1);
-                    float alpha = 1.0f - v;
-                    DrawRectFilled({ svPos.x, svPos.y + j * svStepSize }, { svSize, svStepSize }, { shadowCol.r, shadowCol.g, shadowCol.b, alpha * shadowCol.a });
-                }
-
-                int hueSteps = std::max(2, static_cast<int>(svSize));
-                float hueStepSize = svSize / hueSteps;
-                for (int i = 0; i < hueSteps; ++i) {
-                    float h = (float)i / (hueSteps - 1);
-                    float r, g, b;
-                    HSVtoRGB(h, 1.f, 1.f, r, g, b);
-                    DrawRectFilled({ huePos.x, huePos.y + i * hueStepSize }, { hueWidth, hueStepSize }, { r, g, b, pickerAlpha });
-                }
-
-                int alphaSteps = std::max(2, static_cast<int>(svSize));
-                float alphaStepSize = svSize / alphaSteps;
-                int checkerSize = 5;
-
-                for (int i = 0; i < alphaSteps; ++i) {
-                    float a = 1.0f - (float)i / (alphaSteps - 1);
-                    float drawY = alphaPos.y + i * alphaStepSize;
-
-                    for (int x = 0; x < alphaWidth; x += checkerSize) {
-                        float drawX = alphaPos.x + x;
-                        float w = std::min((float)checkerSize, alphaWidth - x);
-
-                        int checkY = static_cast<int>((drawY - alphaPos.y) / checkerSize);
-                        int checkX = x / checkerSize;
-                        bool isWhite = (checkX + checkY) % 2 == 0;
-                        Color bgCol = isWhite ? cbLight : cbDark;
-
-                        float finalR = *g_Ctx.ColorPickerR * a + bgCol.r * (1.f - a);
-                        float finalG = *g_Ctx.ColorPickerG * a + bgCol.g * (1.f - a);
-                        float finalB = *g_Ctx.ColorPickerB * a + bgCol.b * (1.f - a);
-
-                        DrawRectFilled({ drawX, drawY }, { w, alphaStepSize }, { finalR, finalG, finalB, pickerAlpha });
-                    }
-                }
-
-                size_t hexId = HashString("CPHexInput");
-                if (g_Ctx.ActiveInputId != hexId) {
-                    uint8_t r8 = static_cast<uint8_t>(*g_Ctx.ColorPickerR * 255.f);
-                    uint8_t g8 = static_cast<uint8_t>(*g_Ctx.ColorPickerG * 255.f);
-                    uint8_t b8 = static_cast<uint8_t>(*g_Ctx.ColorPickerB * 255.f);
-                    uint8_t a8 = g_Ctx.ColorPickerA ? static_cast<uint8_t>(*g_Ctx.ColorPickerA * 255.f) : 255;
-                    g_Ctx.InputBuffers[hexId] = std::format("{:02X}{:02X}{:02X}{:02X}", r8, g8, b8, a8);
-                }
-
-                bool hexChanged = InputTextEx(hexId, hexPos, hexSize, g_Ctx.InputBuffers[hexId], ShadowInputTextFlags_CharsHexadecimal | ShadowInputTextFlags_CharsUppercase, true);
-                if (hexChanged) {
-                    ApplyHexInput();
-                }
-
-                Vec2 cursorSV = { svPos.x + g_Ctx.ColorPickerS * svSize, svPos.y + (1.f - g_Ctx.ColorPickerV) * svSize };
-                DrawRect({ cursorSV.x - 4.f, cursorSV.y - 4.f }, { 8.f, 8.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
-                DrawRect({ cursorSV.x - 3.f, cursorSV.y - 3.f }, { 6.f, 6.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
-                DrawRectFilled({ cursorSV.x - 2.f, cursorSV.y - 2.f }, { 4.f, 4.f }, { *g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB, pickerAlpha });
-
-                Vec2 cursorHue = { huePos.x - 2.f, huePos.y + g_Ctx.ColorPickerH * svSize - 2.f };
-                DrawRect(cursorHue, { hueWidth + 4.f, 4.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
-                DrawRect({ cursorHue.x + 1.f, cursorHue.y + 1.f }, { hueWidth + 2.f, 2.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
-
-                if (g_Ctx.ColorPickerA) {
-                    Vec2 cursorAlpha = { alphaPos.x - 2.f, alphaPos.y + (1.f - *g_Ctx.ColorPickerA) * svSize - 2.f };
-                    DrawRect(cursorAlpha, { alphaWidth + 4.f, 4.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
-                    DrawRect({ cursorAlpha.x + 1.f, cursorAlpha.y + 1.f }, { alphaWidth + 2.f, 2.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
-                }
-
-                if (popupHovered) g_Ctx.MouseClicked = false;
-            }
-        }
-        if (renderedAny) {
-            g_Ctx.PopupsRenderedThisFrame = true;
-        }
-    }
-
     inline bool Begin(std::string_view name, ShadowWindowFlags flags = ShadowWindowFlags_None) {
         std::string_view display; size_t id;
         ParseLabel(name, display, id);
@@ -2813,8 +2814,9 @@ namespace Shadow {
         bool mouseOverRaw = (g_Ctx.MousePos.x >= win.Pos.x && g_Ctx.MousePos.x <= win.Pos.x + win.Size.x &&
             g_Ctx.MousePos.y >= win.Pos.y && g_Ctx.MousePos.y <= win.Pos.y + win.Size.y);
 
-        // Z-Order 置顶触发逻辑
-        if (mouseOverRaw && (g_Ctx.MouseClicked || g_Ctx.RightMouseClicked)) {
+        bool hasPopupOpen = !g_Ctx.ActivePopups.empty();
+
+        if (!hasPopupOpen && mouseOverRaw && (g_Ctx.MouseClicked || g_Ctx.RightMouseClicked)) {
             if (g_Ctx.HoveredWindowId == id || g_Ctx.HoveredWindowId == 0) {
                 g_Ctx.FocusedWindowId = id;
                 auto it = std::find(g_Ctx.WindowDisplayOrder.begin(), g_Ctx.WindowDisplayOrder.end(), id);
@@ -2831,6 +2833,12 @@ namespace Shadow {
         }
 
         g_Ctx.WindowPos = win.Pos;
+
+        if (g_Ctx.HasNextWindowSize) {
+            win.Size = g_Ctx.NextWindowSize;
+            g_Ctx.HasNextWindowSize = false;
+        }
+
         g_Ctx.WindowSize = win.Size;
         g_Ctx.IsDragging = win.IsDragging;
         g_Ctx.DragOffset = win.DragOffset;
@@ -2848,7 +2856,6 @@ namespace Shadow {
         g_Ctx.CurrentWindowFlags = flags;
         win.CurrentWindowFlags = flags;
 
-        // 清理从上一个窗口带过来的布局残留数据，防止 `SameLine` 或悬停状态错乱
         g_Ctx.LastItemMaxX = 0.f;
         g_Ctx.LastItemMin = { 0.f, 0.f };
         g_Ctx.LastItemMax = { 0.f, 0.f };
@@ -2889,10 +2896,8 @@ namespace Shadow {
         Vec2 triPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - triSize, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y - triSize };
         g_Ctx.IsHoveringResize = (!noResize && !noMouseInputs) ? IsMouseHoveringRaw(triPos, { triSize, triSize }) : false;
 
-        // 全局空间控件交互检测
-        bool isOtherDragging = (g_Ctx.DraggingSliderId != 0) || g_Ctx.IsDraggingSV || g_Ctx.IsDraggingHue || g_Ctx.IsDraggingAlpha || g_Ctx.IsDraggingColorPicker || g_Ctx.DraggingTabId != 0 || g_Ctx.DraggingTabBarScrollId != 0 || g_Ctx.DraggingListBoxScrollId != 0;
+        bool isOtherDragging = (g_Ctx.DraggingSliderId != 0) || g_Ctx.IsDraggingSV || g_Ctx.IsDraggingHue || g_Ctx.IsDraggingAlpha || g_Ctx.DraggingTabId != 0 || g_Ctx.DraggingTabBarScrollId != 0 || g_Ctx.DraggingListBoxScrollId != 0;
 
-        // 通过遍历检查是否"其他任何窗口"正在进行拖拽交互，拦截误触
         for (const auto& pair : g_Ctx.Windows) {
             if (pair.first != id) {
                 if (pair.second.IsDragging || pair.second.IsResizing || pair.second.IsDraggingScrollbar) {
@@ -2910,8 +2915,6 @@ namespace Shadow {
         if (viewHeight < 10.f) viewHeight = 10.f;
         float maxScroll = std::max(0.f, g_Ctx.ContentHeight - viewHeight);
         g_Ctx.ScrollY = std::clamp(g_Ctx.ScrollY, 0.f, maxScroll);
-
-        bool hasPopupOpen = g_Ctx.ActiveDropdownId != 0 || g_Ctx.ActiveColorPickerId != 0;
 
         bool hoveringAnyTabBar = false;
         for (auto& [rectPos, rectSize] : g_Ctx.TabBarHoverRects) {
@@ -3175,10 +3178,6 @@ namespace Shadow {
 
         if (!g_Ctx.MouseDown) g_Ctx.IsResizing = false;
 
-        g_Ctx.InPopup = true;
-        RenderPopups();
-        g_Ctx.InPopup = false;
-
         // 同步回 ShadowWindow 保存给下一帧，并交由 Render 提取渲染
         if (g_Ctx.CurrentWindow) {
             auto& win = *g_Ctx.CurrentWindow;
@@ -3208,7 +3207,6 @@ namespace Shadow {
         g_Ctx.CurrentTabBarFlags = flags;
         g_Ctx.CurrentTabBarId = id;
 
-        // [修改] 提前在 BeginTabBar 处理松开鼠标时的拖拽状态清理，防止 TabItem 松开瞬间消失一帧
         if (!g_Ctx.MouseDown && g_Ctx.DraggingTabBarId == id) {
             g_Ctx.DraggingTabId = 0;
             g_Ctx.DraggingTabBarId = 0;
@@ -3371,7 +3369,6 @@ namespace Shadow {
             bool hoveringThumb = IsMouseHoveringRaw(thumbPos, thumbSize);
             bool hoveringTrack = IsMouseHoveringRaw(trackPos, trackSize);
 
-            // [修改] 如果处于 ListBox 范围内，阻止标签页横向滚动条响应点击
             if (!overListBox) {
                 if (g_Ctx.MouseClicked && hoveringThumb) {
                     g_Ctx.DraggingTabBarScrollId = tabBarId;
@@ -3403,7 +3400,7 @@ namespace Shadow {
             DrawRect(thumbPos, thumbSize, thumbColor);
 
             bool hoveringForWheel = hoveringTabRow || hoveringTrack;
-            // [修改] 拦截滚轮
+
             if (hoveringForWheel && g_Ctx.MouseWheel != 0.f && !overListBox) {
                 scrollX -= g_Ctx.MouseWheel * 30.f;
                 scrollX = std::clamp(scrollX, 0.f, maxScrollX);
@@ -3414,7 +3411,7 @@ namespace Shadow {
             scrollBarBottom = trackPos.y + trackSize.y;
         }
         else if (fittingScroll) {
-            // [修改] 拦截滚轮
+
             if (hoveringTabRow && g_Ctx.MouseWheel != 0.f && !overListBox) {
                 scrollX -= g_Ctx.MouseWheel * 30.f;
                 scrollX = std::clamp(scrollX, 0.f, maxScrollX);
@@ -3672,16 +3669,18 @@ namespace Shadow {
         bool hovered = !disabled && IsMouseHovering(boxPos, boxSize);
         bool toggled = false;
 
+        std::string popupName = std::format("##Combo_{}", id);
+
         if (hovered && g_Ctx.MouseClicked) {
             g_Ctx.IsDragging = false;
 
-            if (g_Ctx.ActiveDropdownId == id) g_Ctx.ActiveDropdownId = 0;
+            if (IsPopupOpen(HashString(popupName))) {
+                CloseCurrentPopup();
+            }
             else {
-                g_Ctx.ActiveDropdownId = id;
-                g_Ctx.DropdownCurrentItem = current_item;
-                g_Ctx.DropdownItems = items;
-                g_Ctx.DropdownPos = { boxPos.x, boxPos.y + boxSize.y };
-                g_Ctx.DropdownSize = { boxWidth, 0.f };
+                OpenPopup(HashString(popupName));
+                SetNextWindowPos({ boxPos.x, boxPos.y + boxSize.y });
+                SetNextWindowSize({ boxWidth, items.size() * g_Ctx.ItemHeight });
             }
             g_Ctx.MouseClicked = false;
             toggled = true;
@@ -3689,7 +3688,6 @@ namespace Shadow {
 
         Color bgColor = disabled ? g_Ctx.Style.Colors[GuiCol_ControlDisabled] : (hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
         DrawRectFilled(boxPos, boxSize, bgColor);
-
         DrawTextString(currentText, { boxPos.x + g_Ctx.Style.FramePadding.x, boxPos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor);
 
         Vec2 triPos = { boxPos.x + boxSize.x - g_Ctx.Style.FramePadding.x - triSize, boxPos.y + boxSize.y / 2.f - triSize / 2.f };
@@ -3700,6 +3698,39 @@ namespace Shadow {
             Vec2 p3 = { triPos.x + triSize * 0.5f, triPos.y + triSize * 0.75f };
             DrawTriangleFilled(p1, p2, p3, triCol);
         }
+
+        Vec2 backupPad = g_Ctx.Style.WindowPadding;
+        g_Ctx.Style.WindowPadding = { 0.f, 0.f };
+
+        // 传入 NoMove 禁止由于未配置导致被拖走
+        if (BeginPopup(popupName, ShadowWindowFlags_NoMove)) {
+            for (size_t i = 0; i < items.size(); ++i) {
+                Vec2 itemPos = g_Ctx.Cursor;
+                bool itemHovered = IsMouseHoveringRaw(itemPos, { boxWidth, g_Ctx.ItemHeight });
+                bool isCurrentItem = (*current_item == static_cast<int>(i));
+
+                if (itemHovered) {
+                    DrawRectFilled(itemPos, { boxWidth, g_Ctx.ItemHeight }, g_Ctx.Style.Colors[GuiCol_FrameBgHovered]);
+                    if (g_Ctx.MouseClicked) {
+                        *current_item = static_cast<int>(i);
+                        CloseCurrentPopup();
+                        g_Ctx.MouseClicked = false;
+                        toggled = true;
+                    }
+                }
+                else if (isCurrentItem) {
+                    DrawRectFilled(itemPos, { boxWidth, g_Ctx.ItemHeight }, g_Ctx.Style.Colors[GuiCol_DropdownActive]);
+                }
+
+                Color textCol = isCurrentItem ? g_Ctx.Style.Colors[GuiCol_TextHighlight] : g_Ctx.Style.Colors[GuiCol_Text];
+                DrawTextString(items[i], { itemPos.x + g_Ctx.Style.FramePadding.x, itemPos.y + g_Ctx.Style.FramePadding.y }, textCol);
+
+                g_Ctx.Cursor.y += g_Ctx.ItemHeight;
+            }
+            g_Ctx.LastItemMaxX = g_Ctx.WindowPos.x + boxWidth;
+        }
+        EndPopup();
+        g_Ctx.Style.WindowPadding = backupPad;
 
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
@@ -4215,18 +4246,32 @@ namespace Shadow {
         }
 
         bool hovered = !disabled && IsMouseHovering(boxPos, boxSize);
+        std::string popupName = std::format("##CP_{}", id);
 
         if (hovered && g_Ctx.MouseClicked) {
             g_Ctx.IsDragging = false;
 
-            if (g_Ctx.ActiveColorPickerId == id) g_Ctx.ActiveColorPickerId = 0;
+            if (IsPopupOpen(HashString(popupName))) {
+                CloseCurrentPopup();
+            }
             else {
-                g_Ctx.ActiveColorPickerId = id;
-                g_Ctx.ColorPickerR = r; g_Ctx.ColorPickerG = g; g_Ctx.ColorPickerB = b; g_Ctx.ColorPickerA = a;
+                OpenPopup(HashString(popupName));
 
-                float popupWidth = g_Ctx.Style.CPPadding * 2.f + g_Ctx.Style.CPSVSize + g_Ctx.Style.CPSpacing * 2.f + g_Ctx.Style.CPHueWidth + g_Ctx.Style.CPAlphaWidth;
-                g_Ctx.ColorPickerPos = { boxPos.x + boxSize.x + g_Ctx.Style.ItemSpacing.x, boxPos.y + itemHeight + 4.f };
+                g_Ctx.ColorPickerR = r; g_Ctx.ColorPickerG = g; g_Ctx.ColorPickerB = b; g_Ctx.ColorPickerA = a;
                 RGBtoHSV(*r, *g, *b, g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV);
+
+                float padding = g_Ctx.Style.CPPadding;
+                float svSize = g_Ctx.Style.CPSVSize;
+                float hueWidth = g_Ctx.Style.CPHueWidth;
+                float alphaWidth = g_Ctx.Style.CPAlphaWidth;
+                float spacing = g_Ctx.Style.CPSpacing;
+
+                float hexBoxHeight = std::max(24.f, g_Ctx.ItemHeight + 4.f);
+                float popupWidth = padding * 2.f + svSize + spacing * 2.f + hueWidth + alphaWidth;
+                float popupHeight = padding * 2.f + svSize + spacing + hexBoxHeight;
+
+                SetNextWindowPos({ boxPos.x + boxSize.x + g_Ctx.Style.ItemSpacing.x, boxPos.y + itemHeight + 4.f });
+                SetNextWindowSize({ popupWidth, popupHeight });
             }
             g_Ctx.MouseClicked = false;
         }
@@ -4258,13 +4303,153 @@ namespace Shadow {
             }
         }
 
-        if (hovered || g_Ctx.ActiveColorPickerId == id) {
+        if (hovered || IsPopupOpen(HashString(popupName))) {
             Color border = g_Ctx.Style.Colors[GuiCol_Border];
             DrawLine({ boxPos.x, boxPos.y }, { boxPos.x + boxSize.x, boxPos.y }, border);
             DrawLine({ boxPos.x + boxSize.x, boxPos.y }, { boxPos.x + boxSize.x, boxPos.y + boxSize.y }, border);
             DrawLine({ boxPos.x + boxSize.x, boxPos.y + boxSize.y }, { boxPos.x, boxPos.y + boxSize.y }, border);
             DrawLine({ boxPos.x, boxPos.y + boxSize.y }, { boxPos.x, boxPos.y }, border);
         }
+
+        Vec2 backupPad = g_Ctx.Style.WindowPadding;
+        g_Ctx.Style.WindowPadding = { 0.f, 0.f };
+
+        // 我们不传递 NoMove，这意味着它可以像原生 Window 一样被随意拖拽！
+        if (BeginPopup(popupName)) {
+            float padding = g_Ctx.Style.CPPadding;
+            float svSize = g_Ctx.Style.CPSVSize;
+            float hueWidth = g_Ctx.Style.CPHueWidth;
+            float alphaWidth = g_Ctx.Style.CPAlphaWidth;
+            float spacing = g_Ctx.Style.CPSpacing;
+
+            float hexBoxHeight = std::max(24.f, g_Ctx.ItemHeight + 4.f);
+            float popupWidth = padding * 2.f + svSize + spacing * 2.f + hueWidth + alphaWidth;
+            float popupHeight = padding * 2.f + svSize + spacing + hexBoxHeight;
+
+            Vec2 popupPos = g_Ctx.WindowPos;
+            Vec2 svPos = { popupPos.x + padding, popupPos.y + padding };
+            Vec2 huePos = { svPos.x + svSize + spacing, svPos.y };
+            Vec2 alphaPos = { huePos.x + hueWidth + spacing, svPos.y };
+            Vec2 hexPos = { svPos.x, svPos.y + svSize + spacing };
+            Vec2 hexSize = { popupWidth - padding * 2.f, hexBoxHeight };
+
+            bool svHovered = IsMouseHoveringRaw(svPos, { svSize, svSize });
+            bool hueHovered = IsMouseHoveringRaw(huePos, { hueWidth, svSize });
+            bool alphaHovered = IsMouseHoveringRaw(alphaPos, { alphaWidth, svSize });
+
+            if (g_Ctx.MouseDown) {
+                if (!g_Ctx.IsDraggingSV && !g_Ctx.IsDraggingHue && !g_Ctx.IsDraggingAlpha) {
+                    if (svHovered) g_Ctx.IsDraggingSV = true;
+                    else if (hueHovered) g_Ctx.IsDraggingHue = true;
+                    else if (alphaHovered) g_Ctx.IsDraggingAlpha = true;
+                }
+
+                if (g_Ctx.IsDraggingSV) {
+                    g_Ctx.ColorPickerS = std::clamp((g_Ctx.MousePos.x - svPos.x) / svSize, 0.f, 1.f);
+                    g_Ctx.ColorPickerV = 1.0f - std::clamp((g_Ctx.MousePos.y - svPos.y) / svSize, 0.f, 1.f);
+                    HSVtoRGB(g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV, *r, *g, *b);
+                }
+                else if (g_Ctx.IsDraggingHue) {
+                    g_Ctx.ColorPickerH = std::clamp((g_Ctx.MousePos.y - huePos.y) / svSize, 0.f, 1.f);
+                    HSVtoRGB(g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV, *r, *g, *b);
+                }
+                else if (g_Ctx.IsDraggingAlpha) {
+                    if (a) {
+                        *a = 1.0f - std::clamp((g_Ctx.MousePos.y - alphaPos.y) / svSize, 0.f, 1.f);
+                    }
+                }
+            }
+            else {
+                g_Ctx.IsDraggingSV = false;
+                g_Ctx.IsDraggingHue = false;
+                g_Ctx.IsDraggingAlpha = false;
+            }
+
+            float pickerAlpha = g_Ctx.Style.Colors[GuiCol_ColorPickerLight].a;
+            Color shadowCol = g_Ctx.Style.Colors[GuiCol_ColorPickerShadow];
+
+            int svSteps = std::max(2, static_cast<int>(svSize));
+            float svStepSize = svSize / svSteps;
+
+            for (int i = 0; i < svSteps; ++i) {
+                float s = (float)i / (svSteps - 1);
+                float pr, pg, pb;
+                HSVtoRGB(g_Ctx.ColorPickerH, s, 1.0f, pr, pg, pb);
+                DrawRectFilled({ svPos.x + i * svStepSize, svPos.y }, { svStepSize, svSize }, { pr, pg, pb, pickerAlpha });
+            }
+            for (int j = 0; j < svSteps; ++j) {
+                float v = 1.0f - (float)j / (svSteps - 1);
+                float drawAlpha = 1.0f - v;
+                DrawRectFilled({ svPos.x, svPos.y + j * svStepSize }, { svSize, svStepSize }, { shadowCol.r, shadowCol.g, shadowCol.b, drawAlpha * shadowCol.a });
+            }
+
+            int hueSteps = std::max(2, static_cast<int>(svSize));
+            float hueStepSize = svSize / hueSteps;
+            for (int i = 0; i < hueSteps; ++i) {
+                float h = (float)i / (hueSteps - 1);
+                float pr, pg, pb;
+                HSVtoRGB(h, 1.f, 1.f, pr, pg, pb);
+                DrawRectFilled({ huePos.x, huePos.y + i * hueStepSize }, { hueWidth, hueStepSize }, { pr, pg, pb, pickerAlpha });
+            }
+
+            int alphaSteps = std::max(2, static_cast<int>(svSize));
+            float alphaStepSize = svSize / alphaSteps;
+
+            for (int i = 0; i < alphaSteps; ++i) {
+                float drawAlpha = 1.0f - (float)i / (alphaSteps - 1);
+                float drawY = alphaPos.y + i * alphaStepSize;
+
+                for (int x = 0; x < alphaWidth; x += checkerSize) {
+                    float drawX = alphaPos.x + x;
+                    float w = std::min((float)checkerSize, alphaWidth - x);
+
+                    int checkY = static_cast<int>((drawY - alphaPos.y) / checkerSize);
+                    int checkX = x / checkerSize;
+                    bool isWhite = (checkX + checkY) % 2 == 0;
+                    Color bgCol = isWhite ? cbLight : cbDark;
+
+                    float finalR = *r * drawAlpha + bgCol.r * (1.f - drawAlpha);
+                    float finalG = *g * drawAlpha + bgCol.g * (1.f - drawAlpha);
+                    float finalB = *b * drawAlpha + bgCol.b * (1.f - drawAlpha);
+
+                    DrawRectFilled({ drawX, drawY }, { w, alphaStepSize }, { finalR, finalG, finalB, pickerAlpha });
+                }
+            }
+
+            size_t hexId = HashString("CPHexInput");
+            if (g_Ctx.ActiveInputId != hexId) {
+                uint8_t r8 = static_cast<uint8_t>(*r * 255.f);
+                uint8_t g8 = static_cast<uint8_t>(*g * 255.f);
+                uint8_t b8 = static_cast<uint8_t>(*b * 255.f);
+                uint8_t a8 = a ? static_cast<uint8_t>(*a * 255.f) : 255;
+                g_Ctx.InputBuffers[hexId] = std::format("{:02X}{:02X}{:02X}{:02X}", r8, g8, b8, a8);
+            }
+
+            bool hexChanged = InputTextEx(hexId, hexPos, hexSize, g_Ctx.InputBuffers[hexId], ShadowInputTextFlags_CharsHexadecimal | ShadowInputTextFlags_CharsUppercase, true);
+            if (hexChanged) {
+                ApplyHexInput();
+            }
+
+            Vec2 cursorSV = { svPos.x + g_Ctx.ColorPickerS * svSize, svPos.y + (1.f - g_Ctx.ColorPickerV) * svSize };
+            DrawRect({ cursorSV.x - 4.f, cursorSV.y - 4.f }, { 8.f, 8.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
+            DrawRect({ cursorSV.x - 3.f, cursorSV.y - 3.f }, { 6.f, 6.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
+            DrawRectFilled({ cursorSV.x - 2.f, cursorSV.y - 2.f }, { 4.f, 4.f }, { *r, *g, *b, pickerAlpha });
+
+            Vec2 cursorHue = { huePos.x - 2.f, huePos.y + g_Ctx.ColorPickerH * svSize - 2.f };
+            DrawRect(cursorHue, { hueWidth + 4.f, 4.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
+            DrawRect({ cursorHue.x + 1.f, cursorHue.y + 1.f }, { hueWidth + 2.f, 2.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
+
+            if (a) {
+                Vec2 cursorAlpha = { alphaPos.x - 2.f, alphaPos.y + (1.f - *a) * svSize - 2.f };
+                DrawRect(cursorAlpha, { alphaWidth + 4.f, 4.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
+                DrawRect({ cursorAlpha.x + 1.f, cursorAlpha.y + 1.f }, { alphaWidth + 2.f, 2.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
+            }
+
+            g_Ctx.Cursor.y += popupHeight;
+            g_Ctx.LastItemMaxX = g_Ctx.WindowPos.x + popupWidth;
+        }
+        EndPopup();
+        g_Ctx.Style.WindowPadding = backupPad;
 
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
@@ -4385,6 +4570,7 @@ namespace Shadow {
         }
 
         bool btnHovered = !disabled && IsMouseHovering(btnPos, btnSize);
+        std::string popupName = std::format("##Hotkey_{}", id);
 
         if (btnHovered) {
             if (g_Ctx.MouseClicked) {
@@ -4395,13 +4581,13 @@ namespace Shadow {
             else if (g_Ctx.RightMouseClicked) {
                 g_Ctx.IsDragging = false;
 
-                if (g_Ctx.ActiveDropdownId == id) g_Ctx.ActiveDropdownId = 0;
+                if (IsPopupOpen(HashString(popupName))) {
+                    CloseCurrentPopup();
+                }
                 else {
-                    g_Ctx.ActiveDropdownId = id;
-                    g_Ctx.DropdownCurrentItem = reinterpret_cast<int*>(hotkey_mode);
-                    g_Ctx.DropdownItems = modeStrs;
-                    g_Ctx.DropdownPos = { btnPos.x, btnPos.y + btnSize.y };
-                    g_Ctx.DropdownSize = { 100.f, 0.f };
+                    OpenPopup(HashString(popupName));
+                    SetNextWindowPos({ btnPos.x, btnPos.y + btnSize.y });
+                    SetNextWindowSize({ 100.f, modeStrs.size() * g_Ctx.ItemHeight });
                 }
                 g_Ctx.RightMouseClicked = false;
             }
@@ -4410,6 +4596,38 @@ namespace Shadow {
         Color bgColor = disabled ? g_Ctx.Style.Colors[GuiCol_ControlDisabled] : (btnHovered ? g_Ctx.Style.Colors[GuiCol_ButtonHovered] : g_Ctx.Style.Colors[GuiCol_Button]);
         DrawRectFilled(btnPos, btnSize, bgColor);
         DrawTextString(keyName, { btnPos.x + g_Ctx.Style.FramePadding.x, btnPos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor);
+
+        Vec2 backupPad = g_Ctx.Style.WindowPadding;
+        g_Ctx.Style.WindowPadding = { 0.f, 0.f };
+
+        // 限制其拖拽
+        if (BeginPopup(popupName, ShadowWindowFlags_NoMove)) {
+            for (size_t i = 0; i < modeStrs.size(); ++i) {
+                Vec2 itemPos = g_Ctx.Cursor;
+                bool itemHovered = IsMouseHoveringRaw(itemPos, { 100.f, g_Ctx.ItemHeight });
+                bool isCurrentItem = (*hotkey_mode == static_cast<HotkeyMode>(i));
+
+                if (itemHovered) {
+                    DrawRectFilled(itemPos, { 100.f, g_Ctx.ItemHeight }, g_Ctx.Style.Colors[GuiCol_FrameBgHovered]);
+                    if (g_Ctx.MouseClicked) {
+                        *hotkey_mode = static_cast<HotkeyMode>(i);
+                        CloseCurrentPopup();
+                        g_Ctx.MouseClicked = false;
+                    }
+                }
+                else if (isCurrentItem) {
+                    DrawRectFilled(itemPos, { 100.f, g_Ctx.ItemHeight }, g_Ctx.Style.Colors[GuiCol_DropdownActive]);
+                }
+
+                Color textCol = isCurrentItem ? g_Ctx.Style.Colors[GuiCol_TextHighlight] : g_Ctx.Style.Colors[GuiCol_Text];
+                DrawTextString(modeStrs[i], { itemPos.x + g_Ctx.Style.FramePadding.x, itemPos.y + g_Ctx.Style.FramePadding.y }, textCol);
+
+                g_Ctx.Cursor.y += g_Ctx.ItemHeight;
+            }
+            g_Ctx.LastItemMaxX = g_Ctx.WindowPos.x + 100.f;
+        }
+        EndPopup();
+        g_Ctx.Style.WindowPadding = backupPad;
 
         switch (*hotkey_mode) {
         case HotkeyMode::None:      *is_active = false; break;

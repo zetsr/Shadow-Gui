@@ -297,6 +297,8 @@ namespace Shadow {
 
         bool IsDragging; 
         Vec2 DragOffset;
+
+        bool Closed;
     };
 
     struct GuiContext {
@@ -1132,9 +1134,16 @@ namespace Shadow {
     }
 
     inline void CloseCurrentPopup() {
-        if (!g_Ctx.ActivePopups.empty()) {
-            g_Ctx.ActivePopups.pop_back();
+        if (g_Ctx.ActivePopups.empty())
+            return;
+
+        // 如果当前处于弹窗上下文，标记栈顶备份为已关闭
+        if (g_Ctx.InPopup && !g_Ctx.PopupStack.empty()) {
+            auto& backup = g_Ctx.PopupStack.back();
+            backup.Closed = true;
         }
+
+        g_Ctx.ActivePopups.pop_back();
     }
 
     inline void PushClipRect(Vec2 min, Vec2 max) {
@@ -1652,6 +1661,7 @@ namespace Shadow {
         if (!IsPopupOpen(id)) {
             PopupBackupState dummy{};
             dummy.Id = 0;
+            dummy.Closed = false;
             g_Ctx.PopupStack.push_back(dummy);
             return false;
         }
@@ -1674,6 +1684,7 @@ namespace Shadow {
         backup.CurrentWindow = g_Ctx.CurrentWindow;
         backup.IsDragging = g_Ctx.IsDragging;
         backup.DragOffset = g_Ctx.DragOffset;
+        backup.Closed = false;
 
         g_Ctx.PopupStack.push_back(backup);
 
@@ -1766,22 +1777,24 @@ namespace Shadow {
         auto backup = g_Ctx.PopupStack.back();
         g_Ctx.PopupStack.pop_back();
 
-        // 识别到是没有展示状态的弹窗压栈
+        // 跳过无效的 dummy 状态
         if (backup.Id == 0) {
             return;
         }
 
         PopClipRect();
 
-        auto& win = g_Ctx.Windows[backup.Id];
-        win.Size.y = g_Ctx.Cursor.y - g_Ctx.WindowPos.y + g_Ctx.Style.WindowPadding.y;
-        win.Size.x = std::max(win.Size.x, g_Ctx.LastItemMaxX - g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x);
+        // 如果弹窗已被提前关闭，不更新窗口尺寸（其他状态仍需要恢复）
+        if (!backup.Closed) {
+            auto& win = g_Ctx.Windows[backup.Id];
+            win.Size.y = g_Ctx.Cursor.y - g_Ctx.WindowPos.y + g_Ctx.Style.WindowPadding.y;
+            win.Size.x = std::max(win.Size.x, g_Ctx.LastItemMaxX - g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x);
 
-        // 保存自身的拖拽状态
-        win.IsDragging = g_Ctx.IsDragging;
-        win.DragOffset = g_Ctx.DragOffset;
+            win.IsDragging = g_Ctx.IsDragging;
+            win.DragOffset = g_Ctx.DragOffset;
+        }
 
-        // 恢复父级的状态
+        // 恢复父级状态（无论如何都需要恢复）
         g_Ctx.WindowPos = backup.WindowPos;
         g_Ctx.WindowSize = backup.WindowSize;
         g_Ctx.Cursor = backup.Cursor;

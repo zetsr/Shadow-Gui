@@ -704,6 +704,58 @@ namespace Shadow {
                     }
                     Shadow::TreePop();
 
+                    if (Shadow::TreeNode(T(U8("Popup Examples"), U8("弹窗示例")))) {
+                        static int popup_counter = 0;
+                        static std::string popupName = "my_popup##my_popup";
+
+                        // 打开弹窗按钮（并设置位置）
+                        if (Shadow::Button(T(U8("Open Popup"), U8("打开弹窗")))) {
+                            Shadow::SetNextWindowPos({ Shadow::g_Ctx.MousePos.x + 20, Shadow::g_Ctx.MousePos.y + 20 });
+                            Shadow::OpenPopup(Shadow::HashString(popupName));
+                        }
+                        Shadow::SameLine();
+                        Shadow::TextColored(Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_TextDisabled],
+                            T(U8("(Click to open a popup at mouse position)"),
+                                U8("(点击在鼠标位置打开弹窗)")));
+
+                        // 显示当前弹窗状态
+                        bool is_open = Shadow::IsPopupOpen(Shadow::HashString(popupName));
+                        std::string status_text = g_UseChinese ?
+                            std::format("弹窗当前状态: {}", is_open ? "打开" : "关闭") :
+                            std::format("Popup is currently: {}", is_open ? "Open" : "Closed");
+
+                        Shadow::Text(status_text);
+                        Shadow::SameLine();
+
+                        if (Shadow::Button(T(U8("Close Popup"), U8("关闭弹窗")))) {
+                            Shadow::CloseCurrentPopup();
+                        }
+
+                        // 定义弹窗内容
+                        if (Shadow::BeginPopup(popupName, Shadow::ShadowWindowFlags_None)) {
+                            Shadow::Text(T(U8("This is a popup!"), U8("这是一个弹窗！")));
+
+                            // 计数器显示
+                            std::string counter_text = g_UseChinese ?
+                                std::format("计数器: {}", popup_counter) :
+                                std::format("Counter: {}", popup_counter);
+
+                            Shadow::Text(counter_text);
+
+                            if (Shadow::Button(T(U8("Increment"), U8("增加")))) {
+                                popup_counter++;
+                            }
+
+                            Shadow::SameLine();
+
+                            if (Shadow::Button(T(U8("Close"), U8("关闭")))) {
+                                Shadow::CloseCurrentPopup();
+                            }
+                        }
+                        Shadow::EndPopup();
+                    }
+                    Shadow::TreePop();
+
                     if (Shadow::TreeNode(T(U8("ListBox Demos"), U8("列表框演示")))) {
 
                         if (Shadow::TreeNode(T(U8("ListBox with Selectables"), U8("使用可选项的列表框")))) {

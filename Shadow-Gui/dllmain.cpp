@@ -114,6 +114,7 @@ namespace Hook {
 
         static bool bWasAnimating = false;
         static bool gameOriginalCursorState = false;
+        static bool bInit = false;
 
         bool isAnimating = (bShowMenu);
 
@@ -135,8 +136,10 @@ namespace Hook {
 
         if (!bShowMenu) return;
 
+        if (!bInit) Shadow::SetNextWindowPos({ 100.f, 100.f });
         Shadow::ShowDemoWindow();
 
+        if (!bInit) Shadow::SetNextWindowPos({ 400.f, 200.f });
         if (Shadow::Begin(U8("测试菜单 / Demo Menu##main_window1"), Shadow::ShadowWindowFlags_TextAlignCenter)) {
 
             if (Shadow::BeginTabBar("MainTabs##tabs1", Shadow::ShadowTabBarFlags_NoScrollbar)) {
@@ -170,6 +173,7 @@ namespace Hook {
         }
         Shadow::End();
 
+        if (!bInit) Shadow::SetNextWindowPos({ 700.f, 300.f });
         if (Shadow::Begin(U8("测试菜单 / Demo Menu##main_window2"), Shadow::ShadowWindowFlags_TextAlignCenter)) {
 
             if (Shadow::BeginTabBar("MainTabs##tabs2", Shadow::ShadowTabBarFlags_NoScrollbar)) {
@@ -226,6 +230,7 @@ namespace Hook {
         }
         Shadow::End();
 
+        if (!bInit) Shadow::SetNextWindowPos({ 1000.f, 400.f }); bInit = true;
         if (Shadow::Begin("Main Menu##main_window3", Shadow::ShadowWindowFlags_NoResize)) {
             if (Shadow::BeginTabBar("MainTabs##tabs3", Shadow::ShadowTabBarFlags_Reorderable)) {
                 if (Shadow::BeginTabItem("Misc##tab3")) {

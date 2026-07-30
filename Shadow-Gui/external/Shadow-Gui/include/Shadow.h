@@ -330,6 +330,9 @@ namespace Shadow {
         GuiStyle Style;
         bool StyleInitialized = false;
 
+        double RealTimeSeconds = 0.0;
+        double DeltaTime = 0.0;
+
         Vec2 MousePos = { 0.f, 0.f };
         bool MouseDown = false;
         bool MouseClicked = false;
@@ -362,6 +365,7 @@ namespace Shadow {
         ShadowDrawList PopupDrawList;
         ShadowDrawList TooltipDrawList;
         ShadowDrawList BackgroundDrawList;
+        ShadowDrawList ForegroundDrawList;
 
         Vec2 WindowPos = { 100.f, 100.f };
         Vec2 WindowSize = { 500.f, 400.f };
@@ -378,6 +382,7 @@ namespace Shadow {
         int TabBarStack = 0;
         int TabItemStack = 0;
         int TreeNodeStack = 0;
+        std::vector<size_t> IDStack;
         std::string LastErrorMsg;
 
         bool IsResizing = false;
@@ -522,7 +527,6 @@ namespace Shadow {
         size_t HoveredListBoxIdPreviousFrame = 0;
     };
 
-
     inline GuiContext g_Ctx;
     inline SDK::UFont*& DefaultFont = g_Ctx.DefaultFont;
 
@@ -531,6 +535,14 @@ namespace Shadow {
         if (g_Ctx.InPopup) return &g_Ctx.PopupDrawList;
         if (g_Ctx.CurrentWindow) return &g_Ctx.CurrentWindow->DrawList;
         return &g_Ctx.BackgroundDrawList;
+    }
+
+    inline ShadowDrawList* GetBackgroundDrawList() {
+        return &g_Ctx.BackgroundDrawList;
+    }
+
+    inline ShadowDrawList* GetForegroundDrawList() {
+        return &g_Ctx.ForegroundDrawList;
     }
 
     inline GuiStyle& GetStyle() {
@@ -727,6 +739,11 @@ namespace Shadow {
 
     inline void ParseLabel(std::string_view raw, std::string_view& display_name, size_t& id) {
         id = HashString(raw);
+
+        if (!g_Ctx.IDStack.empty()) {
+            id ^= g_Ctx.IDStack.back() + 0x9e3779b9 + (id << 6) + (id >> 2);
+        }
+
         size_t pos = raw.find("##");
         display_name = (pos != std::string_view::npos) ? raw.substr(0, pos) : raw;
     }
@@ -1423,6 +1440,28 @@ namespace Shadow {
         }
     }
 
+    inline void PushID(int int_id) {
+        size_t id = std::hash<int>()(int_id);
+        if (!g_Ctx.IDStack.empty()) {
+            id ^= g_Ctx.IDStack.back() + 0x9e3779b9 + (id << 6) + (id >> 2);
+        }
+        g_Ctx.IDStack.push_back(id);
+    }
+
+    inline void PushID(std::string_view str_id) {
+        size_t id = HashString(str_id);
+        if (!g_Ctx.IDStack.empty()) {
+            id ^= g_Ctx.IDStack.back() + 0x9e3779b9 + (id << 6) + (id >> 2);
+        }
+        g_Ctx.IDStack.push_back(id);
+    }
+
+    inline void PopID() {
+        if (!g_Ctx.IDStack.empty()) {
+            g_Ctx.IDStack.pop_back();
+        }
+    }
+
     inline void PushTextWrapPos(float wrap_pos_x = 0.0f) {
         // 如果传入的是 0.0f（默认参数）或负数，则使用当前窗口的默认右边界
         if (wrap_pos_x <= 0.0f) {
@@ -1964,7 +2003,8 @@ namespace Shadow {
 
         size_t currentId = (id != 0) ? id : (static_cast<size_t>(g_Ctx.WidgetCount) + 1000000ULL);
         g_Ctx.HoveredIdCurrentFrame = currentId;
-        uint64_t currentTime = GetTickCount64();
+
+        uint64_t currentTime = static_cast<uint64_t>(g_Ctx.RealTimeSeconds * 1000.0);
 
         if (g_Ctx.LastHoveredIdEval != currentId) {
             if (g_Ctx.HoveredIdPreviousFrame != currentId) {
@@ -2379,7 +2419,10 @@ namespace Shadow {
         if (isActive) {
             std::string preCursor = displayText.substr(0, g_Ctx.InputCursorPos);
             float curW = MeasureTextSize(preCursor).x;
-            if ((GetTickCount64() / 500) % 2 == 0) {
+
+            uint64_t currentMS = static_cast<uint64_t>(g_Ctx.RealTimeSeconds * 1000.0);
+
+            if ((currentMS / 500) % 2 == 0) {
                 Color cursorColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
                 GetWindowDrawList()->AddRectFilled({ textX + curW, textY }, { 2.f, size.y - 4.f }, cursorColor);
             }
@@ -2663,6 +2706,18 @@ namespace Shadow {
 
     inline void NewFrame(SDK::UCanvas* Canvas) {
         g_Ctx.Canvas = Canvas;
+
+        if (auto world = SDK::UWorld::GetWorld()) {
+            g_Ctx.RealTimeSeconds = SDK::UGameplayStatics::GetRealTimeSeconds(world);
+            g_Ctx.DeltaTime = SDK::UGameplayStatics::GetWorldDeltaSeconds(world);
+        }
+        else {
+            g_Ctx.RealTimeSeconds = 0.0;
+            g_Ctx.DeltaTime = 0.0;
+        }
+
+        uint64_t currentMS = static_cast<uint64_t>(g_Ctx.RealTimeSeconds * 1000.0);
+
         if (!g_Ctx.DefaultFont) {
             if (SDK::UEngine::GetEngine()) { g_Ctx.DefaultFont = SDK::UEngine::GetEngine()->LargeFont; }
         }
@@ -2699,6 +2754,7 @@ namespace Shadow {
         g_Ctx.PopupDrawList.CmdBuffer.clear();
         g_Ctx.TooltipDrawList.CmdBuffer.clear();
         g_Ctx.BackgroundDrawList.CmdBuffer.clear();
+        g_Ctx.ForegroundDrawList.CmdBuffer.clear();
 
         g_Ctx.HoveredWindowId = 0;
         g_Ctx.PopupStack.clear();
@@ -2729,9 +2785,7 @@ namespace Shadow {
         g_Ctx.TabItemStack = 0;
         g_Ctx.TreeNodeStack = 0;
         g_Ctx.ListBoxStack = 0;
-        g_Ctx.IndentX = 0.f;
-        g_Ctx.TreeNodeNoIndentStack.clear();
-        g_Ctx.DisabledStack.clear();
+        g_Ctx.IDStack.clear();
 
         g_Ctx.TabBarHoverRects = std::move(g_Ctx.TabBarHoverRectsPending);
         g_Ctx.TabBarHoverRectsPending.clear();
@@ -2739,12 +2793,12 @@ namespace Shadow {
         float dx = g_Ctx.MousePos.x - g_Ctx.MousePosPrev.x;
         float dy = g_Ctx.MousePos.y - g_Ctx.MousePosPrev.y;
         if (dx * dx + dy * dy > 4.0f) {
-            g_Ctx.MouseStationaryStartTime = GetTickCount64();
+            g_Ctx.MouseStationaryStartTime = currentMS;
             g_Ctx.MouseIsStationary = false;
             g_Ctx.MousePosPrev = g_Ctx.MousePos;
         }
         else {
-            if (GetTickCount64() - g_Ctx.MouseStationaryStartTime >= 150) {
+            if (currentMS - g_Ctx.MouseStationaryStartTime >= 150) {
                 g_Ctx.MouseIsStationary = true;
             }
         }
@@ -2757,7 +2811,7 @@ namespace Shadow {
         g_Ctx.HoveredListBoxIdPreviousFrame = g_Ctx.HoveredListBoxIdCurrentFrame;
         g_Ctx.HoveredListBoxIdCurrentFrame = 0;
 
-        if (GetTickCount64() > g_Ctx.SharedDelayExpirationTime) {
+        if (currentMS > g_Ctx.SharedDelayExpirationTime) {
             g_Ctx.SharedDelayActive = false;
         }
     }
@@ -3516,7 +3570,7 @@ namespace Shadow {
                     InternalDrawTriangle(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
                 }
             }
-        };
+            };
 
         ExecCmds(g_Ctx.BackgroundDrawList.CmdBuffer);
 
@@ -3529,6 +3583,7 @@ namespace Shadow {
 
         ExecCmds(g_Ctx.PopupDrawList.CmdBuffer);
         ExecCmds(g_Ctx.TooltipDrawList.CmdBuffer);
+        ExecCmds(g_Ctx.ForegroundDrawList.CmdBuffer);
 
         CheckAndDrawErrors();
 
@@ -4391,6 +4446,12 @@ namespace Shadow {
         g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
         g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+    }
+
+    inline void ColorPicker(std::string_view name, Color* color, ShadowColorPickerFlags flags = ShadowColorPickerFlags_None, Vec2 size_arg = { 0.f, 0.f }) {
+        if (color) {
+            ColorPicker(name, &color->r, &color->g, &color->b, &color->a, flags, size_arg);
+        }
     }
 
     inline bool HotKey(std::string_view name, int* hotkey, ShadowHotkeyFlags flags = ShadowHotkeyFlags_None, Vec2 size_arg = { 0.f, 0.f }) {

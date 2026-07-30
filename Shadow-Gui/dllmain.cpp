@@ -206,11 +206,14 @@ namespace Hook {
 
                         if (Shadow::BeginListBox(U8("##DynamicItemListBox"), { 300.f, 180.f })) {
                             for (int i = 0; i < static_cast<int>(item_list.size()); ++i) {
-                                bool is_selected = (selected_index == i);
+                                Shadow::PushID(i);
 
-                                if (Shadow::Selectable(item_list[i], &is_selected)) {
+                                bool is_selected = (selected_index == i);
+                                if (Shadow::Switch(item_list[i], &is_selected)) {
                                     selected_index = i;
                                 }
+
+                                Shadow::PopID();
                             }
                         }
                         Shadow::EndListBox();
@@ -243,6 +246,13 @@ namespace Hook {
         }
 
         Shadow::GetWindowDrawList()->AddText({ 5.f, 5.f }, { 1.f, 0.f, 0.f, 1.f }, U8("你好！"));
+
+        Shadow::PushFont(Shadow::DefaultFont, 2.0f);
+        Shadow::GetWindowDrawList()->AddText({ 5.f, 25.f }, { 1.f, 0.f, 0.f, 1.f }, U8("你好！"));
+        Shadow::PopFont();
+
+        Shadow::GetBackgroundDrawList()->AddText({25.f, 5.f}, {1.f, 0.f, 0.f, 1.f}, U8("你好！"));
+        Shadow::GetForegroundDrawList()->AddText({ 55.f, 5.f }, { 1.f, 0.f, 0.f, 1.f }, U8("你好！"));
 
         static float baseLength = 100.0f;
         static float height = baseLength * 0.866f;  // 高度 = 底边长度 × (√3/2) ≈ 底边长度 × 0.866

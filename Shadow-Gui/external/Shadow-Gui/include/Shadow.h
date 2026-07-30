@@ -1295,19 +1295,42 @@ namespace Shadow {
 
     inline void InternalDrawRect(Vec2 pos, Vec2 size, Color color, float thickness, bool clipEnabled, Vec2 clipMin, Vec2 clipMax) {
         if (!g_Ctx.Canvas) return;
+        if (size.x <= 0.f || size.y <= 0.f) return;
+
         if (clipEnabled) {
-            if (pos.x + size.x < clipMin.x || pos.x > clipMax.x || pos.y + size.y < clipMin.y || pos.y > clipMax.y) return;
-            if (pos.x < clipMin.x) { size.x -= (clipMin.x - pos.x); pos.x = clipMin.x; }
-            if (pos.y < clipMin.y) { size.y -= (clipMin.y - pos.y); pos.y = clipMin.y; }
-            if (pos.x + size.x > clipMax.x) size.x = clipMax.x - pos.x;
-            if (pos.y + size.y > clipMax.y) size.y = clipMax.y - pos.y;
-            if (size.x <= 0.f || size.y <= 0.f) return;
+            // 考虑到线宽膨胀，裁剪剔除的范围需适当放宽 halfThick
+            float half = thickness * 0.5f;
+            if (pos.x + size.x + half < clipMin.x || pos.x - half > clipMax.x ||
+                pos.y + size.y + half < clipMin.y || pos.y - half > clipMax.y)
+                return;
         }
 
-        InternalDrawLine({ pos.x, pos.y }, { pos.x + size.x, pos.y }, color, thickness, clipEnabled, clipMin, clipMax);
-        InternalDrawLine({ pos.x + size.x, pos.y }, { pos.x + size.x, pos.y + size.y }, color, thickness, clipEnabled, clipMin, clipMax);
-        InternalDrawLine({ pos.x + size.x, pos.y + size.y }, { pos.x, pos.y + size.y }, color, thickness, clipEnabled, clipMin, clipMax);
-        InternalDrawLine({ pos.x, pos.y + size.y }, { pos.x, pos.y }, color, thickness, clipEnabled, clipMin, clipMax);
+        float halfThick = thickness * 0.5f;
+
+        // 1. 上边 (水平向右)：左端向左伸展 halfThick，右端向右伸展 halfThick
+        Vec2 topL = { pos.x - halfThick, pos.y };
+        Vec2 topR = { pos.x + size.x + halfThick, pos.y };
+        InternalDrawLine(topL, topR, color, thickness, clipEnabled, clipMin, clipMax);
+
+        // 2. 下边 (水平向右)：同样两端延长
+        Vec2 botL = { pos.x - halfThick, pos.y + size.y };
+        Vec2 botR = { pos.x + size.x + halfThick, pos.y + size.y };
+        InternalDrawLine(botL, botR, color, thickness, clipEnabled, clipMin, clipMax);
+
+        // 3. 左边 (垂直向下)：上下端点已经由顶部和底部的横线覆盖，垂直线按原始长度或内部缩进即可
+        //    这里为了防止半透明颜色重复叠加导致四个角颜色变深，垂直线不重叠横线区域：
+        Vec2 leftT = { pos.x, pos.y + halfThick };
+        Vec2 leftB = { pos.x, pos.y + size.y - halfThick };
+        if (leftB.y > leftT.y) {
+            InternalDrawLine(leftT, leftB, color, thickness, clipEnabled, clipMin, clipMax);
+        }
+
+        // 4. 右边 (垂直向下)：同上处理
+        Vec2 rightT = { pos.x + size.x, pos.y + halfThick };
+        Vec2 rightB = { pos.x + size.x, pos.y + size.y - halfThick };
+        if (rightB.y > rightT.y) {
+            InternalDrawLine(rightT, rightB, color, thickness, clipEnabled, clipMin, clipMax);
+        }
     }
 
     inline void InternalDrawRectFilled(Vec2 pos, Vec2 size, Color color, bool clipEnabled, Vec2 clipMin, Vec2 clipMax) {

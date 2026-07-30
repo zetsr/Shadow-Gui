@@ -3100,7 +3100,7 @@ namespace Shadow {
 
             bool hoveringThumb = IsMouseHoveringRaw(thumbPos, thumbSize);
             Color thumbColor = g_Ctx.IsDraggingScrollbar ? g_Ctx.Style.Colors[GuiCol_SliderGrab] : (hoveringThumb ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_Border]);
-            GetWindowDrawList()->AddRect(thumbPos, thumbSize, thumbColor);
+            GetWindowDrawList()->AddRectFilled(thumbPos, thumbSize, thumbColor);
         }
 
         if (!noResize) {

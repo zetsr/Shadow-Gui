@@ -1,11 +1,11 @@
-﻿#define U8(str) reinterpret_cast<const char*>(u8##str)
-#include <windows.h>
+﻿#include <windows.h>
 #include <iostream>
 #include "external/AOBScan/AOBScan.hpp"
 #include "external/MinHook/include/MinHook.h"
 #include "external/CppSDK/SDK.hpp"
 #include "external/Shadow-Gui/include/Shadow.h"
 #include "shadow_demo.h"
+#include "Example.h"
 
 namespace Hook {
     bool bShowMenu = false;
@@ -133,156 +133,17 @@ namespace Hook {
 
         Shadow::NewFrame(canvas);
         Shadow::UpdateAllHotkeyStates();
+        Shadow::StyleColorsOcean();
 
         if (bShowMenu) {
-            if (!bInit) Shadow::SetNextWindowPos({ 100.f, 100.f });
-            Shadow::ShowDemoWindow();
-
-            if (!bInit) Shadow::SetNextWindowPos({ 400.f, 200.f });
-            if (Shadow::Begin(U8("测试菜单 / Demo Menu##main_window1"), Shadow::ShadowWindowFlags_TextAlignCenter)) {
-
-                if (Shadow::BeginTabBar("MainTabs##tabs1", Shadow::ShadowTabBarFlags_NoScrollbar)) {
-
-                    if (Shadow::BeginTabItem(U8("设置 / Settings##tab1"))) {
-                        static bool bTest = false;
-                        static Shadow::Color cTest = { 1.0f, 1.0f, 1.0f, 1.0f };
-
-                        // 1. 先定义一个按钮来打开弹窗
-                        if (Shadow::Button(U8("打开测试弹窗"))) {
-                            Shadow::OpenPopup(Shadow::HashString("Test#BeginPopup_TEST"));
-                        }
-
-                        // 2. 然后显示弹窗
-                        if (Shadow::BeginPopup("Test#BeginPopup_TEST")) {
-                            Shadow::Switch(U8("测试开关 / Test Switch"), &bTest);
-                            Shadow::SameLine();
-                            Shadow::ColorPicker(U8("测试开关 / Test Switch"),
-                                &cTest.r, &cTest.g, &cTest.b, &cTest.a,
-                                Shadow::ShadowColorPickerFlags_NoText |
-                                Shadow::ShadowColorPickerFlags_NoRightAlign
-                            );
-                        }
-                        Shadow::EndPopup();
-
-                    }
-                    Shadow::EndTabItem();
-
-                }
-                Shadow::EndTabBar();
-            }
-            Shadow::End();
-
-            if (!bInit) Shadow::SetNextWindowPos({ 700.f, 300.f });
-            if (Shadow::Begin(U8("测试菜单 / Demo Menu##main_window2"), Shadow::ShadowWindowFlags_TextAlignCenter)) {
-
-                if (Shadow::BeginTabBar("MainTabs##tabs2", Shadow::ShadowTabBarFlags_NoScrollbar)) {
-
-                    if (Shadow::BeginTabItem(U8("设置 / Settings##tab2"))) {
-                        static std::string input_buffer = U8("");
-                        static std::vector<std::string> item_list = {
-                            U8("默认项目 1"),
-                            U8("默认项目 2")
-                        };
-                        static int selected_index = -1;
-                        static std::string input_str = U8("输入要新建的项目名称...");
-
-                        Shadow::InputTextWithHint(U8("##ItemInput"), input_str, input_buffer, Shadow::ShadowInputTextFlags_NoName, { Shadow::MeasureTextSize(input_str).x + Shadow::g_Ctx.Style.WindowPadding.x });
-
-                        if (Shadow::Button(U8("创建"))) {
-                            if (!input_buffer.empty()) {
-                                item_list.push_back(input_buffer);
-                                input_buffer.clear();
-                            }
-                        }
-
-                        Shadow::SameLine();
-                        if (Shadow::Button(U8("删除"))) {
-                            if (selected_index >= 0 && selected_index < static_cast<int>(item_list.size())) {
-                                item_list.erase(item_list.begin() + selected_index);
-
-                                selected_index = -1;
-                            }
-                        }
-
-                        if (Shadow::BeginListBox(U8("##DynamicItemListBox"), { 300.f, 180.f })) {
-                            for (int i = 0; i < static_cast<int>(item_list.size()); ++i) {
-                                Shadow::PushID(i);
-
-                                bool is_selected = (selected_index == i);
-                                if (Shadow::Switch(item_list[i], &is_selected)) {
-                                    selected_index = i;
-                                }
-
-                                Shadow::PopID();
-                            }
-                        }
-                        Shadow::EndListBox();
-
-                        if (selected_index >= 0 && selected_index < static_cast<int>(item_list.size())) {
-                            Shadow::TextColored({ 0.4f, 0.8f, 1.0f, 1.0f }, U8("当前选中: ") + item_list[selected_index]);
-                        }
-                        else {
-                            Shadow::TextDisabled(U8("当前未选中任何项目"));
-                        }
-                    }
-                    Shadow::EndTabItem();
-
-                }
-                Shadow::EndTabBar();
-            }
-            Shadow::End();
-
-            if (!bInit) Shadow::SetNextWindowPos({ 1000.f, 400.f }); bInit = true;
-            if (Shadow::Begin("Main Menu##main_window3", Shadow::ShadowWindowFlags_NoResize)) {
-                if (Shadow::BeginTabBar("MainTabs##tabs3", Shadow::ShadowTabBarFlags_Reorderable)) {
-                    if (Shadow::BeginTabItem("Misc##tab3")) {
-                        Shadow::TextColored({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("你好！"));
-                    }
-                    Shadow::EndTabItem();
-                }
-                Shadow::EndTabBar();
-            }
-            Shadow::End();
+            Example::DrawGUI();
         }
-
-        Shadow::GetWindowDrawList()->AddText({ 5.f, 5.f }, { 1.f, 0.f, 0.f, 1.f }, U8("你好！"));
-
-        Shadow::PushFont(Shadow::DefaultFont, 2.0f);
-        Shadow::GetWindowDrawList()->AddText({ 5.f, 25.f }, { 1.f, 0.f, 0.f, 1.f }, U8("你好！"));
-        Shadow::PopFont();
-
-        Shadow::GetBackgroundDrawList()->AddText({25.f, 5.f}, {1.f, 0.f, 0.f, 1.f}, U8("你好！"));
-        Shadow::GetForegroundDrawList()->AddText({ 55.f, 5.f }, { 1.f, 0.f, 0.f, 1.f }, U8("你好！"));
-
-        static float baseLength = 100.0f;
-        static float height = baseLength * 0.866f;  // 高度 = 底边长度 × (√3/2) ≈ 底边长度 × 0.866
-
-        Shadow::GetWindowDrawList()->AddTriangleFilled(
-            { 70.f, 80.f },               // 顶部顶点 (底边中点 x=70, y=80)
-            { 20.f, 80.f + height },      // 左下顶点 (y = 80 + 86.6 = 166.6)
-            { 120.f, 80.f + height },     // 右下顶点 (y = 80 + 86.6 = 166.6)
-            { 1.f, 0.f, 0.f, 1.f }        // 红色
-        );
-
-        Shadow::GetWindowDrawList()->AddTriangle(
-            { 220.f, 80.f },              // 顶部顶点 (底边中点 x=220, y=80)
-            { 170.f, 80.f + height },     // 左下顶点
-            { 270.f, 80.f + height },     // 右下顶点
-            { 0.f, 1.f, 0.f, 1.f },       // 绿色
-            2.0f                          // 描边宽度 2 像素
-        );
-
-        Shadow::GetWindowDrawList()->AddRect({ 400.f, 5.f }, { 50.f, 25.f }, {1.f, 1.f, 1.f, 0.25f}, 2.f);
-        Shadow::GetWindowDrawList()->AddRect({ 400.f, 75.f }, { 50.f, 25.f }, { 1.f, 1.f, 1.f, 1.f }, 1.f);
-        Shadow::GetWindowDrawList()->AddRectFilled({ 400.f, 155.f }, { 50.f, 25.f }, { 1.f, 1.f, 1.f, 0.5f });
-
-        Shadow::GetWindowDrawList()->AddLine({ 5.f, 200.f }, { 100.f, 200.f }, {1.f, 1.f, 1.f, 0.25f});
 
         Shadow::Render();
     }
 
     void FindPostRender() {
-        std::string pattern = "48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89";
+        std::string pattern = "8B C2 35 ?? ?? ?? ?? 44";
 
              // ASA 8B C2 35 ?? ?? ?? ?? 44
         // DRACONIA 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89

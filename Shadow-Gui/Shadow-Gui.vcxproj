@@ -30,6 +30,7 @@
     <ClCompile Include="external\MinHook\src\trampoline.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Example.h" />
     <ClInclude Include="external\AOBScan\AOBScan.hpp" />
     <ClInclude Include="external\CppSDK\PropertyFixup.hpp" />
     <ClInclude Include="external\CppSDK\SDK.hpp" />

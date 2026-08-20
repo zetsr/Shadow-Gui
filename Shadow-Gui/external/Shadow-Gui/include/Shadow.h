@@ -567,9 +567,9 @@ namespace Shadow {
         colors[GuiCol_Button] = { 0.025f, 0.032f, 0.045f, 1.000f };
         colors[GuiCol_ButtonHovered] = { 0.045f, 0.055f, 0.075f, 1.000f };
 
-        colors[GuiCol_Tab] = { 0.008f, 0.012f, 0.016f, 1.000f };
-        colors[GuiCol_TabHovered] = { 0.035f, 0.045f, 0.060f, 1.000f };
-        colors[GuiCol_TabActive] = { 0.015f, 0.020f, 0.028f, 1.000f };
+        colors[GuiCol_Tab] = { 0.006f, 0.010f, 0.014f, 1.000f };
+        colors[GuiCol_TabHovered] = { 0.070f, 0.080f, 0.095f, 1.000f };
+        colors[GuiCol_TabActive] = { 0.045f, 0.055f, 0.070f, 1.000f };
 
         colors[GuiCol_SliderGrab] = { 0.140f, 0.185f, 0.250f, 1.000f };
         colors[GuiCol_SliderKnob] = { 0.860f, 0.860f, 0.860f, 1.000f };

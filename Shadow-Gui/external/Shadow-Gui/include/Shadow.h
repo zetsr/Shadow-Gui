@@ -167,7 +167,8 @@ namespace Shadow {
         ShadowInputTextFlags_AutoSelectAll = 1 << 8,
         ShadowInputTextFlags_ParseEmptyRefVal = 1 << 9,
         ShadowInputTextFlags_DisplayEmptyRefVal = 1 << 10,
-        ShadowInputTextFlags_NoName = 1 << 11
+        ShadowInputTextFlags_NoName = 1 << 11,
+        ShadowInputTextFlags_AlignCenter = 1 << 12
     };
     using ShadowInputTextFlags = int;
 
@@ -1458,8 +1459,6 @@ namespace Shadow {
     inline void UpdateItemHeight() {
         Vec2 charSize = MeasureTextSize("A");
         g_Ctx.ItemHeight = charSize.y > 0.f ? charSize.y + g_Ctx.Style.FramePadding.y * 2.f : 20.f;
-        g_Ctx.SliderInputWidthCache.clear();
-        g_Ctx.SliderInputLengthCache.clear();
     }
 
     inline void PushFont(SDK::UFont* font, float scale = 1.0f) {
@@ -1544,16 +1543,16 @@ namespace Shadow {
             for (size_t i = 0; i < wstr.size(); ++i) {
                 float charWidth = MeasureCharWidth(wstr[i]);
                 if (!foundStart) {
-                    if (currentX + charWidth > g_Ctx.ClipMin.x) {
+                    if (currentX >= g_Ctx.ClipMin.x) {
                         foundStart = true;
                         clippedWstr += wstr[i];
                         outPos.x = currentX;
                     }
-                    currentX += charWidth;
                 }
                 else {
                     clippedWstr += wstr[i];
                 }
+                currentX += charWidth;
             }
             if (!foundStart) {
                 shouldDraw = false;
@@ -2423,13 +2422,28 @@ namespace Shadow {
 
         Color bgColor = disabled ? g_Ctx.Style.Colors[GuiCol_ControlDisabled] : (isActive ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : (hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]));
         GetWindowDrawList()->AddRectFilled(pos, size, bgColor);
-        PushClipRect(pos, { pos.x + size.x, pos.y + size.y });
 
-        float textX = pos.x + g_Ctx.Style.FramePadding.x;
-        float textY = pos.y + g_Ctx.Style.FramePadding.y;
+        // 剪裁绘制区：一切超出文本框边界的内容都会被物理剔除
+        PushClipRect(pos, { pos.x + size.x, pos.y + size.y });
 
         std::string displayText = text;
         if (isPassword) displayText.assign(text.size(), '*');
+
+        // ==== 计算文本滚动偏移 ====
+        // 如果文本太长导致光标超越了右边界，我们会平滑的把整段文本和光标向左平移
+        float maxTextWidth = size.x - g_Ctx.Style.FramePadding.x * 2.f;
+        float textScrollX = 0.f;
+
+        if (isActive) {
+            std::string preCursor = displayText.substr(0, g_Ctx.InputCursorPos);
+            float curW = MeasureTextSize(preCursor).x;
+            if (curW > maxTextWidth) {
+                textScrollX = curW - maxTextWidth;
+            }
+        }
+
+        float textX = pos.x + g_Ctx.Style.FramePadding.x - textScrollX;
+        float textY = pos.y + g_Ctx.Style.FramePadding.y;
 
         if (isActive && g_Ctx.InputSelectionStart != -1 && g_Ctx.InputSelectionEnd != -1 && g_Ctx.InputSelectionStart != g_Ctx.InputSelectionEnd) {
             int s = std::clamp(std::min(g_Ctx.InputSelectionStart, g_Ctx.InputSelectionEnd), 0, (int)displayText.size());
@@ -4118,33 +4132,34 @@ namespace Shadow {
 
         size_t sliderInputId = id ^ HashString("_sliderInput");
 
-        if (g_Ctx.ActiveInputId != sliderInputId) {
-            int prec = 3;
-            if (step > 0.f) {
-                prec = 0;
-                float temp = step;
-                while (temp < 0.999f && prec < 5) {
-                    temp *= 10.0f;
-                    prec++;
-                }
+        int prec = 3;
+        if (step > 0.f) {
+            prec = 0;
+            float temp = step;
+            while (temp < 0.999f && prec < 5) {
+                temp *= 10.0f;
+                prec++;
             }
+        }
+
+        if (g_Ctx.ActiveInputId != sliderInputId) {
             g_Ctx.InputBuffers[sliderInputId] = std::format("{:.{}f}", *value, prec);
         }
 
-        float controlOffsetX = GetControlOffsetX();
-        float rightMargin = GetRightMargin();
-
-        std::string& inputStr = g_Ctx.InputBuffers[sliderInputId];
-        size_t currentLen = inputStr.length();
-
+        // [修复] 永远仅根据 min_val 和 max_val 计算最大理论物理宽度，彻底抛弃实时计算，断绝一切抖动源头
         auto it_width = g_Ctx.SliderInputWidthCache.find(sliderInputId);
-        auto it_len = g_Ctx.SliderInputLengthCache.find(sliderInputId);
-
-        if (it_len == g_Ctx.SliderInputLengthCache.end() || it_len->second != currentLen || it_width == g_Ctx.SliderInputWidthCache.end()) {
-            g_Ctx.SliderInputWidthCache[sliderInputId] = MeasureTextSize(inputStr).x + g_Ctx.Style.FramePadding.x * 2.f;
-            g_Ctx.SliderInputLengthCache[sliderInputId] = currentLen;
+        if (it_width == g_Ctx.SliderInputWidthCache.end()) {
+            std::string minStr = std::format("{:.{}f}", min_val, prec);
+            std::string maxStr = std::format("{:.{}f}", max_val, prec);
+            float wMin = MeasureTextSize(minStr).x;
+            float wMax = MeasureTextSize(maxStr).x;
+            // 选出极限宽度并加上充足 Padding 保留给非法的爆框输入
+            g_Ctx.SliderInputWidthCache[sliderInputId] = std::max(wMin, wMax) + g_Ctx.Style.FramePadding.x * 2.f + 4.f;
         }
         float valBoxWidth = g_Ctx.SliderInputWidthCache[sliderInputId];
+
+        float controlOffsetX = GetControlOffsetX();
+        float rightMargin = GetRightMargin();
 
         Vec2 sliderPos;
         float sliderWidth;
@@ -4217,7 +4232,8 @@ namespace Shadow {
             GetWindowDrawList()->AddRectFilled({ sliderPos.x + size.x, sliderPos.y }, { 1.f, size.y }, border);
         }
 
-        bool changed = InputTextEx(sliderInputId, valBoxPos, valBoxSize, g_Ctx.InputBuffers[sliderInputId], ShadowInputTextFlags_CharsDecimal);
+        // 传递新增加的 AlignCenter Flag
+        bool changed = InputTextEx(sliderInputId, valBoxPos, valBoxSize, g_Ctx.InputBuffers[sliderInputId], ShadowInputTextFlags_CharsDecimal | ShadowInputTextFlags_AlignCenter);
 
         if (changed && !disabled) {
             const std::string& str = g_Ctx.InputBuffers[sliderInputId];

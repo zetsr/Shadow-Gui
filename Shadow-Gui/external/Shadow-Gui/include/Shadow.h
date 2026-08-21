@@ -528,8 +528,24 @@ namespace Shadow {
         size_t HoveredListBoxIdPreviousFrame = 0;
     };
 
+    struct ShadowIO {
+        Vec2 DisplaySize;
+        float DeltaTime;
+    };
+
+    inline ShadowIO g_IO;
     inline GuiContext g_Ctx;
     inline SDK::UFont*& DefaultFont = g_Ctx.DefaultFont;
+
+    inline ShadowIO& GetIO() {
+        g_IO.DisplaySize = {
+            g_Ctx.Canvas ? static_cast<float>(g_Ctx.Canvas->SizeX) : 0.0f,
+            g_Ctx.Canvas ? static_cast<float>(g_Ctx.Canvas->SizeY) : 0.0f
+        };
+        g_IO.DeltaTime = static_cast<float>(g_Ctx.DeltaTime);
+
+        return g_IO;
+    }
 
     inline ShadowDrawList* GetWindowDrawList() {
         if (g_Ctx.InTooltip) return &g_Ctx.TooltipDrawList;
@@ -2862,6 +2878,9 @@ namespace Shadow {
         if (currentMS > g_Ctx.SharedDelayExpirationTime) {
             g_Ctx.SharedDelayActive = false;
         }
+
+        g_IO.DisplaySize = { Canvas ? static_cast<float>(Canvas->SizeX) : 0.0f, Canvas ? static_cast<float>(Canvas->SizeY) : 0.0f };
+        g_IO.DeltaTime = static_cast<float>(g_Ctx.DeltaTime);
     }
 
     inline bool Begin(std::string_view name, ShadowWindowFlags flags = ShadowWindowFlags_None) {

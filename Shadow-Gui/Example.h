@@ -8,6 +8,7 @@
 #include <vector>
 #include <format>
 #include <algorithm>
+#include <format>
 
 #include "external/CppSDK/SDK.hpp"
 #include "external/Shadow-Gui/include/Shadow.h"
@@ -431,6 +432,10 @@ namespace Example {
                 Menu::TextDescription(U("禁用来自外部来源的跌倒效果"));
 
                 Menu::Combo(U("阵营##target_combo"), &selectedTarget, tempOptions, Shadow::ShadowComboFlags_NoRightAlign | Shadow::ShadowComboFlags_FitText);
+
+                float dt = Shadow::GetIO().DeltaTime;
+                std::string fps = std::format("{:.1f}", dt > 0 ? 1.f / dt : 0.f);
+                Menu::TextDescription(fps.c_str());
             }
             EndPanel();
 

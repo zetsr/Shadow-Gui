@@ -100,6 +100,12 @@ namespace Example {
         inline Shadow::Vec2 g_RowStartPos;
         inline float g_StoredPaddingX = 0.0f;
 
+        // 提取带 ## 隐藏符字符串的显示名称
+        inline std::string GetDisplayName(const std::string& label) {
+            size_t pos = label.find("##");
+            return pos != std::string::npos ? label.substr(0, pos) : label;
+        }
+
         // 调用此函数可以让下一个控件的背景完美衔接在上一个控件底部，形成连体块
         inline void JoinNext() {
             g_JoinNext = true;
@@ -110,7 +116,7 @@ namespace Example {
             bgCmd.type = Shadow::ShadowDrawCmdType::RectFilled;
             bgCmd.pos = pos;
             bgCmd.size = { width, height };
-            bgCmd.color = Shadow::GetStyle().Colors[Shadow::GuiCol_FrameBgHovered] /*{0.025f, 0.032f, 0.045f, 1.0f}*/; // 行级卡片底色
+            bgCmd.color = Shadow::GetStyle().Colors[Shadow::GuiCol_FrameBgHovered]; // 行级卡片底色
             bgCmd.thickness = 1.0f;
             bgCmd.clippingEnabled = Shadow::g_Ctx.ClippingEnabled;
             bgCmd.clipMin = Shadow::g_Ctx.ClipMin;
@@ -149,15 +155,19 @@ namespace Example {
             Shadow::g_Ctx.Cursor.y += Shadow::GetStyle().ItemSpacing.y;
         }
 
+        // ======================= 控件封装 =======================
+
         inline bool Switch(const char* label, bool* v) {
             BeginRow();
             Shadow::Vec2 startPos = Shadow::g_Ctx.Cursor;
 
-            Shadow::GetWindowDrawList()->AddText({ startPos.x, startPos.y + Shadow::GetStyle().FramePadding.y }, Shadow::GetStyle().Colors[Shadow::GuiCol_Text], label);
+            Shadow::GetWindowDrawList()->AddText({ startPos.x, startPos.y + Shadow::GetStyle().FramePadding.y }, Shadow::GetStyle().Colors[Shadow::GuiCol_Text], GetDisplayName(label));
 
             float switchWidth = (Shadow::g_Ctx.ItemHeight - 4.0f) * 2.0f + 4.0f;
-            // 完美对齐右侧边缘 (距离右侧内边距 12.0f)
-            Shadow::g_Ctx.Cursor.x = g_RowStartPos.x + g_ColLayout.Width - switchWidth - 12.0f;
+
+            // 完美对齐右侧边缘 (距离右侧内边距 12.0f) 
+            // 注意: 减去 10.0f 以抵消 Shadow::Switch 在渲染时强行附带的无文本间距补偿
+            Shadow::g_Ctx.Cursor.x = g_RowStartPos.x + g_ColLayout.Width - switchWidth - 12.0f - 10.0f;
 
             std::string hidden = std::string("##") + label;
             bool ret = Shadow::Switch(hidden.c_str(), v);
@@ -166,11 +176,27 @@ namespace Example {
             return ret;
         }
 
-        inline void Slider(const char* label, float* v, float min, float max, float step) {
+        inline bool Checkbox(const char* label, bool* v) {
             BeginRow();
             Shadow::Vec2 startPos = Shadow::g_Ctx.Cursor;
 
-            Shadow::GetWindowDrawList()->AddText({ startPos.x, startPos.y + Shadow::GetStyle().FramePadding.y }, Shadow::GetStyle().Colors[Shadow::GuiCol_Text], label);
+            Shadow::GetWindowDrawList()->AddText({ startPos.x, startPos.y + Shadow::GetStyle().FramePadding.y }, Shadow::GetStyle().Colors[Shadow::GuiCol_Text], GetDisplayName(label));
+
+            float boxWidth = Shadow::g_Ctx.ItemHeight;
+            Shadow::g_Ctx.Cursor.x = g_RowStartPos.x + g_ColLayout.Width - boxWidth - 12.0f;
+
+            std::string hidden = std::string("##") + label;
+            bool ret = Shadow::Checkbox(hidden.c_str(), v);
+
+            EndRow();
+            return ret;
+        }
+
+        inline void Slider(const char* label, float* v, float min, float max, float step, Shadow::ShadowSliderFlags flags = Shadow::ShadowSliderFlags_None) {
+            BeginRow();
+            Shadow::Vec2 startPos = Shadow::g_Ctx.Cursor;
+
+            Shadow::GetWindowDrawList()->AddText({ startPos.x, startPos.y + Shadow::GetStyle().FramePadding.y }, Shadow::GetStyle().Colors[Shadow::GuiCol_Text], GetDisplayName(label));
 
             int prec = 3;
             if (step > 0.f) {
@@ -193,16 +219,153 @@ namespace Example {
             Shadow::g_Ctx.Cursor.x = rightEdge - valBoxWidth - Shadow::GetStyle().ItemSpacing.x - sliderWidth;
 
             std::string hidden = std::string("##") + label;
-            Shadow::Slider(hidden.c_str(), v, min, max, step, Shadow::ShadowSliderFlags_NoRightAlign | Shadow::ShadowSliderFlags_NoText, { sliderWidth, 0.0f });
+            Shadow::Slider(hidden.c_str(), v, min, max, step, flags | Shadow::ShadowSliderFlags_NoRightAlign | Shadow::ShadowSliderFlags_NoText, { sliderWidth, 0.0f });
 
             EndRow();
+        }
+
+        inline bool Combo(const char* label, int* current_item, const std::vector<std::string>& items, Shadow::ShadowComboFlags flags = Shadow::ShadowComboFlags_None) {
+            BeginRow();
+            Shadow::Vec2 startPos = Shadow::g_Ctx.Cursor;
+
+            Shadow::GetWindowDrawList()->AddText({ startPos.x, startPos.y + Shadow::GetStyle().FramePadding.y }, Shadow::GetStyle().Colors[Shadow::GuiCol_Text], GetDisplayName(label));
+            float comboWidth = g_ColLayout.Width * 0.40f;
+
+            if (flags & Shadow::ShadowComboFlags_FitText) {
+                std::string currentText = (*current_item >= 0 && *current_item < static_cast<int>(items.size())) ? items[*current_item] : "Unknown";
+                float triSize = Shadow::g_Ctx.ItemHeight * 0.5f;
+                comboWidth = Shadow::GetStyle().FramePadding.x + Shadow::MeasureTextSize(currentText).x + Shadow::GetStyle().FramePadding.x + triSize + Shadow::GetStyle().FramePadding.x;
+            }
+
+            Shadow::g_Ctx.Cursor.x = g_RowStartPos.x + g_ColLayout.Width - comboWidth - 12.0f;
+
+            std::string hidden = std::string("##") + label;
+            bool ret = Shadow::Combo(hidden.c_str(), current_item, items, flags | Shadow::ShadowComboFlags_NoText | Shadow::ShadowComboFlags_NoRightAlign, { comboWidth, 0.0f });
+
+            EndRow();
+            return ret;
+        }
+
+        inline void ColorPicker(const char* label, Shadow::Color* color, Shadow::ShadowColorPickerFlags flags = Shadow::ShadowColorPickerFlags_None) {
+            BeginRow();
+            Shadow::Vec2 startPos = Shadow::g_Ctx.Cursor;
+
+            Shadow::GetWindowDrawList()->AddText({ startPos.x, startPos.y + Shadow::GetStyle().FramePadding.y }, Shadow::GetStyle().Colors[Shadow::GuiCol_Text], GetDisplayName(label));
+
+            float cpWidth = Shadow::g_Ctx.ItemHeight;
+            Shadow::g_Ctx.Cursor.x = g_RowStartPos.x + g_ColLayout.Width - cpWidth - 12.0f;
+
+            std::string hidden = std::string("##") + label;
+            Shadow::ColorPicker(hidden.c_str(), color, flags | Shadow::ShadowColorPickerFlags_NoText | Shadow::ShadowColorPickerFlags_NoRightAlign, { cpWidth, 0.0f });
+
+            EndRow();
+        }
+
+        inline bool SwitchColorPicker(const char* label, bool* v, Shadow::Color* color, Shadow::ShadowColorPickerFlags cpFlags = Shadow::ShadowColorPickerFlags_None) {
+            BeginRow();
+            Shadow::Vec2 startPos = Shadow::g_Ctx.Cursor;
+
+            Shadow::GetWindowDrawList()->AddText({ startPos.x, startPos.y + Shadow::GetStyle().FramePadding.y }, Shadow::GetStyle().Colors[Shadow::GuiCol_Text], GetDisplayName(label));
+
+            float switchWidth = (Shadow::g_Ctx.ItemHeight - 4.0f) * 2.0f + 4.0f;
+            float cpWidth = Shadow::g_Ctx.ItemHeight;
+            float spacing = Shadow::GetStyle().ItemSpacing.x;
+
+            float rightEdge = g_RowStartPos.x + g_ColLayout.Width - 12.0f;
+
+            Shadow::g_Ctx.Cursor.x = rightEdge - switchWidth - spacing - cpWidth;
+            std::string hiddenCP = std::string("##CP_") + label;
+            Shadow::ColorPicker(hiddenCP.c_str(), color, cpFlags | Shadow::ShadowColorPickerFlags_NoText | Shadow::ShadowColorPickerFlags_NoRightAlign, { cpWidth, 0.0f });
+
+            Shadow::SameLine();
+
+            Shadow::g_Ctx.Cursor.x = rightEdge - switchWidth - 10.0f;
+            std::string hiddenSwitch = std::string("##") + label;
+            bool ret = Shadow::Switch(hiddenSwitch.c_str(), v);
+
+            EndRow();
+            return ret;
+        }
+
+        // 高级热键 (带模式下拉框)
+        inline void HotKey(const char* label, int* hotkey, bool* is_active, Shadow::HotkeyMode* mode, Shadow::ShadowHotkeyFlags flags = Shadow::ShadowHotkeyFlags_None) {
+            BeginRow();
+            Shadow::Vec2 startPos = Shadow::g_Ctx.Cursor;
+
+            Shadow::GetWindowDrawList()->AddText({ startPos.x, startPos.y + Shadow::GetStyle().FramePadding.y }, Shadow::GetStyle().Colors[Shadow::GuiCol_Text], GetDisplayName(label));
+
+            bool isAssigning = (Shadow::g_Ctx.AssigningHotkey == hotkey);
+            std::string keyName = isAssigning ? "[Press Key]" : std::format("[{}]", Shadow::GetKeyName(*hotkey));
+
+            float btnWidth = Shadow::MeasureTextSize(keyName).x + Shadow::GetStyle().FramePadding.x * 2.f;
+            float dotSize = std::max(6.f, Shadow::g_Ctx.ItemHeight * 0.4f);
+            float totalWidth = btnWidth + Shadow::GetStyle().ItemSpacing.x + dotSize;
+
+            Shadow::g_Ctx.Cursor.x = g_RowStartPos.x + g_ColLayout.Width - totalWidth - 12.0f;
+
+            std::string hidden = std::string("##") + label;
+            Shadow::HotKey(hidden.c_str(), hotkey, is_active, mode, flags | Shadow::ShadowHotkeyFlags_NoText | Shadow::ShadowHotkeyFlags_NoRightAlign);
+
+            EndRow();
+        }
+
+        // 简单热键 (仅按键绑定)
+        inline bool HotKey(const char* label, int* hotkey, Shadow::ShadowHotkeyFlags flags = Shadow::ShadowHotkeyFlags_None) {
+            BeginRow();
+            Shadow::Vec2 startPos = Shadow::g_Ctx.Cursor;
+
+            Shadow::GetWindowDrawList()->AddText({ startPos.x, startPos.y + Shadow::GetStyle().FramePadding.y }, Shadow::GetStyle().Colors[Shadow::GuiCol_Text], GetDisplayName(label));
+
+            bool isAssigning = (Shadow::g_Ctx.AssigningHotkey == hotkey);
+            std::string keyName = isAssigning ? "[Press Key]" : std::format("[{}]", Shadow::GetKeyName(*hotkey));
+            float btnWidth = Shadow::MeasureTextSize(keyName).x + Shadow::GetStyle().FramePadding.x * 2.f;
+
+            Shadow::g_Ctx.Cursor.x = g_RowStartPos.x + g_ColLayout.Width - btnWidth - 12.0f;
+
+            std::string hidden = std::string("##") + label;
+            bool ret = Shadow::HotKey(hidden.c_str(), hotkey, flags | Shadow::ShadowHotkeyFlags_NoText | Shadow::ShadowHotkeyFlags_NoRightAlign);
+
+            EndRow();
+            return ret;
+        }
+
+        inline bool InputText(const char* label, std::string& text, Shadow::ShadowInputTextFlags flags = Shadow::ShadowInputTextFlags_None) {
+            BeginRow();
+            Shadow::Vec2 startPos = Shadow::g_Ctx.Cursor;
+
+            Shadow::GetWindowDrawList()->AddText({ startPos.x, startPos.y + Shadow::GetStyle().FramePadding.y }, Shadow::GetStyle().Colors[Shadow::GuiCol_Text], GetDisplayName(label));
+
+            float inputWidth = g_ColLayout.Width * 0.40f;
+            Shadow::g_Ctx.Cursor.x = g_RowStartPos.x + g_ColLayout.Width - inputWidth - 12.0f;
+
+            std::string hidden = std::string("##") + label;
+            bool ret = Shadow::InputText(hidden.c_str(), text, flags | Shadow::ShadowInputTextFlags_NoName, { inputWidth, 0.0f });
+
+            EndRow();
+            return ret;
+        }
+
+        inline bool InputFloat(const char* label, float* v, float step = 0.0f, float step_fast = 0.0f, const char* format = "{:.3f}", Shadow::ShadowInputTextFlags flags = Shadow::ShadowInputTextFlags_None) {
+            BeginRow();
+            Shadow::Vec2 startPos = Shadow::g_Ctx.Cursor;
+
+            Shadow::GetWindowDrawList()->AddText({ startPos.x, startPos.y + Shadow::GetStyle().FramePadding.y }, Shadow::GetStyle().Colors[Shadow::GuiCol_Text], GetDisplayName(label));
+
+            float inputWidth = g_ColLayout.Width * 0.40f;
+            Shadow::g_Ctx.Cursor.x = g_RowStartPos.x + g_ColLayout.Width - inputWidth - 12.0f;
+
+            std::string hidden = std::string("##") + label;
+            bool ret = Shadow::InputFloat(hidden.c_str(), v, step, step_fast, format, flags | Shadow::ShadowInputTextFlags_NoName, { inputWidth, 0.0f });
+
+            EndRow();
+            return ret;
         }
 
         // 包含背景且自适应换行的描述行
         inline void TextDescription(const char* label) {
             BeginRow();
             Shadow::PushTextWrapPos(g_ColLayout.Width - 24.0f);
-            Shadow::TextWrapped(Shadow::GetStyle().Colors[Shadow::GuiCol_TextDisabled], label);
+            Shadow::TextWrapped(Shadow::GetStyle().Colors[Shadow::GuiCol_TextDisabled], GetDisplayName(label));
             Shadow::PopTextWrapPos();
             EndRow();
         }
@@ -238,6 +401,18 @@ namespace Example {
                 static float crouch_speed = 5.0f;
                 static bool infinite_jumps = false;
                 static bool dont_tumble = false;
+                static Shadow::Color col1 = { 1.f, 1.f, 1.f, 1.f };
+
+                static int selectedTarget = 0;
+
+                static const std::vector<std::string> tempOptions{
+                    U("敌人"),
+                    U("氏族"),
+                    U("队友"),
+                    U("AI"),
+                    U("世界"),
+                };
+
 
                 Menu::Switch(U("无限体力"), &infinite_stamina);
 
@@ -250,10 +425,12 @@ namespace Example {
 
                 Menu::Switch(U("无限跳跃"), &infinite_jumps);
 
-                // 将开关与描述文本缝合为同一个大方块
-                Menu::Switch(U("防止跌倒"), &dont_tumble);
+                // 使用我们新封装的 SwitchColorPicker 组合控件，并向下缝合描述行
+                Menu::SwitchColorPicker(U("防止跌倒"), &dont_tumble, &col1);
                 Menu::JoinNext();
                 Menu::TextDescription(U("禁用来自外部来源的跌倒效果"));
+
+                Menu::Combo(U("阵营##target_combo"), &selectedTarget, tempOptions, Shadow::ShadowComboFlags_NoRightAlign | Shadow::ShadowComboFlags_FitText);
             }
             EndPanel();
 
@@ -330,6 +507,7 @@ namespace Example {
 
     inline void DrawGUI()
     {
+        /*
         static SDK::UFont* SansationBold18 = nullptr;
         static SDK::UFont* OpenSansRegular12 = nullptr;
 
@@ -344,16 +522,17 @@ namespace Example {
 
         if (!SansationBold18 || !OpenSansRegular12) return;
         Shadow::DefaultFont = OpenSansRegular12;
+        */
 
         Shadow::GuiStyle& style = Shadow::GetStyle();
         Shadow::ShadowWindowFlags flags = Shadow::ShadowWindowFlags_NoTitleBar | Shadow::ShadowWindowFlags_NoScrollbar;
 
-        Shadow::g_Ctx.WindowSizeConstraintMin = {1200.f, 800.f};
+        Shadow::g_Ctx.WindowSizeConstraintMin = { 1200.f, 800.f };
         Shadow::g_Ctx.HasWindowSizeConstraints = true;
 
         if (Shadow::Begin("MainGUIWindow", flags))
         {
-            Shadow::PushFont(SansationBold18);
+            // Shadow::PushFont(SansationBold18);
             Shadow::ShadowDrawList* drawList = Shadow::GetWindowDrawList();
 
             Shadow::Vec2 winPos = { std::floor(Shadow::GetWindowPos().x), std::floor(Shadow::GetWindowPos().y) };
@@ -391,8 +570,8 @@ namespace Example {
             float maxTextHeight = Shadow::MeasureTextSize("A").y;
 
             float sidebarPadding = originalWindowPaddingX;
-            // 预留最少 160 的宽度，若是文本太长则自动扩展兼容
-            float btnWidth = std::max(160.0f, maxTextWidth + originalFramePaddingX * 4.0f);
+            // 预留最少 100 的宽度，若是文本太长则自动扩展兼容
+            float btnWidth = std::max(50.0f, maxTextWidth + originalFramePaddingX * 4.0f);
             float btnHeight = std::floor(maxTextHeight + (style.FramePadding.y * 2.0f) * 2.0f);
             float sidebarWidth = std::floor(btnWidth + (sidebarPadding * 2.0f));
 
@@ -471,7 +650,7 @@ namespace Example {
                 startY += std::floor(btnHeight + style.ItemSpacing.y);
                 logicalTabIndex++;
             }
-            Shadow::PopFont();
+            // Shadow::PopFont();
 
             if (g_TabAnim.IsAnimating)
             {

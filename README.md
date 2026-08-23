@@ -1,5 +1,11 @@
 # ✨ Shadow Gui
 
+## Demo Window
+
+### Ocean
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/c4df028e-20f0-43d0-a1f6-d53f3280d3be" />
+
+### Dark
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/200b2854-f347-4485-8e2d-5842520eccf2" />
 
 ### ☕ 赞助 / Buy me a coffee
@@ -18,17 +24,21 @@
 
 ### 快速开始 / Quick Start
 
+#### 中文
 * `#include "Shadow-Gui/include/Shadow.h"`
 * 修改 `Shadow.h` 的 `#include "../../CppSDK/SDK.hpp"` 为实际路径
+* 在 `UGameViewportClient::PostRender` 运行 `Shadow::NewFrame(Canvas);`
+* 在 `Shadow::NewFrame(Canvas);` 之后添加 `Shadow::Render();`
+
+#### English
+* `#include "Shadow-Gui/include/Shadow.h"`
 * Modify `#include "../../CppSDK/SDK.hpp"` in `Shadow.h` to the actual path
-* 在`UGameViewportClient::PostRender` 运行 `Shadow::NewFrame(Canvas);`
 * Run `Shadow::NewFrame(Canvas);` in `UGameViewportClient::PostRender`
-* 在`Shadow::NewFrame(Canvas);` 之后添加 `Shadow::Render();`
 * Run `Shadow::Render();` after `Shadow::NewFrame(Canvas);`
 
 ### 示例 / Example
 
-#### 画一个简单的窗口
+#### 画一个简单的窗口 / Draw simple window
 
 ```cpp
 if (Shadow::Begin(U8("测试菜单 / Demo Menu##main_window"), Shadow::ShadowWindowFlags_TextAlignCenter)) {
@@ -54,7 +64,7 @@ Shadow::End();
 ```
 <img width="576" height="433" alt="1" src="https://github.com/user-attachments/assets/29bbf19e-d53d-41b3-8b64-985293be887c" />
 
-#### 画一个列表窗口
+#### 画一个列表窗口 / Draw listbox
 
 ```cpp
 if (Shadow::Begin(U8("测试菜单 / Demo Menu##main_window"), Shadow::ShadowWindowFlags_TextAlignCenter)) {

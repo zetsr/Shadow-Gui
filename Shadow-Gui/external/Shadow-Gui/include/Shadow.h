@@ -578,58 +578,58 @@ namespace Shadow {
     inline void StyleColorsOcean() {
         auto& colors = g_Ctx.Style.Colors;
 
-        colors[GuiCol_WindowBg] = { 0.015f, 0.020f, 0.028f, 0.960f };
-        colors[GuiCol_PopupBg] = { 0.012f, 0.016f, 0.024f, 0.980f };
-        colors[GuiCol_TitleBarBg] = { 0.008f, 0.012f, 0.016f, 1.000f };
+        colors[GuiCol_WindowBg] = { 0.003f, 0.005f, 0.009f, 1.000f };
+        colors[GuiCol_PopupBg] = { 0.007f, 0.012f, 0.022f, 0.980f };
+        colors[GuiCol_TitleBarBg] = { 0.002f, 0.004f, 0.007f, 1.000f };
 
-        colors[GuiCol_Text] = { 0.180f, 0.210f, 0.260f, 1.000f };
-        colors[GuiCol_TextHighlight] = { 0.700f, 0.740f, 0.800f, 1.000f };
-        colors[GuiCol_TextDisabled] = { 0.080f, 0.100f, 0.130f, 1.000f };
+        colors[GuiCol_Text] = { 0.750f, 0.800f, 0.860f, 1.000f };
+        colors[GuiCol_TextHighlight] = { 1.000f, 1.000f, 1.000f, 1.000f };
+        colors[GuiCol_TextDisabled] = { 0.150f, 0.180f, 0.220f, 1.000f };
 
-        colors[GuiCol_FrameBg] = { 0.022f, 0.028f, 0.038f, 1.000f };
-        colors[GuiCol_FrameBgHovered] = { 0.035f, 0.045f, 0.060f, 1.000f };
+        colors[GuiCol_FrameBg] = { 0.006f, 0.010f, 0.018f, 1.000f };
+        colors[GuiCol_FrameBgHovered] = { 0.010f, 0.016f, 0.028f, 1.000f };
 
-        colors[GuiCol_Button] = { 0.025f, 0.032f, 0.045f, 1.000f };
-        colors[GuiCol_ButtonHovered] = { 0.045f, 0.055f, 0.075f, 1.000f };
+        colors[GuiCol_Button] = { 0.012f, 0.022f, 0.040f, 1.000f };
+        colors[GuiCol_ButtonHovered] = { 0.022f, 0.038f, 0.068f, 1.000f };
 
-        colors[GuiCol_Tab] = { 0.006f, 0.010f, 0.014f, 1.000f };
-        colors[GuiCol_TabHovered] = { 0.070f, 0.080f, 0.095f, 1.000f };
-        colors[GuiCol_TabActive] = { 0.045f, 0.055f, 0.070f, 1.000f };
+        colors[GuiCol_Tab] = { 0.000f, 0.000f, 0.000f, 0.000f };
+        colors[GuiCol_TabHovered] = { 0.010f, 0.018f, 0.032f, 1.000f };
+        colors[GuiCol_TabActive] = { 0.016f, 0.030f, 0.055f, 1.000f };
 
-        colors[GuiCol_SliderGrab] = { 0.140f, 0.185f, 0.250f, 1.000f };
-        colors[GuiCol_SliderKnob] = { 0.860f, 0.860f, 0.860f, 1.000f };
+        colors[GuiCol_SliderGrab] = { 0.025f, 0.180f, 0.520f, 1.000f };
+        colors[GuiCol_SliderKnob] = { 0.900f, 0.950f, 1.000f, 1.000f };
 
-        colors[GuiCol_CheckMark] = { 0.520f, 0.220f, 0.220f, 1.000f };
-        colors[GuiCol_ActiveIndicator] = { 0.520f, 0.220f, 0.220f, 1.000f };
-        colors[GuiCol_InactiveIndicator] = { 0.035f, 0.045f, 0.060f, 1.000f };
+        colors[GuiCol_CheckMark] = { 0.025f, 0.180f, 0.520f, 1.000f };
+        colors[GuiCol_ActiveIndicator] = { 0.025f, 0.180f, 0.520f, 1.000f };
+        colors[GuiCol_InactiveIndicator] = { 0.020f, 0.030f, 0.045f, 1.000f };
 
-        colors[GuiCol_Border] = { 0.030f, 0.040f, 0.055f, 0.600f };
-        colors[GuiCol_PopupBorder] = { 0.035f, 0.045f, 0.060f, 0.900f };
-        colors[GuiCol_Separator] = { 0.025f, 0.032f, 0.045f, 1.000f };
+        colors[GuiCol_Border] = { 0.015f, 0.024f, 0.040f, 0.800f };
+        colors[GuiCol_PopupBorder] = { 0.025f, 0.045f, 0.080f, 0.900f };
+        colors[GuiCol_Separator] = { 0.010f, 0.016f, 0.026f, 1.000f };
 
-        colors[GuiCol_ResizeGrip] = { 0.025f, 0.032f, 0.045f, 1.000f };
-        colors[GuiCol_ResizeGripActive] = { 0.520f, 0.220f, 0.220f, 1.000f };
-        colors[GuiCol_ResizeGripHovered] = { 0.300f, 0.130f, 0.130f, 1.000f };
+        colors[GuiCol_ResizeGrip] = { 0.012f, 0.022f, 0.040f, 1.000f };
+        colors[GuiCol_ResizeGripActive] = { 0.025f, 0.180f, 0.520f, 1.000f };
+        colors[GuiCol_ResizeGripHovered] = { 0.040f, 0.250f, 0.650f, 1.000f };
 
-        colors[GuiCol_ErrorText] = { 1.000f, 0.196f, 0.196f, 1.000f };
-        colors[GuiCol_TextShadow] = { 0.000f, 0.000f, 0.000f, 1.000f };
+        colors[GuiCol_ErrorText] = { 0.950f, 0.100f, 0.100f, 1.000f };
+        colors[GuiCol_TextShadow] = { 0.000f, 0.000f, 0.000f, 0.500f };
         colors[GuiCol_TextOutline] = { 0.000f, 0.000f, 0.000f, 0.000f };
         colors[GuiCol_ColorPickerDark] = { 0.000f, 0.000f, 0.000f, 1.000f };
         colors[GuiCol_ColorPickerLight] = { 1.000f, 1.000f, 1.000f, 1.000f };
 
         colors[GuiCol_CheckerboardLight] = { 1.000f, 1.000f, 1.000f, 1.000f };
-        colors[GuiCol_CheckerboardDark] = { 0.700f, 0.700f, 0.700f, 1.000f };
+        colors[GuiCol_CheckerboardDark] = { 0.400f, 0.400f, 0.400f, 1.000f };
         colors[GuiCol_ColorPickerShadow] = { 0.000f, 0.000f, 0.000f, 1.000f };
 
-        colors[GuiCol_ControlDisabled] = { 0.022f, 0.028f, 0.038f, 0.500f };
+        colors[GuiCol_ControlDisabled] = { 0.006f, 0.010f, 0.018f, 0.500f };
 
-        colors[GuiCol_SwitchBg] = { 0.022f, 0.028f, 0.038f, 1.000f };
-        colors[GuiCol_SwitchBgHovered] = { 0.035f, 0.045f, 0.060f, 1.000f };
-        colors[GuiCol_SwitchBgActive] = { 0.520f, 0.220f, 0.220f, 1.000f };
-        colors[GuiCol_SwitchBgActiveHovered] = { 0.620f, 0.270f, 0.270f, 1.000f };
-        colors[GuiCol_SwitchKnob] = { 0.750f, 0.750f, 0.750f, 1.000f };
+        colors[GuiCol_SwitchBg] = { 0.018f, 0.026f, 0.038f, 1.000f };
+        colors[GuiCol_SwitchBgHovered] = { 0.028f, 0.040f, 0.058f, 1.000f };
+        colors[GuiCol_SwitchBgActive] = { 0.025f, 0.180f, 0.520f, 1.000f };
+        colors[GuiCol_SwitchBgActiveHovered] = { 0.040f, 0.250f, 0.650f, 1.000f };
+        colors[GuiCol_SwitchKnob] = { 0.850f, 0.900f, 0.950f, 1.000f };
 
-        colors[GuiCol_DropdownActive] = { 0.028f, 0.036f, 0.049f, 1.000f };
+        colors[GuiCol_DropdownActive] = { 0.022f, 0.055f, 0.115f, 1.000f };
     }
 
     // 紫曜主题

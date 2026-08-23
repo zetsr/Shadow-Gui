@@ -133,10 +133,12 @@ namespace Hook {
 
         Shadow::NewFrame(canvas);
         Shadow::UpdateAllHotkeyStates();
-        // Shadow::StyleColorsDark();
 
         if (bShowMenu) {
+            Shadow::StyleColorsDark();
             Example::DrawGUI();
+
+            Shadow::StyleColorsOcean();
             Shadow::ShowDemoWindow();
         }
 

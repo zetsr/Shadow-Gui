@@ -386,6 +386,7 @@ namespace Shadow {
 
         std::vector<FontContext> FontStack;
         std::vector<TextOutlineContext> TextOutlineStack;
+        std::unordered_map<SDK::UFont*, int32_t> FontOriginalSizes;
 
         int BeginStack = 0;
         int TabBarStack = 0;
@@ -544,6 +545,41 @@ namespace Shadow {
     inline ShadowIO g_IO;
     inline GuiContext g_Ctx;
     inline SDK::UFont*& DefaultFont = g_Ctx.DefaultFont;
+
+    struct ScopedFontScale {
+        SDK::UFont* Font = nullptr;
+        int32_t OriginalSize = 0;
+
+        ScopedFontScale(SDK::UFont* font, float fontScale = 1.0f) {
+            if (!font) return;
+            Font = font;
+
+            // 查找或记录该字体最初的未缩放基础字号
+            auto it = g_Ctx.FontOriginalSizes.find(font);
+            if (it == g_Ctx.FontOriginalSizes.end()) {
+                OriginalSize = font->LegacyFontSize;
+                g_Ctx.FontOriginalSizes[font] = OriginalSize;
+            }
+            else {
+                OriginalSize = it->second;
+            }
+
+            // 合成计算缩放比例并进行合法性 clamp
+            float finalScale = fontScale * g_Ctx.Style.FontScaleDpi;
+            int32_t baseSize = OriginalSize > 0 ? OriginalSize : 12;
+            int32_t targetSize = std::clamp(static_cast<int32_t>(baseSize * finalScale), 1, 10000);
+
+            // 应用目标字号
+            font->LegacyFontSize = targetSize;
+        }
+
+        ~ScopedFontScale() {
+            if (Font) {
+                // 退出当前作用域时自动还原原始字号
+                Font->LegacyFontSize = OriginalSize;
+            }
+        }
+    };
 
     inline ShadowIO& GetIO() {
         g_IO.DisplaySize = {
@@ -1455,8 +1491,11 @@ namespace Shadow {
     inline void InternalDrawText(const std::string& text, Vec2 pos, Color color, SDK::UFont* font, float fontScale, Color textShadowColor, Color textOutlineColor, bool textOutline) {
         if (!g_Ctx.Canvas || !font) return;
 
-        float finalScale = fontScale * g_Ctx.Style.FontScaleDpi;
-        SDK::FVector2D scale{ static_cast<float>(finalScale), static_cast<float>(finalScale) };
+        // 作用域字号管理：自动计算 targetSize 并写入 LegacyFontSize，函数退出自动还原
+        ScopedFontScale fontGuard(font, fontScale);
+
+        // scale 固定始终为 1.0f
+        SDK::FVector2D scale{ 1.0f, 1.0f };
         SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
         SDK::FVector2D uePos{ static_cast<float>(pos.x), static_cast<float>(pos.y) };
 
@@ -1508,8 +1547,11 @@ namespace Shadow {
         }
         if (!g_Ctx.Canvas || !font) return { 0.f, 0.f };
 
-        float finalScale = scaleVal * g_Ctx.Style.FontScaleDpi;
-        SDK::FVector2D scale{ static_cast<float>(finalScale), static_cast<float>(finalScale) };
+        // 作用域字号管理
+        ScopedFontScale fontGuard(font, scaleVal);
+
+        // scale 固定始终为 1.0f
+        SDK::FVector2D scale{ 1.0f, 1.0f };
 
         std::wstring wstr = ToWString(text);
         SDK::FVector2D size = g_Ctx.Canvas->K2_TextSize(font, SDK::FString(wstr.c_str()), scale);
@@ -1525,8 +1567,11 @@ namespace Shadow {
         }
         if (!g_Ctx.Canvas || !font) return 0.f;
 
-        float finalScale = scaleVal * g_Ctx.Style.FontScaleDpi;
-        SDK::FVector2D scale{ static_cast<float>(finalScale), static_cast<float>(finalScale) };
+        // 作用域字号管理
+        ScopedFontScale fontGuard(font, scaleVal);
+
+        // scale 固定始终为 1.0f
+        SDK::FVector2D scale{ 1.0f, 1.0f };
 
         std::wstring single(1, ch);
         SDK::FVector2D size = g_Ctx.Canvas->K2_TextSize(font, SDK::FString(single.c_str()), scale);

@@ -136,7 +136,10 @@ namespace Hook {
 
         if (bShowMenu) {
             Shadow::StyleColorsDark();
+
+            Shadow::PushFont(Shadow::DefaultFont, 1.5f);
             Example::DrawGUI();
+            Shadow::PopFont();
 
             Shadow::StyleColorsOcean();
             Shadow::ShowDemoWindow();

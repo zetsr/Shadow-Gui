@@ -113,6 +113,9 @@
     <ClInclude Include="Example.h">
       <Filter>dllmain</Filter>
     </ClInclude>
+    <ClInclude Include="Example_Nav.h">
+      <Filter>dllmain</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="external\CppSDK\Assertions.inl">

@@ -6,6 +6,7 @@
 #include "external/Shadow-Gui/include/Shadow.h"
 #include "shadow_demo.h"
 #include "Example.h"
+#include "Example_Nav.h"
 
 namespace Hook {
     bool bShowMenu = false;
@@ -123,11 +124,11 @@ namespace Hook {
                 gameOriginalCursorState = GetMouseCursorVisible();
             }
 
-            SetMouseCursorVisible(true);
+            // SetMouseCursorVisible(true);
             bWasAnimating = true;
         }
         else if (bWasAnimating) {
-            SetMouseCursorVisible(gameOriginalCursorState);
+            // SetMouseCursorVisible(gameOriginalCursorState);
             bWasAnimating = false;
         }
 
@@ -136,14 +137,18 @@ namespace Hook {
 
         if (bShowMenu) {
             // Shadow::StyleColorsDark();
-
             // Shadow::PushFont(Shadow::DefaultFont, G_SIZE);
             // Example::DrawGUI(); // 不知道为啥在某些游戏会杀死FPS，不过标准控件并没有问题。
             // Shadow::PopFont();
 
-            Shadow::StyleColorsOcean();
-            Shadow::PushFontNoSDF(Shadow::DefaultFont, G_SIZE);
-            Shadow::ShowDemoWindow();
+            // Shadow::StyleColorsOcean();
+            // Shadow::PushFont(Shadow::DefaultFont, G_SIZE);
+            // Shadow::ShowDemoWindow();
+            // Shadow::PopFont();
+
+            Shadow::StyleColorsGrey();
+            Shadow::PushFont(Shadow::DefaultFont, G_SIZE);
+            Example_Nav::DrawGUI();
             Shadow::PopFont();
         }
 
@@ -151,7 +156,7 @@ namespace Hook {
     }
 
     void FindPostRender() {
-        std::string pattern = "48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89";
+        std::string pattern = "8B C2 35 ? ? ? ? 44";
 
              // ASA 8B C2 35 ? ? ? ? 44
         // DRACONIA 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89

@@ -2,11 +2,11 @@
 
 ## Demo Window
 
-### Ocean
+### Dark
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/c4df028e-20f0-43d0-a1f6-d53f3280d3be" />
 
-### Dark
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/200b2854-f347-4485-8e2d-5842520eccf2" />
+### Ocean
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/5cbe32eb-1bc1-42c7-8a23-6ac04c41d6c3" />
 
 ### ☕ 赞助 / Buy me a coffee
 

@@ -20,6 +20,7 @@ Credit:
 #include <array>
 #include <ranges>
 #include <cstdio>
+#include <optional>
 
 #include "../../CppSDK/SDK.hpp"
 
@@ -214,6 +215,11 @@ namespace Shadow {
         float Scale;
     };
 
+    struct TextOutlineContext {
+        bool Outline = true;
+        Color OutlineColor = { 0.f, 0.f, 0.f, 1.f };
+    };
+
     enum class ShadowDrawCmdType {
         Line,
         Rect,
@@ -238,6 +244,7 @@ namespace Shadow {
         Vec2 p1, p2, p3;
         Color textShadowColor;
         Color textOutlineColor;
+        bool textOutline;
     };
 
     struct ShadowDrawList {
@@ -256,7 +263,7 @@ namespace Shadow {
         void AddTriangle(Vec2 p1, Vec2 p2, Vec2 p3, Color color, float thickness = 1.0f);
         void AddTriangleFilled(Vec2 p1, Vec2 p2, Vec2 p3, Color color);
         void AddText(Vec2 pos, Color color, std::string_view text);
-        void AddText(SDK::UFont* font, float fontScale, Color shadowColor, Color outlineColor, Vec2 pos, Color color, std::string_view text);
+        void AddText(SDK::UFont* font, float fontScale, Color shadowColor, Color outlineColor, Vec2 pos, Color color, std::string_view text, bool outline = false);
     };
 
     struct ListBoxState {
@@ -378,6 +385,7 @@ namespace Shadow {
         Vec2 WindowSizeConstraintMax = { 10000.f, 10000.f };
 
         std::vector<FontContext> FontStack;
+        std::vector<TextOutlineContext> TextOutlineStack;
 
         int BeginStack = 0;
         int TabBarStack = 0;
@@ -1444,7 +1452,7 @@ namespace Shadow {
         }
     }
 
-    inline void InternalDrawText(const std::string& text, Vec2 pos, Color color, SDK::UFont* font, float fontScale, Color textShadowColor, Color textOutlineColor) {
+    inline void InternalDrawText(const std::string& text, Vec2 pos, Color color, SDK::UFont* font, float fontScale, Color textShadowColor, Color textOutlineColor, bool textOutline) {
         if (!g_Ctx.Canvas || !font) return;
 
         float finalScale = fontScale * g_Ctx.Style.FontScaleDpi;
@@ -1457,7 +1465,7 @@ namespace Shadow {
         SDK::FVector2D shadowOff{ 1.0f, 1.0f };
 
         std::wstring wstr = ToWString(text);
-        g_Ctx.Canvas->K2_DrawText(font, SDK::FString(wstr.c_str()), uePos, scale, ueColor, 0.0f, shadow, shadowOff, false, false, false, outline);
+        g_Ctx.Canvas->K2_DrawText(font, SDK::FString(wstr.c_str()), uePos, scale, ueColor, 0.0f, shadow, shadowOff, false, false, textOutline, outline);
     }
 
     inline void InternalDrawTriangleFilled(Vec2 p1, Vec2 p2, Vec2 p3, Color color, bool clipEnabled, Vec2 clipMin, Vec2 clipMax) {
@@ -1594,6 +1602,23 @@ namespace Shadow {
         }
     }
 
+    inline void PushTextOutline(std::optional<Color> outlineColor = std::nullopt) {
+        Color col = g_Ctx.Style.Colors[GuiCol_TextOutline];
+        if (!g_Ctx.TextOutlineStack.empty()) {
+            col = g_Ctx.TextOutlineStack.back().OutlineColor;
+        }
+        if (outlineColor.has_value()) {
+            col = outlineColor.value();
+        }
+        g_Ctx.TextOutlineStack.push_back({ true, col });
+    }
+
+    inline void PopTextOutline() {
+        if (!g_Ctx.TextOutlineStack.empty()) {
+            g_Ctx.TextOutlineStack.pop_back();
+        }
+    }
+
     inline std::string ClipTextString(std::string_view text, Vec2 pos, Vec2& outPos, bool& shouldDraw) {
         shouldDraw = true;
         outPos = pos;
@@ -1696,16 +1721,24 @@ namespace Shadow {
         bool shouldDraw = true;
         std::string clippedText = ClipTextString(text, pos, clippedPos, shouldDraw);
         if (!shouldDraw || clippedText.empty()) return;
-        CmdBuffer.push_back({ ShadowDrawCmdType::Text, clippedPos, {0,0}, color, 1.0f, clippedText, font, scaleVal, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, g_Ctx.Style.Colors[GuiCol_TextShadow], g_Ctx.Style.Colors[GuiCol_TextOutline] });
+
+        bool outline = false;
+        Color outlineColor = g_Ctx.Style.Colors[GuiCol_TextOutline];
+        if (!g_Ctx.TextOutlineStack.empty()) {
+            outline = g_Ctx.TextOutlineStack.back().Outline;
+            outlineColor = g_Ctx.TextOutlineStack.back().OutlineColor;
+        }
+
+        CmdBuffer.push_back({ ShadowDrawCmdType::Text, clippedPos, {0,0}, color, 1.0f, clippedText, font, scaleVal, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, g_Ctx.Style.Colors[GuiCol_TextShadow], outlineColor, outline });
     }
 
-    inline void ShadowDrawList::AddText(SDK::UFont* font, float fontScale, Color shadowColor, Color outlineColor, Vec2 pos, Color color, std::string_view text) {
+    inline void ShadowDrawList::AddText(SDK::UFont* font, float fontScale, Color shadowColor, Color outlineColor, Vec2 pos, Color color, std::string_view text, bool outline) {
         if (!g_Ctx.Canvas || !font) return;
         Vec2 clippedPos = pos;
         bool shouldDraw = true;
         std::string clippedText = ClipTextString(text, pos, clippedPos, shouldDraw);
         if (!shouldDraw || clippedText.empty()) return;
-        CmdBuffer.push_back({ ShadowDrawCmdType::Text, clippedPos, {0,0}, color, 1.0f, clippedText, font, fontScale, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, shadowColor, outlineColor });
+        CmdBuffer.push_back({ ShadowDrawCmdType::Text, clippedPos, {0,0}, color, 1.0f, clippedText, font, fontScale, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, shadowColor, outlineColor, outline });
     }
 
     // --- 剪贴板操作 ---
@@ -2569,6 +2602,7 @@ namespace Shadow {
         else if (g_Ctx.ListBoxStack > 0) errorMsg = std::format("ERROR: BeginListBox() called {} time(s) without matching EndListBox()!", g_Ctx.ListBoxStack);
         else if (g_Ctx.ListBoxStack < 0) errorMsg = std::format("ERROR: EndListBox() called {} time(s) without matching BeginListBox()!", -g_Ctx.ListBoxStack);
         else if (g_Ctx.FontStack.size() > 0) errorMsg = std::format("ERROR: PushFont() called {} time(s) without matching PopFont()!", g_Ctx.FontStack.size());
+        else if (g_Ctx.TextOutlineStack.size() > 0) errorMsg = std::format("ERROR: PushTextOutline() called {} time(s) without matching PopTextOutline()!", g_Ctx.TextOutlineStack.size());
         else if (g_Ctx.ClipStack.size() > 0) errorMsg = std::format("ERROR: PushClipRect() called {} time(s) without matching PopClipRect()!", g_Ctx.ClipStack.size());
         else if (g_Ctx.DisabledStack.size() > 0) errorMsg = std::format("ERROR: BeginDisabled() called {} time(s) without matching EndDisabled()!", g_Ctx.DisabledStack.size());
         else if (g_Ctx.TextWrapPosStack.size() > 0) errorMsg = std::format("ERROR: PushTextWrapPos() called {} time(s) without matching PopTextWrapPos()!", g_Ctx.TextWrapPosStack.size());
@@ -2900,6 +2934,7 @@ namespace Shadow {
         }
 
         g_Ctx.FontStack.clear();
+        g_Ctx.TextOutlineStack.clear();
         UpdateItemHeight();
 
         g_Ctx.InActiveTab = true;
@@ -3151,6 +3186,12 @@ namespace Shadow {
 
         GetWindowDrawList()->AddRectFilled(g_Ctx.WindowPos, g_Ctx.WindowSize, g_Ctx.Style.Colors[GuiCol_WindowBg]);
 
+        // 提前压入窗口物理剪裁区域，使后续绘制的标题文本能正确受剪裁约束
+        PushClipRect(
+            g_Ctx.WindowPos,
+            { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y }
+        );
+
         if (!noTitleBar) {
             GetWindowDrawList()->AddRectFilled(g_Ctx.WindowPos, { g_Ctx.WindowSize.x, titleBarHeight }, g_Ctx.Style.Colors[GuiCol_TitleBarBg]);
 
@@ -3172,10 +3213,6 @@ namespace Shadow {
         g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, g_Ctx.WindowPos.y + titleBarHeight + g_Ctx.Style.WindowPadding.y };
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;
 
-        PushClipRect(
-            g_Ctx.WindowPos,
-            { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y }
-        );
         return true;
     }
 
@@ -3687,7 +3724,7 @@ namespace Shadow {
                     InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
                 }
                 else if (cmd.type == ShadowDrawCmdType::Text) {
-                    InternalDrawText(cmd.text, cmd.pos, cmd.color, cmd.font, cmd.fontScale, cmd.textShadowColor, cmd.textOutlineColor);
+                    InternalDrawText(cmd.text, cmd.pos, cmd.color, cmd.font, cmd.fontScale, cmd.textShadowColor, cmd.textOutlineColor, cmd.textOutline);
                 }
                 else if (cmd.type == ShadowDrawCmdType::TriangleFilled) {
                     InternalDrawTriangleFilled(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);

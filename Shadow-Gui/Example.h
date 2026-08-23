@@ -219,7 +219,9 @@ namespace Example {
             BeginRow();
             Shadow::Vec2 startPos = Shadow::g_Ctx.Cursor;
 
+            Shadow::PushTextOutline();
             Shadow::GetWindowDrawList()->AddText({ startPos.x, startPos.y + Shadow::GetStyle().FramePadding.y }, Shadow::GetStyle().Colors[Shadow::GuiCol_Text], GetDisplayName(label));
+            Shadow::PopTextOutline();
 
             float switchWidth = (Shadow::g_Ctx.ItemHeight - 4.0f) * 2.0f + 4.0f;
 

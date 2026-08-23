@@ -303,6 +303,11 @@ namespace Shadow {
                         Shadow::Text(T(U8("Standard Text"), U8("标准文本")));
                         Shadow::HelpMarker(T(U8("Basic text output using Shadow::Text."), U8("使用 Shadow::Text 的基础文本输出。")));
 
+                        Shadow::PushTextOutline();
+                        Shadow::Text(T(U8("Outlined Text"), U8("轮廓文本")));
+                        Shadow::PopTextOutline();
+                        Shadow::HelpMarker(T(U8("using Shadow::PushTextOutline."), U8("使用 Shadow::PushTextOutline 为文本添加轮廓。")));
+
                         Shadow::TextDisabled(T(U8("Disabled Text"), U8("禁用文本")));
                         Shadow::HelpMarker(T(U8("Text with disabled color using Shadow::TextDisabled."), U8("使用 Shadow::TextDisabled 的禁用颜色文本。")));
 

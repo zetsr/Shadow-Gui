@@ -8,12 +8,69 @@
 #include <vector>
 #include <format>
 #include <algorithm>
-#include <format>
 
 #include "external/CppSDK/SDK.hpp"
 #include "external/Shadow-Gui/include/Shadow.h"
 
 namespace Example {
+    inline void StyleColorsExample() {
+        using namespace Shadow;
+        auto& colors = g_Ctx.Style.Colors;
+
+        colors[GuiCol_WindowBg] = { 0.003f, 0.003f, 0.004f, 1.000f };
+        colors[GuiCol_PopupBg] = { 0.004f, 0.004f, 0.005f, 0.980f };
+        colors[GuiCol_TitleBarBg] = { 0.002f, 0.002f, 0.003f, 1.000f };
+
+        colors[GuiCol_Text] = { 0.850f, 0.850f, 0.880f, 1.000f };
+        colors[GuiCol_TextHighlight] = { 1.000f, 1.000f, 1.000f, 1.000f };
+        colors[GuiCol_TextDisabled] = { 0.140f, 0.140f, 0.160f, 1.000f };
+
+        colors[GuiCol_FrameBg] = { 0.006f, 0.006f, 0.008f, 1.000f };
+        colors[GuiCol_FrameBgHovered] = { 0.010f, 0.010f, 0.013f, 1.000f };
+
+        colors[GuiCol_Button] = { 0.010f, 0.010f, 0.013f, 1.000f };
+        colors[GuiCol_ButtonHovered] = { 0.020f, 0.020f, 0.025f, 1.000f };
+
+        colors[GuiCol_Tab] = { 0.000f, 0.000f, 0.000f, 0.000f };
+        colors[GuiCol_TabHovered] = { 0.008f, 0.008f, 0.010f, 1.000f };
+        colors[GuiCol_TabActive] = { 0.015f, 0.015f, 0.018f, 1.000f };
+
+        colors[GuiCol_SliderGrab] = { 0.008f, 0.160f, 0.920f, 1.000f };
+        colors[GuiCol_SliderKnob] = { 1.000f, 1.000f, 1.000f, 1.000f };
+
+        colors[GuiCol_CheckMark] = { 0.008f, 0.160f, 0.920f, 1.000f };
+        colors[GuiCol_ActiveIndicator] = { 0.008f, 0.160f, 0.920f, 1.000f };
+        colors[GuiCol_InactiveIndicator] = { 0.030f, 0.030f, 0.035f, 1.000f };
+
+        colors[GuiCol_Border] = { 0.015f, 0.015f, 0.018f, 0.600f };
+        colors[GuiCol_PopupBorder] = { 0.020f, 0.020f, 0.025f, 0.800f };
+        colors[GuiCol_Separator] = { 0.012f, 0.012f, 0.015f, 1.000f };
+
+        colors[GuiCol_ResizeGrip] = { 0.010f, 0.010f, 0.013f, 1.000f };
+        colors[GuiCol_ResizeGripActive] = { 0.008f, 0.160f, 0.920f, 1.000f };
+        colors[GuiCol_ResizeGripHovered] = { 0.015f, 0.220f, 0.980f, 1.000f };
+
+        colors[GuiCol_ErrorText] = { 0.900f, 0.050f, 0.050f, 1.000f };
+        colors[GuiCol_TextShadow] = { 0.000f, 0.000f, 0.000f, 1.000f };
+        colors[GuiCol_TextOutline] = { 0.000f, 0.000f, 0.000f, 1.000f };
+        colors[GuiCol_ColorPickerDark] = { 0.000f, 0.000f, 0.000f, 1.000f };
+        colors[GuiCol_ColorPickerLight] = { 1.000f, 1.000f, 1.000f, 1.000f };
+
+        colors[GuiCol_CheckerboardLight] = { 1.000f, 1.000f, 1.000f, 1.000f };
+        colors[GuiCol_CheckerboardDark] = { 0.400f, 0.400f, 0.400f, 1.000f };
+        colors[GuiCol_ColorPickerShadow] = { 0.000f, 0.000f, 0.000f, 1.000f };
+
+        colors[GuiCol_ControlDisabled] = { 0.006f, 0.006f, 0.008f, 0.500f };
+
+        colors[GuiCol_SwitchBg] = { 0.030f, 0.030f, 0.035f, 1.000f };
+        colors[GuiCol_SwitchBgHovered] = { 0.045f, 0.045f, 0.052f, 1.000f };
+        colors[GuiCol_SwitchBgActive] = { 0.008f, 0.160f, 0.920f, 1.000f };
+        colors[GuiCol_SwitchBgActiveHovered] = { 0.015f, 0.220f, 0.980f, 1.000f };
+        colors[GuiCol_SwitchKnob] = { 0.900f, 0.900f, 0.950f, 1.000f };
+
+        colors[GuiCol_DropdownActive] = { 0.015f, 0.015f, 0.018f, 1.000f };
+    }
+
     struct TabAnimationState
     {
         int CurrentTab = 0;
@@ -512,7 +569,6 @@ namespace Example {
 
     inline void DrawGUI()
     {
-        /*
         static SDK::UFont* SansationBold18 = nullptr;
         static SDK::UFont* OpenSansRegular12 = nullptr;
 
@@ -525,9 +581,11 @@ namespace Example {
             if (_Font && _Font->IsA(SDK::UFont::StaticClass())) OpenSansRegular12 = (SDK::UFont*)_Font;
         }
 
-        if (!SansationBold18 || !OpenSansRegular12) return;
-        Shadow::DefaultFont = OpenSansRegular12;
-        */
+        if (SansationBold18 && OpenSansRegular12) {
+            Shadow::DefaultFont = OpenSansRegular12;
+        }
+
+        // StyleColorsExample();
 
         Shadow::GuiStyle& style = Shadow::GetStyle();
         Shadow::ShadowWindowFlags flags = Shadow::ShadowWindowFlags_NoTitleBar | Shadow::ShadowWindowFlags_NoScrollbar;

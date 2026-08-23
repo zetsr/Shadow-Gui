@@ -133,19 +133,20 @@ namespace Hook {
 
         Shadow::NewFrame(canvas);
         Shadow::UpdateAllHotkeyStates();
-        Shadow::StyleColorsOcean();
+        // Shadow::StyleColorsDark();
 
         if (bShowMenu) {
             Example::DrawGUI();
+            Shadow::ShowDemoWindow();
         }
 
         Shadow::Render();
     }
 
     void FindPostRender() {
-        std::string pattern = "8B C2 35 ? ? ? ? 44 69";
+        std::string pattern = "8B C2 35 ? ? ? ? 44";
 
-             // ASA 8B C2 35 ? ? ? ? 44 69
+             // ASA 8B C2 35 ? ? ? ? 44
         // DRACONIA 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89
              // DOD 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 48 89 5C 24 10 48 89 74 24 18 48 89 7C 24 20 55
             // ISLE 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89 6C

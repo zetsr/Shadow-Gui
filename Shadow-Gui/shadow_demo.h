@@ -842,6 +842,20 @@ namespace Shadow {
                     }
                     Shadow::TreePop();
 
+                    if (Shadow::TreeNode(T(U8("IO"), U8("IO")))) {
+                        Shadow::ShadowIO& IO = Shadow::GetIO();
+                        float fps = IO.DeltaTime > 0 ? 1.f / IO.DeltaTime : 0.f;
+                        std::string fps_str = std::format("FPS: {:.0f}", fps);
+                        Shadow::Text(fps_str);
+                        Shadow::HelpMarker(T(U8("using Shadow::GetIO().DeltaTime to get FPS."), U8("使用 Shadow::GetIO().DeltaTime 计算 FPS")));
+
+                        float screen_w = IO.DisplaySize.x;
+                        float screen_h = IO.DisplaySize.y;
+                        std::string screen_size_str = std::format("Screen: {} / {}", screen_w, screen_h);
+                        Shadow::Text(screen_size_str);
+                    }
+                    Shadow::TreePop();
+
                 }
                 Shadow::EndTabItem(); // 无条件EndTabItem
 

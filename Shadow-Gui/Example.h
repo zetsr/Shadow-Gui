@@ -11,6 +11,7 @@
 
 #include "external/CppSDK/SDK.hpp"
 #include "external/Shadow-Gui/include/Shadow.h"
+float G_SIZE = 1.5f;
 
 namespace Example {
     inline void StyleColorsExample() {
@@ -431,132 +432,147 @@ namespace Example {
         }
     }
 
-    inline void RenderTabContent(int tabIndex)
-    {
+    void SetupMenu() {
         const Shadow::GuiStyle& style = Shadow::GetStyle();
 
+        float availWidth = Shadow::g_Ctx.ClipMax.x - Shadow::g_Ctx.ClipMin.x;
+        BeginColumns(Shadow::g_Ctx.Cursor.x, Shadow::g_Ctx.Cursor.y, availWidth, style.ItemSpacing.x * 2.0f);
+
+        // 【左侧区域】
+        SetColumn(true);
+        BeginPanel(U("生命值"));
+        {
+            Menu::Slider(U("字体缩放"), &G_SIZE, 0.1f, 10.0f, 0.1f);
+
+            static bool godmode = true;
+            Menu::Switch(U("无敌模式"), &godmode);
+
+            // 孤立全宽按钮
+            Shadow::Button(U("恢复至满血"), Shadow::Vec2{ g_ColLayout.Width, 0.0f });
+        }
+        EndPanel();
+
+        BeginPanel(U("移动"));
+        {
+            static bool infinite_stamina = false;
+            static float walk_speed = 4.0f;
+            static float run_speed = 3.0f;
+            static float crouch_speed = 5.0f;
+            static bool infinite_jumps = false;
+            static bool dont_tumble = false;
+            static Shadow::Color col1 = { 1.f, 1.f, 1.f, 1.f };
+
+            static int selectedTarget = 0;
+
+            static const std::vector<std::string> tempOptions{
+                U("敌人"),
+                U("氏族"),
+                U("队友"),
+                U("AI"),
+                U("世界"),
+            };
+
+
+            Menu::Switch(U("无限体力"), &infinite_stamina);
+
+            // 使用 JoinNext() 让三个 Slider 无缝拼接成一个大型卡片
+            Menu::Slider(U("步行速度"), &walk_speed, 1.0f, 10.0f, 0.0f);
+            Menu::JoinNext();
+            Menu::Slider(U("奔跑速度"), &run_speed, 1.0f, 10.0f, 0.0f);
+            Menu::JoinNext();
+            Menu::Slider(U("下蹲速度"), &crouch_speed, 1.0f, 10.0f, 0.0f);
+
+            Menu::Switch(U("无限跳跃"), &infinite_jumps);
+
+            // 使用我们新封装的 SwitchColorPicker 组合控件，并向下缝合描述行
+            Menu::SwitchColorPicker(U("防止跌倒"), &dont_tumble, &col1);
+            Menu::JoinNext();
+            Menu::TextDescription(U("禁用来自外部来源的跌倒效果"));
+
+            Menu::Combo(U("阵营##target_combo"), &selectedTarget, tempOptions, Shadow::ShadowComboFlags_NoRightAlign | Shadow::ShadowComboFlags_FitText);
+
+            float dt = Shadow::GetIO().DeltaTime;
+            std::string fps = std::format("{:.1f}", dt > 0 ? 1.f / dt : 0.f);
+            Menu::TextDescription(fps.c_str());
+        }
+        EndPanel();
+
+        // 【右侧区域】
+        SetColumn(false);
+        BeginPanel(U("抓取"));
+        {
+            static bool high_strength = true;
+            static bool unlimited_range = true;
+            static bool no_overcharge = false;
+
+            Menu::Switch(U("高强度"), &high_strength);
+            Menu::JoinNext();
+            Menu::TextDescription(U("仅当你是主机时可用"));
+
+            Menu::Switch(U("无限距离"), &unlimited_range);
+            Menu::Switch(U("无过载"), &no_overcharge);
+        }
+        EndPanel();
+
+        BeginPanel(U("能力强化"));
+        {
+            Shadow::TextDisabled(U("为自己应用一个可用的升级"));
+
+            Menu::BeginRow();
+            Shadow::Button(U("蹲下休息"));
+            Shadow::SameLine();
+            Shadow::Button(U("冲刺速度"));
+            Shadow::SameLine();
+            Shadow::Button(U("发射"));
+            Menu::EndRow();
+
+            Menu::JoinNext();
+
+            Menu::BeginRow();
+            Shadow::Button(U("发射##2"));
+            Shadow::SameLine();
+            Shadow::Button(U("发射##3"));
+            Menu::EndRow();
+        }
+        EndPanel();
+
+        BeginPanel(U("医疗包"));
+        {
+            Shadow::TextDisabled(U("为自己使用一个可用的急救包"));
+
+            Menu::BeginRow();
+            Shadow::Button(U("大"));
+            Shadow::SameLine();
+            Shadow::Button(U("小"));
+            Shadow::SameLine();
+            Shadow::Button(U("中"));
+            Menu::EndRow();
+        }
+        EndPanel();
+
+        EndColumns();
+
+    }
+
+    inline void RenderTabContent(int tabIndex)
+    {
         switch (tabIndex)
         {
         case 0: {
-            float availWidth = Shadow::g_Ctx.ClipMax.x - Shadow::g_Ctx.ClipMin.x;
-            BeginColumns(Shadow::g_Ctx.Cursor.x, Shadow::g_Ctx.Cursor.y, availWidth, style.ItemSpacing.x * 2.0f);
-
-            // 【左侧区域】
-            SetColumn(true);
-            BeginPanel(U("生命值"));
-            {
-                static bool godmode = true;
-                Menu::Switch(U("无敌模式"), &godmode);
-
-                // 孤立全宽按钮
-                Shadow::Button(U("恢复至满血"), Shadow::Vec2{ g_ColLayout.Width, 0.0f });
-            }
-            EndPanel();
-
-            BeginPanel(U("移动"));
-            {
-                static bool infinite_stamina = false;
-                static float walk_speed = 4.0f;
-                static float run_speed = 3.0f;
-                static float crouch_speed = 5.0f;
-                static bool infinite_jumps = false;
-                static bool dont_tumble = false;
-                static Shadow::Color col1 = { 1.f, 1.f, 1.f, 1.f };
-
-                static int selectedTarget = 0;
-
-                static const std::vector<std::string> tempOptions{
-                    U("敌人"),
-                    U("氏族"),
-                    U("队友"),
-                    U("AI"),
-                    U("世界"),
-                };
-
-
-                Menu::Switch(U("无限体力"), &infinite_stamina);
-
-                // 使用 JoinNext() 让三个 Slider 无缝拼接成一个大型卡片
-                Menu::Slider(U("步行速度"), &walk_speed, 1.0f, 10.0f, 0.0f);
-                Menu::JoinNext();
-                Menu::Slider(U("奔跑速度"), &run_speed, 1.0f, 10.0f, 0.0f);
-                Menu::JoinNext();
-                Menu::Slider(U("下蹲速度"), &crouch_speed, 1.0f, 10.0f, 0.0f);
-
-                Menu::Switch(U("无限跳跃"), &infinite_jumps);
-
-                // 使用我们新封装的 SwitchColorPicker 组合控件，并向下缝合描述行
-                Menu::SwitchColorPicker(U("防止跌倒"), &dont_tumble, &col1);
-                Menu::JoinNext();
-                Menu::TextDescription(U("禁用来自外部来源的跌倒效果"));
-
-                Menu::Combo(U("阵营##target_combo"), &selectedTarget, tempOptions, Shadow::ShadowComboFlags_NoRightAlign | Shadow::ShadowComboFlags_FitText);
-
-                float dt = Shadow::GetIO().DeltaTime;
-                std::string fps = std::format("{:.1f}", dt > 0 ? 1.f / dt : 0.f);
-                Menu::TextDescription(fps.c_str());
-            }
-            EndPanel();
-
-            // 【右侧区域】
-            SetColumn(false);
-            BeginPanel(U("抓取"));
-            {
-                static bool high_strength = true;
-                static bool unlimited_range = true;
-                static bool no_overcharge = false;
-
-                Menu::Switch(U("高强度"), &high_strength);
-                Menu::JoinNext();
-                Menu::TextDescription(U("仅当你是主机时可用"));
-
-                Menu::Switch(U("无限距离"), &unlimited_range);
-                Menu::Switch(U("无过载"), &no_overcharge);
-            }
-            EndPanel();
-
-            BeginPanel(U("能力强化"));
-            {
-                Shadow::TextDisabled(U("为自己应用一个可用的升级"));
-
-                Menu::BeginRow();
-                Shadow::Button(U("蹲下休息"));
-                Shadow::SameLine();
-                Shadow::Button(U("冲刺速度"));
-                Shadow::SameLine();
-                Shadow::Button(U("发射"));
-                Menu::EndRow();
-
-                Menu::JoinNext();
-
-                Menu::BeginRow();
-                Shadow::Button(U("发射##2"));
-                Shadow::SameLine();
-                Shadow::Button(U("发射##3"));
-                Menu::EndRow();
-            }
-            EndPanel();
-
-            BeginPanel(U("医疗包"));
-            {
-                Shadow::TextDisabled(U("为自己使用一个可用的急救包"));
-
-                Menu::BeginRow();
-                Shadow::Button(U("大"));
-                Shadow::SameLine();
-                Shadow::Button(U("小"));
-                Shadow::SameLine();
-                Shadow::Button(U("中"));
-                Menu::EndRow();
-            }
-            EndPanel();
-
-            EndColumns();
+            SetupMenu();
             break;
         }
 
         case 1:
-            Shadow::Text(U("这里是另一个选项卡"));
+            SetupMenu();
+            break;
+
+        case 2:
+            SetupMenu();
+            break;
+
+        case 3:
+            SetupMenu();
             break;
 
         default:

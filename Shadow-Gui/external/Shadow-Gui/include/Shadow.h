@@ -208,11 +208,13 @@ namespace Shadow {
         std::string display;
         SDK::UFont* font = nullptr;
         float fontScale = 1.0f;
+        bool noSDF = false;
     };
 
     struct FontContext {
         SDK::UFont* Font;
         float Scale;
+        bool NoSDF = false;
     };
 
     struct TextOutlineContext {
@@ -245,6 +247,7 @@ namespace Shadow {
         Color textShadowColor;
         Color textOutlineColor;
         bool textOutline;
+        bool noSDF;
     };
 
     struct ShadowDrawList {
@@ -263,7 +266,7 @@ namespace Shadow {
         void AddTriangle(Vec2 p1, Vec2 p2, Vec2 p3, Color color, float thickness = 1.0f);
         void AddTriangleFilled(Vec2 p1, Vec2 p2, Vec2 p3, Color color);
         void AddText(Vec2 pos, Color color, std::string_view text);
-        void AddText(SDK::UFont* font, float fontScale, Color shadowColor, Color outlineColor, Vec2 pos, Color color, std::string_view text, bool outline = false);
+        void AddText(SDK::UFont* font, float fontScale, Color shadowColor, Color outlineColor, Vec2 pos, Color color, std::string_view text, bool outline = false, bool noSDF = false);
     };
 
     struct ListBoxState {
@@ -325,7 +328,7 @@ namespace Shadow {
         std::vector<std::pair<Vec2, Vec2>> ClipStack;
         ShadowWindow* CurrentWindow;
 
-        bool IsDragging; 
+        bool IsDragging;
         Vec2 DragOffset;
 
         bool Closed;
@@ -549,10 +552,13 @@ namespace Shadow {
     struct ScopedFontScale {
         SDK::UFont* Font = nullptr;
         int32_t OriginalSize = 0;
+        bool NoSDF = false;
+        float CalculatedScale = 1.0f;
 
-        ScopedFontScale(SDK::UFont* font, float fontScale = 1.0f) {
+        ScopedFontScale(SDK::UFont* font, float fontScale = 1.0f, bool noSDF = false) {
             if (!font) return;
             Font = font;
+            NoSDF = noSDF;
 
             // 查找或记录该字体最初的未缩放基础字号
             auto it = g_Ctx.FontOriginalSizes.find(font);
@@ -564,18 +570,29 @@ namespace Shadow {
                 OriginalSize = it->second;
             }
 
-            // 合成计算缩放比例并进行合法性 clamp
-            float finalScale = fontScale * g_Ctx.Style.FontScaleDpi;
             int32_t baseSize = OriginalSize > 0 ? OriginalSize : 12;
-            int32_t targetSize = std::clamp(static_cast<int32_t>(baseSize * finalScale), 1, 10000);
+            float finalScale = fontScale * g_Ctx.Style.FontScaleDpi;
 
-            // 应用目标字号
-            font->LegacyFontSize = targetSize;
+            if (NoSDF) {
+                // 确保字号为 100（仅在不等于 100 时执行写入）
+                if (font->LegacyFontSize != 100) {
+                    font->LegacyFontSize = 100;
+                }
+                // 计算期望尺寸并 clamp，计算出相对于 100pt 字体所需的缩放倍率
+                float desiredSize = std::clamp(static_cast<float>(baseSize) * finalScale, 1.0f, 10000.0f);
+                CalculatedScale = desiredSize / 100.0f;
+            }
+            else {
+                // 普通模式：直接修改 LegacyFontSize，scale 保持 1.0f
+                int32_t targetSize = std::clamp(static_cast<int32_t>(baseSize * finalScale), 1, 10000);
+                font->LegacyFontSize = targetSize;
+                CalculatedScale = 1.0f;
+            }
         }
 
         ~ScopedFontScale() {
-            if (Font) {
-                // 退出当前作用域时自动还原原始字号
+            // 仅在非 NoSDF 模式退出作用域时恢复原始字号，NoSDF 保持 100
+            if (Font && !NoSDF) {
                 Font->LegacyFontSize = OriginalSize;
             }
         }
@@ -1488,14 +1505,12 @@ namespace Shadow {
         }
     }
 
-    inline void InternalDrawText(const std::string& text, Vec2 pos, Color color, SDK::UFont* font, float fontScale, Color textShadowColor, Color textOutlineColor, bool textOutline) {
+    inline void InternalDrawText(const std::string& text, Vec2 pos, Color color, SDK::UFont* font, float fontScale, Color textShadowColor, Color textOutlineColor, bool textOutline, bool noSDF = false) {
         if (!g_Ctx.Canvas || !font) return;
 
-        // 作用域字号管理：自动计算 targetSize 并写入 LegacyFontSize，函数退出自动还原
-        ScopedFontScale fontGuard(font, fontScale);
+        ScopedFontScale fontGuard(font, fontScale, noSDF);
 
-        // scale 固定始终为 1.0f
-        SDK::FVector2D scale{ 1.0f, 1.0f };
+        SDK::FVector2D scale{ fontGuard.CalculatedScale, fontGuard.CalculatedScale };
         SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
         SDK::FVector2D uePos{ static_cast<float>(pos.x), static_cast<float>(pos.y) };
 
@@ -1541,17 +1556,17 @@ namespace Shadow {
     inline Vec2 MeasureTextSize(std::string_view text) {
         SDK::UFont* font = g_Ctx.DefaultFont;
         float scaleVal = 1.0f;
+        bool noSDF = false;
         if (!g_Ctx.FontStack.empty()) {
             font = g_Ctx.FontStack.back().Font;
             scaleVal = g_Ctx.FontStack.back().Scale;
+            noSDF = g_Ctx.FontStack.back().NoSDF;
         }
         if (!g_Ctx.Canvas || !font) return { 0.f, 0.f };
 
-        // 作用域字号管理
-        ScopedFontScale fontGuard(font, scaleVal);
+        ScopedFontScale fontGuard(font, scaleVal, noSDF);
 
-        // scale 固定始终为 1.0f
-        SDK::FVector2D scale{ 1.0f, 1.0f };
+        SDK::FVector2D scale{ fontGuard.CalculatedScale, fontGuard.CalculatedScale };
 
         std::wstring wstr = ToWString(text);
         SDK::FVector2D size = g_Ctx.Canvas->K2_TextSize(font, SDK::FString(wstr.c_str()), scale);
@@ -1561,17 +1576,17 @@ namespace Shadow {
     inline float MeasureCharWidth(wchar_t ch) {
         SDK::UFont* font = g_Ctx.DefaultFont;
         float scaleVal = 1.0f;
+        bool noSDF = false;
         if (!g_Ctx.FontStack.empty()) {
             font = g_Ctx.FontStack.back().Font;
             scaleVal = g_Ctx.FontStack.back().Scale;
+            noSDF = g_Ctx.FontStack.back().NoSDF;
         }
         if (!g_Ctx.Canvas || !font) return 0.f;
 
-        // 作用域字号管理
-        ScopedFontScale fontGuard(font, scaleVal);
+        ScopedFontScale fontGuard(font, scaleVal, noSDF);
 
-        // scale 固定始终为 1.0f
-        SDK::FVector2D scale{ 1.0f, 1.0f };
+        SDK::FVector2D scale{ fontGuard.CalculatedScale, fontGuard.CalculatedScale };
 
         std::wstring single(1, ch);
         SDK::FVector2D size = g_Ctx.Canvas->K2_TextSize(font, SDK::FString(single.c_str()), scale);
@@ -1590,7 +1605,7 @@ namespace Shadow {
     }
 
     inline void PushFont(SDK::UFont* font, float scale = 1.0f) {
-        g_Ctx.FontStack.push_back({ font, scale });
+        g_Ctx.FontStack.push_back({ font, scale, false });
         UpdateItemHeight();
     }
 
@@ -1599,6 +1614,22 @@ namespace Shadow {
             g_Ctx.FontStack.pop_back();
             UpdateItemHeight();
         }
+    }
+
+    inline void PushFontNoSDF(SDK::UFont* font, float scale = 1.0f) {
+        if (font) {
+            // 备份目标字体的原始 LegacyFontSize（若尚未备份）
+            auto it = g_Ctx.FontOriginalSizes.find(font);
+            if (it == g_Ctx.FontOriginalSizes.end()) {
+                g_Ctx.FontOriginalSizes[font] = font->LegacyFontSize;
+            }
+            // 仅在 LegacyFontSize 不等于 100 时执行一次设置
+            if (font->LegacyFontSize != 100) {
+                font->LegacyFontSize = 100;
+            }
+        }
+        g_Ctx.FontStack.push_back({ font, scale, true });
+        UpdateItemHeight();
     }
 
     inline void PushID(int int_id) {
@@ -1757,9 +1788,11 @@ namespace Shadow {
     inline void ShadowDrawList::AddText(Vec2 pos, Color color, std::string_view text) {
         SDK::UFont* font = g_Ctx.DefaultFont;
         float scaleVal = 1.0f;
+        bool noSDF = false;
         if (!g_Ctx.FontStack.empty()) {
             font = g_Ctx.FontStack.back().Font;
             scaleVal = g_Ctx.FontStack.back().Scale;
+            noSDF = g_Ctx.FontStack.back().NoSDF;
         }
         if (!g_Ctx.Canvas || !font) return;
         Vec2 clippedPos = pos;
@@ -1774,16 +1807,16 @@ namespace Shadow {
             outlineColor = g_Ctx.TextOutlineStack.back().OutlineColor;
         }
 
-        CmdBuffer.push_back({ ShadowDrawCmdType::Text, clippedPos, {0,0}, color, 1.0f, clippedText, font, scaleVal, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, g_Ctx.Style.Colors[GuiCol_TextShadow], outlineColor, outline });
+        CmdBuffer.push_back({ ShadowDrawCmdType::Text, clippedPos, {0,0}, color, 1.0f, clippedText, font, scaleVal, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, g_Ctx.Style.Colors[GuiCol_TextShadow], outlineColor, outline, noSDF });
     }
 
-    inline void ShadowDrawList::AddText(SDK::UFont* font, float fontScale, Color shadowColor, Color outlineColor, Vec2 pos, Color color, std::string_view text, bool outline) {
+    inline void ShadowDrawList::AddText(SDK::UFont* font, float fontScale, Color shadowColor, Color outlineColor, Vec2 pos, Color color, std::string_view text, bool outline, bool noSDF) {
         if (!g_Ctx.Canvas || !font) return;
         Vec2 clippedPos = pos;
         bool shouldDraw = true;
         std::string clippedText = ClipTextString(text, pos, clippedPos, shouldDraw);
         if (!shouldDraw || clippedText.empty()) return;
-        CmdBuffer.push_back({ ShadowDrawCmdType::Text, clippedPos, {0,0}, color, 1.0f, clippedText, font, fontScale, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, shadowColor, outlineColor, outline });
+        CmdBuffer.push_back({ ShadowDrawCmdType::Text, clippedPos, {0,0}, color, 1.0f, clippedText, font, fontScale, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, shadowColor, outlineColor, outline, noSDF });
     }
 
     // --- 剪贴板操作 ---
@@ -3545,7 +3578,10 @@ namespace Shadow {
                     Color bgColor = g_Ctx.Style.Colors[GuiCol_TabActive];
                     Color textColor = g_Ctx.Style.Colors[GuiCol_TextHighlight];
 
-                    if (tabInfo.font) { PushFont(tabInfo.font, tabInfo.fontScale); }
+                    if (tabInfo.font) {
+                        if (tabInfo.noSDF) PushFontNoSDF(tabInfo.font, tabInfo.fontScale);
+                        else PushFont(tabInfo.font, tabInfo.fontScale);
+                    }
 
                     PushClipRect(clipMin, { g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth, clipMax.y });
                     GetWindowDrawList()->AddRect(tabInfo.pos, tabInfo.size, bgColor);
@@ -3684,12 +3720,14 @@ namespace Shadow {
 
         SDK::UFont* currentFont = g_Ctx.DefaultFont;
         float currentScale = 1.0f;
+        bool currentNoSDF = false;
         if (!g_Ctx.FontStack.empty()) {
             currentFont = g_Ctx.FontStack.back().Font;
             currentScale = g_Ctx.FontStack.back().Scale;
+            currentNoSDF = g_Ctx.FontStack.back().NoSDF;
         }
 
-        g_Ctx.TabBarDisplayCache[tabBarId].push_back({ id, tabPos, tabSize, std::string(display), currentFont, currentScale });
+        g_Ctx.TabBarDisplayCache[tabBarId].push_back({ id, tabPos, tabSize, std::string(display), currentFont, currentScale, currentNoSDF });
 
         g_Ctx.TabBarContentWidthAccum += tabSize.x + 5.f;
 
@@ -3769,7 +3807,7 @@ namespace Shadow {
                     InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
                 }
                 else if (cmd.type == ShadowDrawCmdType::Text) {
-                    InternalDrawText(cmd.text, cmd.pos, cmd.color, cmd.font, cmd.fontScale, cmd.textShadowColor, cmd.textOutlineColor, cmd.textOutline);
+                    InternalDrawText(cmd.text, cmd.pos, cmd.color, cmd.font, cmd.fontScale, cmd.textShadowColor, cmd.textOutlineColor, cmd.textOutline, cmd.noSDF);
                 }
                 else if (cmd.type == ShadowDrawCmdType::TriangleFilled) {
                     InternalDrawTriangleFilled(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);

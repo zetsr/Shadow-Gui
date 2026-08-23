@@ -8,6 +8,9 @@
 ### Ocean
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/5cbe32eb-1bc1-42c7-8a23-6ac04c41d6c3" />
 
+### Nav
+<img width="1920" height="1080" alt="9196d38726013468be8b69a51f05c493" src="https://github.com/user-attachments/assets/a8c0b44c-894f-44b1-afc4-c26c7dbf0dfc" />
+
 ### ☕ 赞助 / Buy me a coffee
 
 * 您可以通过赞助支持我们的开发，感谢大家的支持！

@@ -4982,7 +4982,7 @@ namespace Shadow {
             int SubFocus = 0; // 0 = Bind / 滑块, 1 = Mode
             bool CurrentItemConsumesLeftRight = false; // 标记当前选中的控件是否消费左右键
 
-            // 栈计数器（用于 CheckAndDrawErrors 与生命周期检测）
+            // 栈计数器
             int BeginStack = 0;
             int TabBarStack = 0;
             int TabItemStack = 0;
@@ -4999,10 +4999,12 @@ namespace Shadow {
             std::vector<std::string> CurrentTabs;
             int TabCount = 0;
 
-            // 排版参数
+            // 动态排版参数（随字体大小自动伸缩）
+            float CharHeight = 16.f;
             float HeaderHeight = 44.f;
             float FooterHeight = 38.f;
             float RowHeight = 40.f;
+            float PaddingX = 14.f;
             int MaxVisibleItems = 16;
 
             // Slider 输入缓冲区
@@ -5064,7 +5066,7 @@ namespace Shadow {
         // --- 菜单生命周期 API ---
 
         inline bool Begin(std::string_view title, std::string_view subtitle = "", Vec2 default_pos = { 80.f, 80.f }, Vec2 default_size = { 480.f, 760.f }) {
-            g_Nav.BeginStack++; // 无条件入栈
+            g_Nav.BeginStack++;
 
             std::string_view display; size_t rootId;
             ParseLabel(title, display, rootId);
@@ -5105,6 +5107,15 @@ namespace Shadow {
             g_Nav.CurrentTabs.clear();
             g_Nav.CurrentItemConsumesLeftRight = false;
 
+            // 【动态自适应计算】：根据当前字体高度动态伸缩行高、栏高与边距
+            float charH = MeasureTextHeight("A");
+            if (charH <= 0.f) charH = 16.f;
+            g_Nav.CharHeight = charH;
+            g_Nav.RowHeight = std::max(26.f, charH + g_Ctx.Style.FramePadding.y * 2.f + 12.f);
+            g_Nav.HeaderHeight = std::max(28.f, charH + g_Ctx.Style.FramePadding.y * 2.f + 16.f);
+            g_Nav.FooterHeight = std::max(24.f, charH + g_Ctx.Style.FramePadding.y * 2.f + 10.f);
+            g_Nav.PaddingX = std::max(10.f, std::round(charH * 0.55f));
+
             float contentAreaH = g_Nav.ColumnStack[0].Size.y - g_Nav.HeaderHeight - g_Nav.FooterHeight;
             g_Nav.MaxVisibleItems = std::max(1, static_cast<int>(contentAreaH / g_Nav.RowHeight));
 
@@ -5126,7 +5137,7 @@ namespace Shadow {
         }
 
         inline bool BeginTabBar(std::string_view name) {
-            g_Nav.TabBarStack++; // 无条件入栈
+            g_Nav.TabBarStack++;
 
             std::string_view display; size_t id;
             ParseLabel(name, display, id);
@@ -5137,7 +5148,7 @@ namespace Shadow {
         }
 
         inline bool BeginTabItem(std::string_view name) {
-            g_Nav.TabItemStack++; // 无条件入栈
+            g_Nav.TabItemStack++;
 
             std::string_view display; size_t id;
             ParseLabel(name, display, id);
@@ -5148,11 +5159,11 @@ namespace Shadow {
         }
 
         inline void EndTabItem() {
-            g_Nav.TabItemStack--; // 出栈
+            g_Nav.TabItemStack--;
         }
 
         inline void EndTabBar() {
-            g_Nav.TabBarStack--; // 出栈
+            g_Nav.TabBarStack--;
 
             g_Nav.TabCount = static_cast<int>(g_Nav.CurrentTabs.size());
             if (g_Nav.TabCount > 0) {
@@ -5168,11 +5179,11 @@ namespace Shadow {
                     if (isCurTab) {
                         GetWindowDrawList()->AddRectFilled(tabPos, tabSize, g_Ctx.Style.Colors[GuiCol_TextHighlight]);
                         float textW = MeasureTextSize(g_Nav.CurrentTabs[t]).x;
-                        GetWindowDrawList()->AddText({ tabPos.x + (tabWidth - textW) * 0.5f, tabPos.y + (g_Nav.HeaderHeight - MeasureTextSize("A").y) * 0.5f }, g_Ctx.Style.Colors[GuiCol_WindowBg], g_Nav.CurrentTabs[t]);
+                        GetWindowDrawList()->AddText({ tabPos.x + (tabWidth - textW) * 0.5f, tabPos.y + (g_Nav.HeaderHeight - g_Nav.CharHeight) * 0.5f }, g_Ctx.Style.Colors[GuiCol_WindowBg], g_Nav.CurrentTabs[t]);
                     }
                     else {
                         float textW = MeasureTextSize(g_Nav.CurrentTabs[t]).x;
-                        GetWindowDrawList()->AddText({ tabPos.x + (tabWidth - textW) * 0.5f, tabPos.y + (g_Nav.HeaderHeight - MeasureTextSize("A").y) * 0.5f }, g_Ctx.Style.Colors[GuiCol_TextDisabled], g_Nav.CurrentTabs[t]);
+                        GetWindowDrawList()->AddText({ tabPos.x + (tabWidth - textW) * 0.5f, tabPos.y + (g_Nav.HeaderHeight - g_Nav.CharHeight) * 0.5f }, g_Ctx.Style.Colors[GuiCol_TextDisabled], g_Nav.CurrentTabs[t]);
                     }
                 }
                 GetWindowDrawList()->AddLine({ col.Pos.x, col.Pos.y + g_Nav.HeaderHeight }, { col.Pos.x + col.Size.x, col.Pos.y + g_Nav.HeaderHeight }, g_Ctx.Style.Colors[GuiCol_Border], 1.5f);
@@ -5215,7 +5226,7 @@ namespace Shadow {
             return true;
         }
 
-        // --- 核心控件 ---
+        // --- 核心控件（动态尺寸适配） ---
 
         inline void TextColored(Color color, std::string_view text) {
             std::string_view display; size_t id;
@@ -5226,7 +5237,7 @@ namespace Shadow {
             bool visible = BeginItem(true, pos, size, isFocused);
             if (!visible) return;
 
-            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, color, display);
+            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, color, display);
         }
 
         inline void Text(std::string_view text) {
@@ -5238,7 +5249,7 @@ namespace Shadow {
             bool visible = BeginItem(true, pos, size, isFocused);
             if (!visible) return;
 
-            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, g_Ctx.Style.Colors[GuiCol_Text], display);
+            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, g_Ctx.Style.Colors[GuiCol_Text], display);
         }
 
         inline bool Checkbox(std::string_view name, bool* value) {
@@ -5261,8 +5272,9 @@ namespace Shadow {
             Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
             Color boxColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (*value ? g_Ctx.Style.Colors[GuiCol_CheckMark] : g_Ctx.Style.Colors[GuiCol_Text]);
 
-            float boxSize = 18.f;
-            Vec2 boxPos = { pos.x + 14.f, pos.y + (size.y - boxSize) * 0.5f };
+            // 动态计算 Checkbox 框体尺寸
+            float boxSize = std::max(14.f, std::round(g_Nav.CharHeight * 0.85f));
+            Vec2 boxPos = { pos.x + g_Nav.PaddingX, pos.y + (size.y - boxSize) * 0.5f };
             if (*value) {
                 GetWindowDrawList()->AddRectFilled(boxPos, { boxSize, boxSize }, boxColor);
             }
@@ -5270,7 +5282,7 @@ namespace Shadow {
                 GetWindowDrawList()->AddRect(boxPos, { boxSize, boxSize }, boxColor, 2.0f);
             }
 
-            GetWindowDrawList()->AddText({ pos.x + 42.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, display);
+            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX + boxSize + g_Nav.PaddingX * 0.7f, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, display);
             return *value;
         }
 
@@ -5293,7 +5305,7 @@ namespace Shadow {
             if (!visible) return triggered;
 
             Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
-            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, display);
+            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, display);
             return triggered;
         }
 
@@ -5348,7 +5360,7 @@ namespace Shadow {
             if (!visible) return;
 
             Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
-            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, display);
+            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, display);
 
             std::string valStr;
             if (g_Nav.State == NavState::Interacting && isFocused) {
@@ -5360,11 +5372,11 @@ namespace Shadow {
             }
 
             float valW = MeasureTextSize(valStr).x;
-            GetWindowDrawList()->AddText({ pos.x + size.x - valW - 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, valStr);
+            GetWindowDrawList()->AddText({ pos.x + size.x - valW - g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, valStr);
         }
 
         inline bool TreeNode(std::string_view name, std::string_view subtitle = "") {
-            g_Nav.TreeNodeStack++; // 无条件入栈
+            g_Nav.TreeNodeStack++;
 
             std::string_view display; size_t id;
             ParseLabel(name, display, id);
@@ -5419,8 +5431,10 @@ namespace Shadow {
 
             if (visible) {
                 Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
-                GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, display);
-                GetWindowDrawList()->AddText({ pos.x + size.x - 32.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, ">>");
+                GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, display);
+
+                float arrowW = MeasureTextSize(">>").x;
+                GetWindowDrawList()->AddText({ pos.x + size.x - arrowW - g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, ">>");
             }
 
             if (isSubmenuOpen) {
@@ -5431,7 +5445,7 @@ namespace Shadow {
         }
 
         inline void TreePop() {
-            g_Nav.TreeNodeStack--; // 出栈
+            g_Nav.TreeNodeStack--;
             if (g_Nav.RenderColumnIdx > 0) {
                 g_Nav.RenderColumnIdx--;
             }
@@ -5483,7 +5497,7 @@ namespace Shadow {
             if (!visible) return;
 
             Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
-            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, display);
+            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, display);
 
             std::string keyName = (g_Nav.State == NavState::BindingKey && isFocused) ? "[Press Key]" : std::format("[{}]", GetKeyName(*hotkey));
             std::vector<std::string> modeStrs = { "None", "Hold On", "Toggle", "Hold Off", "Always" };
@@ -5491,10 +5505,11 @@ namespace Shadow {
 
             float modeW = MeasureTextSize(modeStr).x;
             float keyW = MeasureTextSize(keyName).x;
-            float totalRightW = keyW + modeW + 12.f;
+            float spaceW = MeasureTextSize(" ").x * 1.5f;
+            float totalRightW = keyW + modeW + spaceW;
 
-            Vec2 keyPos = { pos.x + size.x - totalRightW - 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f };
-            Vec2 modePos = { keyPos.x + keyW + 12.f, keyPos.y };
+            Vec2 keyPos = { pos.x + size.x - totalRightW - g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f };
+            Vec2 modePos = { keyPos.x + keyW + spaceW, keyPos.y };
 
             if (isFocused) {
                 if (g_Nav.SubFocus == 0) {
@@ -5542,10 +5557,11 @@ namespace Shadow {
             if (!visible) return;
 
             Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
-            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, display);
+            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, display);
 
-            float previewSize = 22.f;
-            Vec2 previewPos = { pos.x + size.x - previewSize - 14.f, pos.y + (size.y - previewSize) * 0.5f };
+            // 动态自适应的小色块尺寸
+            float previewSize = std::max(16.f, std::round(g_Nav.CharHeight * 0.95f));
+            Vec2 previewPos = { pos.x + size.x - previewSize - g_Nav.PaddingX, pos.y + (size.y - previewSize) * 0.5f };
 
             float globalAlpha = g_Ctx.Style.Colors[GuiCol_ColorPickerLight].a;
             if (disabled) globalAlpha *= 0.5f;
@@ -5554,7 +5570,7 @@ namespace Shadow {
             Color cbDark = g_Ctx.Style.Colors[GuiCol_CheckerboardDark];
 
             float currentA = a ? *a : 1.0f;
-            int checkerSize = 5;
+            int checkerSize = std::max(3, static_cast<int>(previewSize / 4.f));
 
             for (int y = 0; y < static_cast<int>(previewSize); y += checkerSize) {
                 for (int x = 0; x < static_cast<int>(previewSize); x += checkerSize) {
@@ -5584,7 +5600,7 @@ namespace Shadow {
         // --- 结束渲染与按键分发 ---
 
         inline void End() {
-            g_Nav.BeginStack--; // 出栈
+            g_Nav.BeginStack--;
 
             if (g_Nav.ColumnStack.empty()) {
                 CheckAndDrawErrors();
@@ -5595,7 +5611,7 @@ namespace Shadow {
                 NavMenuColumn& col = g_Nav.ColumnStack[colIdx];
                 bool isActiveCol = (colIdx == g_Nav.ActiveColumnIdx);
 
-                // 底部状态栏
+                // 底部状态栏自适应
                 Vec2 footerPos = { col.Pos.x, col.Pos.y + col.Size.y - g_Nav.FooterHeight };
                 GetWindowDrawList()->AddRectFilled(footerPos, { col.Size.x, g_Nav.FooterHeight }, g_Ctx.Style.Colors[GuiCol_TitleBarBg]);
                 GetWindowDrawList()->AddLine(footerPos, { col.Pos.x + col.Size.x, footerPos.y }, g_Ctx.Style.Colors[GuiCol_Border], 1.5f);
@@ -5609,10 +5625,10 @@ namespace Shadow {
                 }
 
                 float subW = MeasureTextSize(subText).x;
-                GetWindowDrawList()->AddText({ footerPos.x + col.Size.x - subW - 12.f, footerPos.y + (g_Nav.FooterHeight - MeasureTextSize("A").y) * 0.5f }, g_Ctx.Style.Colors[GuiCol_TextDisabled], subText);
-                GetWindowDrawList()->AddText({ footerPos.x + 12.f, footerPos.y + (g_Nav.FooterHeight - MeasureTextSize("A").y) * 0.5f }, g_Ctx.Style.Colors[GuiCol_Text], col.Title);
+                GetWindowDrawList()->AddText({ footerPos.x + col.Size.x - subW - g_Nav.PaddingX, footerPos.y + (g_Nav.FooterHeight - g_Nav.CharHeight) * 0.5f }, g_Ctx.Style.Colors[GuiCol_TextDisabled], subText);
+                GetWindowDrawList()->AddText({ footerPos.x + g_Nav.PaddingX, footerPos.y + (g_Nav.FooterHeight - g_Nav.CharHeight) * 0.5f }, g_Ctx.Style.Colors[GuiCol_Text], col.Title);
 
-                // 外部滚动条：仅活动列显示
+                // 外部滚动条自适应
                 if (isActiveCol && col.TotalItems > g_Nav.MaxVisibleItems) {
                     float trackY = col.Pos.y + g_Nav.HeaderHeight;
                     float trackH = col.Size.y - g_Nav.HeaderHeight - g_Nav.FooterHeight;
@@ -5824,7 +5840,7 @@ namespace Shadow {
                 }
             }
 
-            CheckAndDrawErrors(); // 自动执行当前帧 Nav 错误检测与绘制
+            CheckAndDrawErrors();
 
             g_Ctx.CurrentWindow = nullptr;
         }

@@ -136,15 +136,15 @@ namespace Hook {
         Shadow::UpdateAllHotkeyStates();
 
         if (bShowMenu) {
-            // Shadow::StyleColorsDark();
-            // Shadow::PushFont(Shadow::DefaultFont, G_SIZE);
-            // Example::DrawGUI(); // 不知道为啥在某些游戏会杀死FPS，不过标准控件并没有问题。
-            // Shadow::PopFont();
+            Shadow::StyleColorsDark();
+            Shadow::PushFont(Shadow::DefaultFont, G_SIZE);
+            Example::DrawGUI(); // 不知道为啥在某些游戏会杀死FPS，不过标准控件并没有问题。
+            Shadow::PopFont();
 
-            // Shadow::StyleColorsOcean();
-            // Shadow::PushFont(Shadow::DefaultFont, G_SIZE);
-            // Shadow::ShowDemoWindow();
-            // Shadow::PopFont();
+            Shadow::StyleColorsOcean();
+            Shadow::PushFont(Shadow::DefaultFont, G_SIZE);
+            Shadow::ShowDemoWindow();
+            Shadow::PopFont();
 
             Shadow::StyleColorsGrey();
             Shadow::PushFont(Shadow::DefaultFont, G_SIZE);

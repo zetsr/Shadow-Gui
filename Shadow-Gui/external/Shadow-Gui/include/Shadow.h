@@ -5071,6 +5071,31 @@ namespace Shadow {
             return g_Ctx.KeyPressed[vk];
         }
 
+        // 获取按键在当前帧的平滑移动量（支持点按细腻单步，长按平滑加速）
+        inline float GetNavKeyMoveDelta(int vk, float baseStep = 0.005f, float minSpeed = 0.15f, float maxSpeed = 2.0f, float accelDuration = 1.2f) {
+            if (!g_Ctx.KeyStates[vk]) return 0.0f;
+
+            // 点按初次按下第一帧：直接触发细腻基础步长
+            if (g_Ctx.KeyPressed[vk]) {
+                return baseStep;
+            }
+
+            // 长按状态检测
+            double pressTime = g_Ctx.KeyPressTime[vk];
+            if (pressTime > 0.0) {
+                float holdDuration = static_cast<float>(g_Ctx.RealTimeSeconds - pressTime);
+                float delay = static_cast<float>(g_Nav.RepeatDelay);
+                if (holdDuration > delay) {
+                    // 计算加速插值系数并基于 DeltaTime 进行平滑帧移动
+                    float t = std::clamp((holdDuration - delay) / accelDuration, 0.0f, 1.0f);
+                    float currentSpeed = minSpeed + t * (maxSpeed - minSpeed);
+                    float dt = static_cast<float>(g_Ctx.DeltaTime);
+                    return currentSpeed * dt;
+                }
+            }
+            return 0.0f;
+        }
+
         // Nav 专属错误检测与绘制
         inline void CheckAndDrawErrors() {
             std::string errorMsg;
@@ -5463,9 +5488,16 @@ namespace Shadow {
                         g_Nav.ActiveColumnIdx = static_cast<int>(g_Nav.ColumnStack.size()) - 1;
                         parentCol.OpenSubmenuId = id;
                         isSubmenuOpen = true;
+
+                        // 吞掉当前帧的回车事件，避免新激活子菜单的首个控件同帧触发
+                        g_Ctx.KeyPressed[VK_RETURN] = false;
+                        g_Ctx.KeyStates[VK_RETURN] = false;
                     }
                     else {
                         g_Nav.ActiveColumnIdx = parentColIdx + 1;
+                        // 吞掉当前帧的回车事件
+                        g_Ctx.KeyPressed[VK_RETURN] = false;
+                        g_Ctx.KeyStates[VK_RETURN] = false;
                     }
                 }
             }
@@ -5595,8 +5627,17 @@ namespace Shadow {
                         g_Nav.CP_TargetG = g;
                         g_Nav.CP_TargetB = b;
                         g_Nav.CP_TargetA = a;
+                        g_Ctx.ColorPickerR = r;
+                        g_Ctx.ColorPickerG = g;
+                        g_Ctx.ColorPickerB = b;
+                        g_Ctx.ColorPickerA = a;
                         g_Nav.CP_Focus = 0;
                         RGBtoHSV(*r, *g, *b, g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV);
+                    }
+                    else {
+                        if (g_Ctx.ActiveInputId == HashString("CPHexInput")) {
+                            g_Ctx.ActiveInputId = 0;
+                        }
                     }
                     g_Ctx.KeyPressed[VK_RETURN] = false;
                 }
@@ -5787,8 +5828,9 @@ namespace Shadow {
                 float alphaWidth = g_Ctx.Style.CPAlphaWidth;
                 float spacing = g_Ctx.Style.CPSpacing;
 
+                float hexBoxHeight = std::max(24.f, g_Ctx.ItemHeight + 4.f);
                 float popupWidth = padding * 2.f + svSize + spacing * 2.f + hueWidth + (g_Nav.CP_TargetA ? (alphaWidth + spacing) : 0.f);
-                float popupHeight = padding * 2.f + svSize;
+                float popupHeight = padding * 2.f + svSize + spacing + hexBoxHeight;
 
                 Vec2 cpPos = { lastCol.Pos.x + lastCol.Size.x + 8.f, lastCol.Pos.y + g_Nav.HeaderHeight };
                 Vec2 cpSize = { popupWidth, popupHeight };
@@ -5799,6 +5841,8 @@ namespace Shadow {
                 Vec2 svPos = { cpPos.x + padding, cpPos.y + padding };
                 Vec2 huePos = { svPos.x + svSize + spacing, svPos.y };
                 Vec2 alphaPos = { huePos.x + hueWidth + spacing, svPos.y };
+                Vec2 hexPos = { svPos.x, svPos.y + svSize + spacing };
+                Vec2 hexSize = { popupWidth - padding * 2.f, hexBoxHeight };
 
                 float pickerAlpha = g_Ctx.Style.Colors[GuiCol_ColorPickerLight].a;
                 Color shadowCol = g_Ctx.Style.Colors[GuiCol_ColorPickerShadow];
@@ -5855,6 +5899,31 @@ namespace Shadow {
                     }
                 }
 
+                // Hex 输入框逻辑与渲染
+                size_t hexId = HashString("CPHexInput");
+                int hexFocusIdx = g_Nav.CP_TargetA ? 3 : 2;
+                int totalCPFocus = hexFocusIdx + 1;
+
+                if (g_Nav.CP_Focus == hexFocusIdx) {
+                    g_Ctx.ActiveInputId = hexId;
+                }
+                else if (g_Ctx.ActiveInputId == hexId) {
+                    g_Ctx.ActiveInputId = 0;
+                }
+
+                if (g_Ctx.ActiveInputId != hexId) {
+                    uint8_t r8 = static_cast<uint8_t>(*g_Nav.CP_TargetR * 255.f);
+                    uint8_t g8 = static_cast<uint8_t>(*g_Nav.CP_TargetG * 255.f);
+                    uint8_t b8 = static_cast<uint8_t>(*g_Nav.CP_TargetB * 255.f);
+                    uint8_t a8 = g_Nav.CP_TargetA ? static_cast<uint8_t>(*g_Nav.CP_TargetA * 255.f) : 255;
+                    g_Ctx.InputBuffers[hexId] = std::format("{:02X}{:02X}{:02X}{:02X}", r8, g8, b8, a8);
+                }
+
+                bool hexChanged = InputTextEx(hexId, hexPos, hexSize, g_Ctx.InputBuffers[hexId], ShadowInputTextFlags_CharsHexadecimal | ShadowInputTextFlags_CharsUppercase, true);
+                if (hexChanged) {
+                    ApplyHexInput();
+                }
+
                 // 指示器光标
                 Vec2 cursorSV = { svPos.x + g_Ctx.ColorPickerS * svSize, svPos.y + (1.f - g_Ctx.ColorPickerV) * svSize };
                 GetWindowDrawList()->AddRect({ cursorSV.x - 4.f, cursorSV.y - 4.f }, { 8.f, 8.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
@@ -5875,30 +5944,60 @@ namespace Shadow {
                 if (g_Nav.CP_Focus == 0) GetWindowDrawList()->AddRect({ svPos.x - 2.f, svPos.y - 2.f }, { svSize + 4.f, svSize + 4.f }, g_Ctx.Style.Colors[GuiCol_TextHighlight], 1.5f);
                 if (g_Nav.CP_Focus == 1) GetWindowDrawList()->AddRect({ huePos.x - 2.f, huePos.y - 2.f }, { hueWidth + 4.f, svSize + 4.f }, g_Ctx.Style.Colors[GuiCol_TextHighlight], 1.5f);
                 if (g_Nav.CP_Focus == 2 && g_Nav.CP_TargetA) GetWindowDrawList()->AddRect({ alphaPos.x - 2.f, alphaPos.y - 2.f }, { alphaWidth + 4.f, svSize + 4.f }, g_Ctx.Style.Colors[GuiCol_TextHighlight], 1.5f);
+                if (g_Nav.CP_Focus == hexFocusIdx) GetWindowDrawList()->AddRect({ hexPos.x - 2.f, hexPos.y - 2.f }, { hexSize.x + 4.f, hexSize.y + 4.f }, g_Ctx.Style.Colors[GuiCol_TextHighlight], 1.5f);
 
                 // 按键逻辑
                 if (IsNavKeyJustPressed(VK_TAB)) {
-                    g_Nav.CP_Focus = (g_Nav.CP_Focus + 1) % (g_Nav.CP_TargetA ? 3 : 2);
-                }
-                if (IsNavKeyJustPressed(VK_BACK) || IsNavKeyJustPressed(VK_ESCAPE) || IsNavKeyJustPressed(VK_RETURN)) {
-                    g_Nav.CP_Open = false;
+                    g_Nav.CP_Focus = (g_Nav.CP_Focus + 1) % totalCPFocus;
+                    if (g_Nav.CP_Focus == hexFocusIdx) {
+                        g_Ctx.ActiveInputId = hexId;
+                        g_Ctx.InputCursorPos = static_cast<int>(g_Ctx.InputBuffers[hexId].size());
+                        g_Ctx.InputSelectionStart = 0;
+                        g_Ctx.InputSelectionEnd = static_cast<int>(g_Ctx.InputBuffers[hexId].size());
+                    }
+                    else {
+                        if (g_Ctx.ActiveInputId == hexId) g_Ctx.ActiveInputId = 0;
+                    }
                 }
 
-                if (g_Nav.CP_Focus == 0) { // SV
-                    if (IsNavKey(VK_LEFT))  g_Ctx.ColorPickerS = std::clamp(g_Ctx.ColorPickerS - 0.015f, 0.f, 1.f);
-                    if (IsNavKey(VK_RIGHT)) g_Ctx.ColorPickerS = std::clamp(g_Ctx.ColorPickerS + 0.015f, 0.f, 1.f);
-                    if (IsNavKey(VK_UP))    g_Ctx.ColorPickerV = std::clamp(g_Ctx.ColorPickerV + 0.015f, 0.f, 1.f);
-                    if (IsNavKey(VK_DOWN))  g_Ctx.ColorPickerV = std::clamp(g_Ctx.ColorPickerV - 0.015f, 0.f, 1.f);
-                    HSVtoRGB(g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV, *g_Nav.CP_TargetR, *g_Nav.CP_TargetG, *g_Nav.CP_TargetB);
+                bool isHexFocus = (g_Nav.CP_Focus == hexFocusIdx);
+
+                // 当焦点在 Hex 输入框时，VK_BACK 仅用于文本退格删除，不关闭调色盘；非 Hex 焦点时 VK_BACK 正常作为返回键关闭调色盘
+                if (IsNavKeyJustPressed(VK_ESCAPE) || (!isHexFocus && (IsNavKeyJustPressed(VK_BACK) || IsNavKeyJustPressed(VK_RETURN)))) {
+                    g_Nav.CP_Open = false;
+                    if (g_Ctx.ActiveInputId == hexId) g_Ctx.ActiveInputId = 0;
                 }
-                else if (g_Nav.CP_Focus == 1) { // Hue: Up 向上 (H减小), Down 向下 (H增大)
-                    if (IsNavKey(VK_UP) || IsNavKey(VK_LEFT))    g_Ctx.ColorPickerH = std::clamp(g_Ctx.ColorPickerH - 0.015f, 0.f, 1.f);
-                    if (IsNavKey(VK_DOWN) || IsNavKey(VK_RIGHT)) g_Ctx.ColorPickerH = std::clamp(g_Ctx.ColorPickerH + 0.015f, 0.f, 1.f);
-                    HSVtoRGB(g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV, *g_Nav.CP_TargetR, *g_Nav.CP_TargetG, *g_Nav.CP_TargetB);
+
+                // 各轴调整步长
+                static float moveStep = 0.005f;
+                if (g_Nav.CP_Focus == 0) { // SV
+                    float deltaS = GetNavKeyMoveDelta(VK_RIGHT, moveStep) - GetNavKeyMoveDelta(VK_LEFT, moveStep);
+                    float deltaV = GetNavKeyMoveDelta(VK_UP, moveStep) - GetNavKeyMoveDelta(VK_DOWN, moveStep);
+
+                    if (deltaS != 0.0f || deltaV != 0.0f) {
+                        g_Ctx.ColorPickerS = std::clamp(g_Ctx.ColorPickerS + deltaS, 0.f, 1.f);
+                        g_Ctx.ColorPickerV = std::clamp(g_Ctx.ColorPickerV + deltaV, 0.f, 1.f);
+                        HSVtoRGB(g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV, *g_Nav.CP_TargetR, *g_Nav.CP_TargetG, *g_Nav.CP_TargetB);
+                    }
+                }
+                else if (g_Nav.CP_Focus == 1) { // Hue
+                    float dec = std::max(GetNavKeyMoveDelta(VK_UP, moveStep), GetNavKeyMoveDelta(VK_LEFT, moveStep));
+                    float inc = std::max(GetNavKeyMoveDelta(VK_DOWN, moveStep), GetNavKeyMoveDelta(VK_RIGHT, moveStep));
+                    float deltaH = inc - dec;
+
+                    if (deltaH != 0.0f) {
+                        g_Ctx.ColorPickerH = std::clamp(g_Ctx.ColorPickerH + deltaH, 0.f, 1.f);
+                        HSVtoRGB(g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV, *g_Nav.CP_TargetR, *g_Nav.CP_TargetG, *g_Nav.CP_TargetB);
+                    }
                 }
                 else if (g_Nav.CP_Focus == 2 && g_Nav.CP_TargetA) { // Alpha
-                    if (IsNavKey(VK_UP) || IsNavKey(VK_RIGHT))   *g_Nav.CP_TargetA = std::clamp(*g_Nav.CP_TargetA + 0.015f, 0.f, 1.f);
-                    if (IsNavKey(VK_DOWN) || IsNavKey(VK_LEFT))  *g_Nav.CP_TargetA = std::clamp(*g_Nav.CP_TargetA - 0.015f, 0.f, 1.f);
+                    float inc = std::max(GetNavKeyMoveDelta(VK_UP, moveStep), GetNavKeyMoveDelta(VK_RIGHT, moveStep));
+                    float dec = std::max(GetNavKeyMoveDelta(VK_DOWN, moveStep), GetNavKeyMoveDelta(VK_LEFT, moveStep));
+                    float deltaA = inc - dec;
+
+                    if (deltaA != 0.0f) {
+                        *g_Nav.CP_TargetA = std::clamp(*g_Nav.CP_TargetA + deltaA, 0.f, 1.f);
+                    }
                 }
             }
 

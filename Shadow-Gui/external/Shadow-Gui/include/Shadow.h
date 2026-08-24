@@ -4951,7 +4951,6 @@ namespace Shadow {
         g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
-
     namespace Nav {
         enum class NavState {
             Browsing,       // 列表浏览模式
@@ -4999,7 +4998,7 @@ namespace Shadow {
             std::vector<std::string> CurrentTabs;
             int TabCount = 0;
 
-            // 动态排版参数（随字体大小自动伸缩）
+            // 动态排版参数
             float CharHeight = 16.f;
             float HeaderHeight = 44.f;
             float FooterHeight = 38.f;
@@ -5023,6 +5022,32 @@ namespace Shadow {
         };
 
         inline NavContext g_Nav;
+
+        // --- 文本逐字符精准裁切辅助函数 ---
+        inline std::string ClipTextToWidth(std::string_view text, float maxWidth) {
+            if (maxWidth <= 1.0f || text.empty()) return "";
+
+            float totalW = MeasureTextSize(text).x;
+            if (totalW <= maxWidth) return std::string(text);
+
+            std::wstring wstr = ToWString(text);
+            float currentW = 0.f;
+            std::wstring clippedWstr;
+
+            for (wchar_t ch : wstr) {
+                float cw = MeasureCharWidth(ch);
+                if (currentW + cw > maxWidth) break;
+                currentW += cw;
+                clippedWstr += ch;
+            }
+
+            if (clippedWstr.empty()) return "";
+
+            int size_needed = WideCharToMultiByte(CP_UTF8, 0, clippedWstr.c_str(), static_cast<int>(clippedWstr.size()), nullptr, 0, nullptr, nullptr);
+            std::string result(size_needed, 0);
+            WideCharToMultiByte(CP_UTF8, 0, clippedWstr.c_str(), static_cast<int>(clippedWstr.size()), &result[0], size_needed, nullptr, nullptr);
+            return result;
+        }
 
         inline bool IsNavKey(int vk, bool allowRepeat = true) {
             if (g_Ctx.KeyPressed[vk]) {
@@ -5052,9 +5077,9 @@ namespace Shadow {
             if (g_Nav.BeginStack > 0) errorMsg = std::format("ERROR: Nav::Begin() called {} time(s) without matching Nav::End()!", g_Nav.BeginStack);
             else if (g_Nav.BeginStack < 0) errorMsg = std::format("ERROR: Nav::End() called {} time(s) without matching Nav::Begin()!", -g_Nav.BeginStack);
             else if (g_Nav.TabBarStack > 0) errorMsg = std::format("ERROR: Nav::BeginTabBar() called {} time(s) without matching Nav::EndTabBar()!", g_Nav.TabBarStack);
-            else if (g_Nav.TabBarStack < 0) errorMsg = std::format("ERROR: Nav::EndTabBar() called {} time(s) without matching Nav::BeginTabBar()!", -g_Nav.TabBarStack);
+            else if (g_Nav.TabBarStack < 0) errorMsg = std::format("ERROR: Nav::EndTabBar() called {} time(s) without matching BeginTabBar()!", -g_Nav.TabBarStack);
             else if (g_Nav.TabItemStack > 0) errorMsg = std::format("ERROR: Nav::BeginTabItem() called {} time(s) without matching Nav::EndTabItem()!", g_Nav.TabItemStack);
-            else if (g_Nav.TabItemStack < 0) errorMsg = std::format("ERROR: Nav::EndTabItem() called {} time(s) without matching Nav::BeginTabItem()!", -g_Nav.TabItemStack);
+            else if (g_Nav.TabItemStack < 0) errorMsg = std::format("ERROR: Nav::EndTabItem() called {} time(s) without matching BeginTabItem()!", -g_Nav.TabItemStack);
             else if (g_Nav.TreeNodeStack > 0) errorMsg = std::format("ERROR: Nav::TreeNode() called {} time(s) without matching Nav::TreePop()!", g_Nav.TreeNodeStack);
             else if (g_Nav.TreeNodeStack < 0) errorMsg = std::format("ERROR: Nav::TreePop() called {} time(s) without matching Nav::TreeNode()!", -g_Nav.TreeNodeStack);
 
@@ -5107,7 +5132,6 @@ namespace Shadow {
             g_Nav.CurrentTabs.clear();
             g_Nav.CurrentItemConsumesLeftRight = false;
 
-            // 【动态自适应计算】：根据当前字体高度动态伸缩行高、栏高与边距
             float charH = MeasureTextHeight("A");
             if (charH <= 0.f) charH = 16.f;
             g_Nav.CharHeight = charH;
@@ -5176,14 +5200,16 @@ namespace Shadow {
                     Vec2 tabSize = { tabWidth, g_Nav.HeaderHeight };
                     bool isCurTab = (t == g_Nav.ActiveTabIdx);
 
+                    // Tab 文本裁切
+                    std::string clippedTabName = ClipTextToWidth(g_Nav.CurrentTabs[t], tabWidth - 8.f);
+                    float textW = MeasureTextSize(clippedTabName).x;
+
                     if (isCurTab) {
                         GetWindowDrawList()->AddRectFilled(tabPos, tabSize, g_Ctx.Style.Colors[GuiCol_TextHighlight]);
-                        float textW = MeasureTextSize(g_Nav.CurrentTabs[t]).x;
-                        GetWindowDrawList()->AddText({ tabPos.x + (tabWidth - textW) * 0.5f, tabPos.y + (g_Nav.HeaderHeight - g_Nav.CharHeight) * 0.5f }, g_Ctx.Style.Colors[GuiCol_WindowBg], g_Nav.CurrentTabs[t]);
+                        GetWindowDrawList()->AddText({ tabPos.x + (tabWidth - textW) * 0.5f, tabPos.y + (g_Nav.HeaderHeight - g_Nav.CharHeight) * 0.5f }, g_Ctx.Style.Colors[GuiCol_WindowBg], clippedTabName);
                     }
                     else {
-                        float textW = MeasureTextSize(g_Nav.CurrentTabs[t]).x;
-                        GetWindowDrawList()->AddText({ tabPos.x + (tabWidth - textW) * 0.5f, tabPos.y + (g_Nav.HeaderHeight - g_Nav.CharHeight) * 0.5f }, g_Ctx.Style.Colors[GuiCol_TextDisabled], g_Nav.CurrentTabs[t]);
+                        GetWindowDrawList()->AddText({ tabPos.x + (tabWidth - textW) * 0.5f, tabPos.y + (g_Nav.HeaderHeight - g_Nav.CharHeight) * 0.5f }, g_Ctx.Style.Colors[GuiCol_TextDisabled], clippedTabName);
                     }
                 }
                 GetWindowDrawList()->AddLine({ col.Pos.x, col.Pos.y + g_Nav.HeaderHeight }, { col.Pos.x + col.Size.x, col.Pos.y + g_Nav.HeaderHeight }, g_Ctx.Style.Colors[GuiCol_Border], 1.5f);
@@ -5226,7 +5252,7 @@ namespace Shadow {
             return true;
         }
 
-        // --- 核心控件（动态尺寸适配） ---
+        // --- 核心控件（严格限定在每列宽度内裁切） ---
 
         inline void TextColored(Color color, std::string_view text) {
             std::string_view display; size_t id;
@@ -5237,7 +5263,9 @@ namespace Shadow {
             bool visible = BeginItem(true, pos, size, isFocused);
             if (!visible) return;
 
-            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, color, display);
+            float maxW = size.x - g_Nav.PaddingX * 2.f;
+            std::string clipped = ClipTextToWidth(display, maxW);
+            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, color, clipped);
         }
 
         inline void Text(std::string_view text) {
@@ -5249,7 +5277,9 @@ namespace Shadow {
             bool visible = BeginItem(true, pos, size, isFocused);
             if (!visible) return;
 
-            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, g_Ctx.Style.Colors[GuiCol_Text], display);
+            float maxW = size.x - g_Nav.PaddingX * 2.f;
+            std::string clipped = ClipTextToWidth(display, maxW);
+            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, g_Ctx.Style.Colors[GuiCol_Text], clipped);
         }
 
         inline bool Checkbox(std::string_view name, bool* value) {
@@ -5272,7 +5302,6 @@ namespace Shadow {
             Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
             Color boxColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (*value ? g_Ctx.Style.Colors[GuiCol_CheckMark] : g_Ctx.Style.Colors[GuiCol_Text]);
 
-            // 动态计算 Checkbox 框体尺寸
             float boxSize = std::max(14.f, std::round(g_Nav.CharHeight * 0.85f));
             Vec2 boxPos = { pos.x + g_Nav.PaddingX, pos.y + (size.y - boxSize) * 0.5f };
             if (*value) {
@@ -5282,7 +5311,11 @@ namespace Shadow {
                 GetWindowDrawList()->AddRect(boxPos, { boxSize, boxSize }, boxColor, 2.0f);
             }
 
-            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX + boxSize + g_Nav.PaddingX * 0.7f, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, display);
+            float textStartX = pos.x + g_Nav.PaddingX + boxSize + g_Nav.PaddingX * 0.7f;
+            float maxTextW = (pos.x + size.x - g_Nav.PaddingX) - textStartX;
+            std::string clipped = ClipTextToWidth(display, maxTextW);
+
+            GetWindowDrawList()->AddText({ textStartX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, clipped);
             return *value;
         }
 
@@ -5305,7 +5338,10 @@ namespace Shadow {
             if (!visible) return triggered;
 
             Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
-            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, display);
+            float maxTextW = size.x - g_Nav.PaddingX * 2.f;
+            std::string clipped = ClipTextToWidth(display, maxTextW);
+
+            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, clipped);
             return triggered;
         }
 
@@ -5360,7 +5396,6 @@ namespace Shadow {
             if (!visible) return;
 
             Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
-            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, display);
 
             std::string valStr;
             if (g_Nav.State == NavState::Interacting && isFocused) {
@@ -5372,6 +5407,12 @@ namespace Shadow {
             }
 
             float valW = MeasureTextSize(valStr).x;
+            float spacing = 12.f;
+            float maxLabelW = size.x - g_Nav.PaddingX * 2.f - valW - spacing;
+
+            std::string clippedLabel = ClipTextToWidth(display, maxLabelW);
+
+            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, clippedLabel);
             GetWindowDrawList()->AddText({ pos.x + size.x - valW - g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, valStr);
         }
 
@@ -5431,9 +5472,12 @@ namespace Shadow {
 
             if (visible) {
                 Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
-                GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, display);
-
                 float arrowW = MeasureTextSize(">>").x;
+                float maxLabelW = size.x - g_Nav.PaddingX * 2.f - arrowW - 14.f;
+
+                std::string clipped = ClipTextToWidth(display, maxLabelW);
+
+                GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, clipped);
                 GetWindowDrawList()->AddText({ pos.x + size.x - arrowW - g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, ">>");
             }
 
@@ -5497,7 +5541,6 @@ namespace Shadow {
             if (!visible) return;
 
             Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
-            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, display);
 
             std::string keyName = (g_Nav.State == NavState::BindingKey && isFocused) ? "[Press Key]" : std::format("[{}]", GetKeyName(*hotkey));
             std::vector<std::string> modeStrs = { "None", "Hold On", "Toggle", "Hold Off", "Always" };
@@ -5507,6 +5550,11 @@ namespace Shadow {
             float keyW = MeasureTextSize(keyName).x;
             float spaceW = MeasureTextSize(" ").x * 1.5f;
             float totalRightW = keyW + modeW + spaceW;
+            float maxLabelW = size.x - g_Nav.PaddingX * 2.f - totalRightW - 14.f;
+
+            std::string clippedLabel = ClipTextToWidth(display, maxLabelW);
+
+            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, clippedLabel);
 
             Vec2 keyPos = { pos.x + size.x - totalRightW - g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f };
             Vec2 modePos = { keyPos.x + keyW + spaceW, keyPos.y };
@@ -5557,10 +5605,14 @@ namespace Shadow {
             if (!visible) return;
 
             Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
-            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, display);
 
-            // 动态自适应的小色块尺寸
             float previewSize = std::max(16.f, std::round(g_Nav.CharHeight * 0.95f));
+            float maxLabelW = size.x - g_Nav.PaddingX * 2.f - previewSize - 14.f;
+
+            std::string clipped = ClipTextToWidth(display, maxLabelW);
+
+            GetWindowDrawList()->AddText({ pos.x + g_Nav.PaddingX, pos.y + (size.y - g_Nav.CharHeight) * 0.5f }, textColor, clipped);
+
             Vec2 previewPos = { pos.x + size.x - previewSize - g_Nav.PaddingX, pos.y + (size.y - previewSize) * 0.5f };
 
             float globalAlpha = g_Ctx.Style.Colors[GuiCol_ColorPickerLight].a;
@@ -5597,7 +5649,7 @@ namespace Shadow {
             }
         }
 
-        // --- 结束渲染与按键分发 ---
+        // --- 结束渲染与按键分发（严格各列边界计算） ---
 
         inline void End() {
             g_Nav.BeginStack--;
@@ -5611,11 +5663,12 @@ namespace Shadow {
                 NavMenuColumn& col = g_Nav.ColumnStack[colIdx];
                 bool isActiveCol = (colIdx == g_Nav.ActiveColumnIdx);
 
-                // 底部状态栏自适应
+                // 底部状态栏自适应与超长文本裁切防重叠
                 Vec2 footerPos = { col.Pos.x, col.Pos.y + col.Size.y - g_Nav.FooterHeight };
                 GetWindowDrawList()->AddRectFilled(footerPos, { col.Size.x, g_Nav.FooterHeight }, g_Ctx.Style.Colors[GuiCol_TitleBarBg]);
                 GetWindowDrawList()->AddLine(footerPos, { col.Pos.x + col.Size.x, footerPos.y }, g_Ctx.Style.Colors[GuiCol_Border], 1.5f);
 
+                // 右侧索引/页码文本构建与安全限制
                 std::string subText;
                 if (!col.Subtitle.empty()) {
                     subText = std::format("{} [{}/{}]", col.Subtitle, col.TotalItems > 0 ? (col.FocusIndex + 1) : 0, col.TotalItems);
@@ -5624,9 +5677,18 @@ namespace Shadow {
                     subText = std::format("[{}/{}]", col.TotalItems > 0 ? (col.FocusIndex + 1) : 0, col.TotalItems);
                 }
 
-                float subW = MeasureTextSize(subText).x;
-                GetWindowDrawList()->AddText({ footerPos.x + col.Size.x - subW - g_Nav.PaddingX, footerPos.y + (g_Nav.FooterHeight - g_Nav.CharHeight) * 0.5f }, g_Ctx.Style.Colors[GuiCol_TextDisabled], subText);
-                GetWindowDrawList()->AddText({ footerPos.x + g_Nav.PaddingX, footerPos.y + (g_Nav.FooterHeight - g_Nav.CharHeight) * 0.5f }, g_Ctx.Style.Colors[GuiCol_Text], col.Title);
+                // 限制右侧文字最多占当前列宽度的 55%，超出时先裁切自身
+                float maxSubW = col.Size.x * 0.55f;
+                std::string clippedSubText = ClipTextToWidth(subText, maxSubW);
+                float subW = MeasureTextSize(clippedSubText).x;
+
+                // 左侧标题允许的最大宽度（严格限制在当前列 [col.Pos.x, col.Pos.x + col.Size.x] 之内）
+                float maxTitleW = std::max(0.f, col.Size.x - subW - g_Nav.PaddingX * 2.f - 8.f);
+                std::string clippedTitle = ClipTextToWidth(col.Title, maxTitleW);
+
+                // 绘制当前列的底部信息
+                GetWindowDrawList()->AddText({ footerPos.x + col.Size.x - subW - g_Nav.PaddingX, footerPos.y + (g_Nav.FooterHeight - g_Nav.CharHeight) * 0.5f }, g_Ctx.Style.Colors[GuiCol_TextDisabled], clippedSubText);
+                GetWindowDrawList()->AddText({ footerPos.x + g_Nav.PaddingX, footerPos.y + (g_Nav.FooterHeight - g_Nav.CharHeight) * 0.5f }, g_Ctx.Style.Colors[GuiCol_Text], clippedTitle);
 
                 // 外部滚动条自适应
                 if (isActiveCol && col.TotalItems > g_Nav.MaxVisibleItems) {

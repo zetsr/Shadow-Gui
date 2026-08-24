@@ -59,9 +59,8 @@ namespace Example_Nav {
                     Shadow::Nav::Slider("Disabled Locked Slider", &fDisabledVal, 0.f, 100.f);
                     Shadow::Nav::Button("Disabled Locked Button");
                     Shadow::EndDisabled();
-
-                    Shadow::Nav::EndTabItem();
                 }
+                Shadow::Nav::EndTabItem();
 
                 // --- TAB 2: Online ---
                 if (Shadow::Nav::BeginTabItem("Online")) {
@@ -74,9 +73,8 @@ namespace Example_Nav {
                     Shadow::Nav::Slider("Money Drop Delay (s)", &fMoneyDropDelay, 0.1f, 10.0f, 0.1f);
                     Shadow::Nav::Button("Give All Weapons");
                     Shadow::Nav::Button("Teleport To Waypoint");
-
-                    Shadow::Nav::EndTabItem();
                 }
+                Shadow::Nav::EndTabItem();
 
                 // --- TAB 3: Peds (包含 10 个非 Text 占位控件、30个占位 Text 以及三层嵌套 TreeNode) ---
                 if (Shadow::Nav::BeginTabItem("Peds")) {
@@ -129,19 +127,18 @@ namespace Example_Nav {
                                 Shadow::Nav::Button("Aggressive");
                                 Shadow::Nav::Button("Defensive");
                                 Shadow::Nav::Button("Stealth");
-                                Shadow::Nav::TreePop();
                             }
+                            Shadow::Nav::TreePop();
 
                             // ... [第三层: 分支 A1b] Weapon Loadout ...
                             if (Shadow::Nav::TreeNode("Weapon Loadout")) {
                                 Shadow::Nav::Button("Pistol Loadout");
                                 Shadow::Nav::Button("Rifle Loadout");
                                 Shadow::Nav::Button("Heavy Loadout");
-                                Shadow::Nav::TreePop();
                             }
-
                             Shadow::Nav::TreePop();
                         }
+                        Shadow::Nav::TreePop();
 
                         // --- [第二层: 分支 A2] Female Types ---
                         if (Shadow::Nav::TreeNode("Female Types")) {
@@ -153,21 +150,19 @@ namespace Example_Nav {
                                 Shadow::Nav::Button("Casual Outfit");
                                 Shadow::Nav::Button("Formal Outfit");
                                 Shadow::Nav::Button("Tactical Outfit");
-                                Shadow::Nav::TreePop();
                             }
+                            Shadow::Nav::TreePop();
 
                             // ... [第三层: 分支 A2b] Voice Options ...
                             if (Shadow::Nav::TreeNode("Voice Options")) {
                                 Shadow::Nav::Button("Voice 1");
                                 Shadow::Nav::Button("Voice 2");
-                                Shadow::Nav::TreePop();
                             }
-
                             Shadow::Nav::TreePop();
                         }
-
                         Shadow::Nav::TreePop();
                     }
+                    Shadow::Nav::TreePop();
 
                     // === [第一层: 分支 B] Special Ped Spawner ===
                     if (Shadow::Nav::TreeNode("Special Ped Spawner")) {
@@ -183,11 +178,10 @@ namespace Example_Nav {
                         if (Shadow::Nav::TreeNode("Animals")) {
                             Shadow::Nav::Button("Dog (Chop)");
                             Shadow::Nav::Button("Cat");
-                            Shadow::Nav::TreePop();
                         }
-
                         Shadow::Nav::TreePop();
                     }
+                    Shadow::Nav::TreePop();
 
                     // 30 个 Text 占位测试 Peds 主菜单滚动条
                     for (int i = 1; i <= 30; ++i) {
@@ -195,12 +189,11 @@ namespace Example_Nav {
                     }
 
                     Shadow::Nav::Button("Kill All Spawned Peds");
-                    Shadow::Nav::EndTabItem();
                 }
-
-                Shadow::Nav::EndTabBar();
+                Shadow::Nav::EndTabItem();
             }
-            Shadow::Nav::End();
+            Shadow::Nav::EndTabBar();
         }
+        Shadow::Nav::End();
     }
 }

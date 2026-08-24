@@ -4982,10 +4982,16 @@ namespace Shadow {
             int SubFocus = 0; // 0 = Bind / 滑块, 1 = Mode
             bool CurrentItemConsumesLeftRight = false; // 标记当前选中的控件是否消费左右键
 
-            // 高精度单调连发调度器
+            // 栈计数器（用于 CheckAndDrawErrors 与生命周期检测）
+            int BeginStack = 0;
+            int TabBarStack = 0;
+            int TabItemStack = 0;
+            int TreeNodeStack = 0;
+
+            // 按键连发计时：进入连发状态每 100ms 触发一次
             double NextRepeatTime[256] = { 0.0 };
-            double RepeatDelay = 0.25; // 首次按住 250ms 后进入连击
-            double RepeatRate = 0.05;  // 连击状态下恒定每 50ms 步进一次
+            double RepeatDelay = 0.25; // 首次连击延迟 250ms
+            double RepeatRate = 0.10;  // 连击频率 100ms
 
             // TabBar 状态
             size_t ActiveTabBarId = 0;
@@ -5016,7 +5022,6 @@ namespace Shadow {
 
         inline NavContext g_Nav;
 
-        // 核心连发判断：首帧立刻响应，按住延迟 250ms 后恒定以 100ms 频率触发
         inline bool IsNavKey(int vk, bool allowRepeat = true) {
             if (g_Ctx.KeyPressed[vk]) {
                 g_Nav.NextRepeatTime[vk] = g_Ctx.RealTimeSeconds + g_Nav.RepeatDelay;
@@ -5035,20 +5040,39 @@ namespace Shadow {
             return false;
         }
 
-        // 仅单次按下触发（绝对禁用连发）
         inline bool IsNavKeyJustPressed(int vk) {
             return g_Ctx.KeyPressed[vk];
+        }
+
+        // Nav 专属错误检测与绘制
+        inline void CheckAndDrawErrors() {
+            std::string errorMsg;
+            if (g_Nav.BeginStack > 0) errorMsg = std::format("ERROR: Nav::Begin() called {} time(s) without matching Nav::End()!", g_Nav.BeginStack);
+            else if (g_Nav.BeginStack < 0) errorMsg = std::format("ERROR: Nav::End() called {} time(s) without matching Nav::Begin()!", -g_Nav.BeginStack);
+            else if (g_Nav.TabBarStack > 0) errorMsg = std::format("ERROR: Nav::BeginTabBar() called {} time(s) without matching Nav::EndTabBar()!", g_Nav.TabBarStack);
+            else if (g_Nav.TabBarStack < 0) errorMsg = std::format("ERROR: Nav::EndTabBar() called {} time(s) without matching Nav::BeginTabBar()!", -g_Nav.TabBarStack);
+            else if (g_Nav.TabItemStack > 0) errorMsg = std::format("ERROR: Nav::BeginTabItem() called {} time(s) without matching Nav::EndTabItem()!", g_Nav.TabItemStack);
+            else if (g_Nav.TabItemStack < 0) errorMsg = std::format("ERROR: Nav::EndTabItem() called {} time(s) without matching Nav::BeginTabItem()!", -g_Nav.TabItemStack);
+            else if (g_Nav.TreeNodeStack > 0) errorMsg = std::format("ERROR: Nav::TreeNode() called {} time(s) without matching Nav::TreePop()!", g_Nav.TreeNodeStack);
+            else if (g_Nav.TreeNodeStack < 0) errorMsg = std::format("ERROR: Nav::TreePop() called {} time(s) without matching Nav::TreeNode()!", -g_Nav.TreeNodeStack);
+
+            if (!errorMsg.empty()) {
+                GetWindowDrawList()->AddText(g_Ctx.DefaultFont, 1.0f, g_Ctx.Style.Colors[GuiCol_TextShadow], g_Ctx.Style.Colors[GuiCol_TextOutline], { 5.f, 5.f }, g_Ctx.Style.Colors[GuiCol_ErrorText], errorMsg);
+            }
         }
 
         // --- 菜单生命周期 API ---
 
         inline bool Begin(std::string_view title, std::string_view subtitle = "", Vec2 default_pos = { 80.f, 80.f }, Vec2 default_size = { 480.f, 760.f }) {
-            size_t rootId = HashString(title);
+            g_Nav.BeginStack++; // 无条件入栈
+
+            std::string_view display; size_t rootId;
+            ParseLabel(title, display, rootId);
 
             if (g_Nav.ColumnStack.empty()) {
                 NavMenuColumn root;
                 root.Id = rootId;
-                root.Title = std::string(title);
+                root.Title = std::string(display);
                 root.Subtitle = std::string(subtitle);
                 root.Pos = default_pos;
                 root.Size = default_size;
@@ -5059,7 +5083,7 @@ namespace Shadow {
             auto& win = g_Ctx.Windows[rootId];
             if (win.Id == 0) {
                 win.Id = rootId;
-                win.Name = std::string(title);
+                win.Name = std::string(display);
                 g_Ctx.WindowDisplayOrder.push_back(rootId);
                 win.Pos = default_pos;
                 win.Size = default_size;
@@ -5074,7 +5098,7 @@ namespace Shadow {
                 c.SelectableIndices.clear();
             }
 
-            g_Nav.ColumnStack[0].Title = std::string(title);
+            g_Nav.ColumnStack[0].Title = std::string(display);
             g_Nav.ColumnStack[0].Subtitle = std::string(subtitle);
             g_Nav.ColumnStack[0].Pos = default_pos;
             g_Nav.ColumnStack[0].Size = default_size;
@@ -5084,7 +5108,6 @@ namespace Shadow {
             float contentAreaH = g_Nav.ColumnStack[0].Size.y - g_Nav.HeaderHeight - g_Nav.FooterHeight;
             g_Nav.MaxVisibleItems = std::max(1, static_cast<int>(contentAreaH / g_Nav.RowHeight));
 
-            // 绘制各列背景：子菜单顶部留白
             for (size_t colIdx = 0; colIdx < g_Nav.ColumnStack.size(); ++colIdx) {
                 const auto& c = g_Nav.ColumnStack[colIdx];
                 if (colIdx == 0) {
@@ -5103,20 +5126,34 @@ namespace Shadow {
         }
 
         inline bool BeginTabBar(std::string_view name) {
-            g_Nav.ActiveTabBarId = HashString(name);
+            g_Nav.TabBarStack++; // 无条件入栈
+
+            std::string_view display; size_t id;
+            ParseLabel(name, display, id);
+
+            g_Nav.ActiveTabBarId = id;
             g_Nav.CurrentTabs.clear();
             return true;
         }
 
         inline bool BeginTabItem(std::string_view name) {
+            g_Nav.TabItemStack++; // 无条件入栈
+
+            std::string_view display; size_t id;
+            ParseLabel(name, display, id);
+
             int tabIdx = static_cast<int>(g_Nav.CurrentTabs.size());
-            g_Nav.CurrentTabs.push_back(std::string(name));
+            g_Nav.CurrentTabs.push_back(std::string(display));
             return (tabIdx == g_Nav.ActiveTabIdx);
         }
 
-        inline void EndTabItem() {}
+        inline void EndTabItem() {
+            g_Nav.TabItemStack--; // 出栈
+        }
 
         inline void EndTabBar() {
+            g_Nav.TabBarStack--; // 出栈
+
             g_Nav.TabCount = static_cast<int>(g_Nav.CurrentTabs.size());
             if (g_Nav.TabCount > 0) {
                 g_Nav.ActiveTabIdx = (g_Nav.ActiveTabIdx % g_Nav.TabCount + g_Nav.TabCount) % g_Nav.TabCount;
@@ -5181,19 +5218,33 @@ namespace Shadow {
         // --- 核心控件 ---
 
         inline void TextColored(Color color, std::string_view text) {
+            std::string_view display; size_t id;
+            ParseLabel(text, display, id);
+
             Vec2 pos, size;
             bool isFocused = false;
             bool visible = BeginItem(true, pos, size, isFocused);
             if (!visible) return;
 
-            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, color, text);
+            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, color, display);
         }
 
         inline void Text(std::string_view text) {
-            Shadow::Nav::TextColored(g_Ctx.Style.Colors[GuiCol_Text], text);
+            std::string_view display; size_t id;
+            ParseLabel(text, display, id);
+
+            Vec2 pos, size;
+            bool isFocused = false;
+            bool visible = BeginItem(true, pos, size, isFocused);
+            if (!visible) return;
+
+            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, g_Ctx.Style.Colors[GuiCol_Text], display);
         }
 
         inline bool Checkbox(std::string_view name, bool* value) {
+            std::string_view display; size_t id;
+            ParseLabel(name, display, id);
+
             bool disabled = IsDisabled();
             Vec2 pos, size;
             bool isFocused = false;
@@ -5219,11 +5270,14 @@ namespace Shadow {
                 GetWindowDrawList()->AddRect(boxPos, { boxSize, boxSize }, boxColor, 2.0f);
             }
 
-            GetWindowDrawList()->AddText({ pos.x + 42.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, name);
+            GetWindowDrawList()->AddText({ pos.x + 42.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, display);
             return *value;
         }
 
         inline bool Button(std::string_view name) {
+            std::string_view display; size_t id;
+            ParseLabel(name, display, id);
+
             bool disabled = IsDisabled();
             Vec2 pos, size;
             bool isFocused = false;
@@ -5239,11 +5293,14 @@ namespace Shadow {
             if (!visible) return triggered;
 
             Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
-            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, name);
+            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, display);
             return triggered;
         }
 
         inline void Slider(std::string_view name, float* value, float min_val, float max_val, float step = 1.0f) {
+            std::string_view display; size_t id;
+            ParseLabel(name, display, id);
+
             bool disabled = IsDisabled();
             Vec2 pos, size;
             bool isFocused = false;
@@ -5291,7 +5348,7 @@ namespace Shadow {
             if (!visible) return;
 
             Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
-            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, name);
+            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, display);
 
             std::string valStr;
             if (g_Nav.State == NavState::Interacting && isFocused) {
@@ -5307,20 +5364,23 @@ namespace Shadow {
         }
 
         inline bool TreeNode(std::string_view name, std::string_view subtitle = "") {
+            g_Nav.TreeNodeStack++; // 无条件入栈
+
+            std::string_view display; size_t id;
+            ParseLabel(name, display, id);
+
             bool disabled = IsDisabled();
             Vec2 pos, size;
             bool isFocused = false;
             int parentColIdx = g_Nav.RenderColumnIdx;
             bool visible = BeginItem(disabled, pos, size, isFocused);
 
-            size_t id = HashString(name);
             NavMenuColumn& parentCol = g_Nav.ColumnStack[parentColIdx];
 
             if (isFocused) {
                 parentCol.OpenSubmenuId = id;
             }
             else if (parentCol.OpenSubmenuId == id && (parentCol.FocusIndex != parentCol.ItemCounter - 1)) {
-                // 光标离开当前 TreeNode，自动销毁并关闭子菜单
                 if (g_Nav.ColumnStack.size() > static_cast<size_t>(parentColIdx + 1)) {
                     g_Nav.ColumnStack.resize(parentColIdx + 1);
                     g_Nav.ActiveColumnIdx = std::min(g_Nav.ActiveColumnIdx, parentColIdx);
@@ -5338,7 +5398,7 @@ namespace Shadow {
 
                         NavMenuColumn subCol;
                         subCol.Id = id;
-                        subCol.Title = std::string(name);
+                        subCol.Title = std::string(display);
                         subCol.Subtitle = std::string(subtitle);
                         subCol.Pos = { parentCol.Pos.x + parentCol.Size.x + 8.f, parentCol.Pos.y };
                         subCol.Size = parentCol.Size;
@@ -5359,7 +5419,7 @@ namespace Shadow {
 
             if (visible) {
                 Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
-                GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, name);
+                GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, display);
                 GetWindowDrawList()->AddText({ pos.x + size.x - 32.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, ">>");
             }
 
@@ -5371,6 +5431,7 @@ namespace Shadow {
         }
 
         inline void TreePop() {
+            g_Nav.TreeNodeStack--; // 出栈
             if (g_Nav.RenderColumnIdx > 0) {
                 g_Nav.RenderColumnIdx--;
             }
@@ -5378,6 +5439,9 @@ namespace Shadow {
 
         inline void HotKey(std::string_view name, int* hotkey, bool* is_active, HotkeyMode* mode) {
             RegisterHotkey(hotkey, mode, is_active);
+
+            std::string_view display; size_t id;
+            ParseLabel(name, display, id);
 
             bool disabled = IsDisabled();
             Vec2 pos, size;
@@ -5419,7 +5483,7 @@ namespace Shadow {
             if (!visible) return;
 
             Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
-            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, name);
+            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, display);
 
             std::string keyName = (g_Nav.State == NavState::BindingKey && isFocused) ? "[Press Key]" : std::format("[{}]", GetKeyName(*hotkey));
             std::vector<std::string> modeStrs = { "None", "Hold On", "Toggle", "Hold Off", "Always" };
@@ -5451,11 +5515,13 @@ namespace Shadow {
         }
 
         inline void ColorPicker(std::string_view name, float* r, float* g, float* b, float* a = nullptr) {
+            std::string_view display; size_t id;
+            ParseLabel(name, display, id);
+
             bool disabled = IsDisabled();
             Vec2 pos, size;
             bool isFocused = false;
             bool visible = BeginItem(disabled, pos, size, isFocused);
-            size_t id = HashString(name);
 
             if (isFocused && !disabled) {
                 if (IsNavKeyJustPressed(VK_RETURN)) {
@@ -5476,9 +5542,8 @@ namespace Shadow {
             if (!visible) return;
 
             Color textColor = isFocused ? g_Ctx.Style.Colors[GuiCol_WindowBg] : (disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text]);
-            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, name);
+            GetWindowDrawList()->AddText({ pos.x + 14.f, pos.y + (size.y - MeasureTextSize("A").y) * 0.5f }, textColor, display);
 
-            // 棋盘格底纹 + 透明度混合预览图标（与鼠标菜单完全一致）
             float previewSize = 22.f;
             Vec2 previewPos = { pos.x + size.x - previewSize - 14.f, pos.y + (size.y - previewSize) * 0.5f };
 
@@ -5519,7 +5584,12 @@ namespace Shadow {
         // --- 结束渲染与按键分发 ---
 
         inline void End() {
-            if (g_Nav.ColumnStack.empty()) return;
+            g_Nav.BeginStack--; // 出栈
+
+            if (g_Nav.ColumnStack.empty()) {
+                CheckAndDrawErrors();
+                return;
+            }
 
             for (int colIdx = 0; colIdx < static_cast<int>(g_Nav.ColumnStack.size()); ++colIdx) {
                 NavMenuColumn& col = g_Nav.ColumnStack[colIdx];
@@ -5560,7 +5630,6 @@ namespace Shadow {
 
                 // 导航按键逻辑
                 if (isActiveCol && g_Nav.State != NavState::BindingKey && !g_Nav.CP_Open) {
-                    // 上下移动（250ms 延迟，100ms 恒定连发）
                     if (IsNavKey(VK_UP)) {
                         if (!col.SelectableIndices.empty()) {
                             auto it = std::lower_bound(col.SelectableIndices.begin(), col.SelectableIndices.end(), col.FocusIndex);
@@ -5584,7 +5653,6 @@ namespace Shadow {
                         }
                     }
 
-                    // 左右切换：严格单次按键触发（IsNavKeyJustPressed）
                     if (!g_Nav.CurrentItemConsumesLeftRight) {
                         if (colIdx == 0) {
                             if (IsNavKeyJustPressed(VK_LEFT) && g_Nav.TabCount > 0 && g_Nav.ColumnStack.size() == 1) {
@@ -5615,7 +5683,6 @@ namespace Shadow {
                         }
                     }
 
-                    // TAB 键切页：严格单次按键触发（IsNavKeyJustPressed，禁用连发）
                     if (IsNavKeyJustPressed(VK_TAB) && g_Nav.TabCount > 0) {
                         g_Nav.ActiveTabIdx = (g_Nav.ActiveTabIdx + 1) % g_Nav.TabCount;
                         col.FocusIndex = 0;
@@ -5624,7 +5691,6 @@ namespace Shadow {
                         g_Nav.ActiveColumnIdx = 0;
                     }
 
-                    // 退格键关闭当前级子菜单
                     if (IsNavKeyJustPressed(VK_BACK)) {
                         if (g_Nav.ColumnStack.size() > 1) {
                             g_Nav.ColumnStack.pop_back();
@@ -5757,6 +5823,8 @@ namespace Shadow {
                     if (IsNavKey(VK_DOWN) || IsNavKey(VK_LEFT))  *g_Nav.CP_TargetA = std::clamp(*g_Nav.CP_TargetA - 0.015f, 0.f, 1.f);
                 }
             }
+
+            CheckAndDrawErrors(); // 自动执行当前帧 Nav 错误检测与绘制
 
             g_Ctx.CurrentWindow = nullptr;
         }

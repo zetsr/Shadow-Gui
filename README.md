@@ -254,6 +254,9 @@ void __fastcall hkPostRender(SDK::UGameViewportClient* rcx, SDK::UCanvas* canvas
 
 ## API
 
+> [!IMPORTANT]
+> README.md 的 API 文档落后当前版本，请以 `Shadow.h` 和 [Release list](https://github.com/zetsr/Shadow-Gui/releases) 为准。
+
 ### 📌 基础控件 / Basic Controls
 
 ### Shadow::TextColored

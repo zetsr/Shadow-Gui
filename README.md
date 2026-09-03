@@ -1,5 +1,7 @@
 # ✨ Shadow Gui
 
+欢迎大家 PR 各种好看的主题配色和控件样式，或者提交你们的使用示例代码！
+
 ## Demo Window
 
 ### Dark
@@ -38,6 +40,12 @@
 * Modify `#include "../../CppSDK/SDK.hpp"` in `Shadow.h` to the actual path
 * Run `Shadow::NewFrame(Canvas);` in `UGameViewportClient::PostRender`
 * Run `Shadow::Render();` after `Shadow::NewFrame(Canvas);`
+
+### 注意事项 / Notes
+
+> [!IMPORTANT]
+> 对于不支持 `SDF 字体` 的游戏，请使用 `Shadow::PushFontNoSDF` 替代 `Shadow::PushFont`
+> 该函数可以在不影响性能的情况下修改字体尺寸，可能会对字体质量造成轻微影响。
 
 ### 示例 / Example
 

@@ -13,17 +13,23 @@
 ### Nav
 <img width="1920" height="1080" alt="9196d38726013468be8b69a51f05c493" src="https://github.com/user-attachments/assets/a8c0b44c-894f-44b1-afc4-c26c7dbf0dfc" />
 
+---
+
 ### ☕ 赞助 / Buy me a coffee
 
 * 您可以通过赞助支持我们的开发，感谢大家的支持！
 * If this project helps you, feel free to support my work!
 * **USDT (TRC-20):** `THzBDDbBkDh3nXRkCEeG4p5r733tWeAdib`
 
+---
+
 ## Credits
 
 * [ocornut/imgui](https://github.com/ocornut/imgui)
 * [Encryqed/Dumper-7](https://github.com/Encryqed/Dumper-7)
 * [Google AI Studio](https://aistudio.google.com/)
+
+---
 
 ## 使用方法 / Usage
 
@@ -41,6 +47,8 @@
 * Run `Shadow::NewFrame(Canvas);` in `UGameViewportClient::PostRender`
 * Run `Shadow::Render();` after `Shadow::NewFrame(Canvas);`
 
+---
+
 ### 注意事项 / Notes
 
 > [!IMPORTANT]
@@ -53,6 +61,8 @@ if (Shadow::TreeNode("TEST")){
 }
 Shadow::TreePop();
 ```
+
+---
 
 ### 示例 / Example
 
@@ -81,6 +91,8 @@ if (Shadow::Begin(U8("测试菜单 / Demo Menu##main_window"), Shadow::ShadowWin
 Shadow::End();
 ```
 <img width="576" height="433" alt="1" src="https://github.com/user-attachments/assets/29bbf19e-d53d-41b3-8b64-985293be887c" />
+
+---
 
 #### 画一个列表窗口 / Draw listbox
 
@@ -143,6 +155,8 @@ Shadow::End();
 ```
 <img width="501" height="400" alt="1" src="https://github.com/user-attachments/assets/83729fff-26a0-4f24-ab87-2c4d1462e0bd" />
 
+---
+
 #### 输入处理 / Input Processing
 
 ```cpp
@@ -201,6 +215,8 @@ Shadow::End();
     }
 ```
 
+---
+
 #### 创建菜单 / Creating Menu
 
 ```cpp
@@ -233,6 +249,8 @@ void __fastcall hkPostRender(SDK::UGameViewportClient* rcx, SDK::UCanvas* canvas
 }
 
 ```
+
+---
 
 ## API
 

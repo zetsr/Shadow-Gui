@@ -44,8 +44,15 @@
 ### 注意事项 / Notes
 
 > [!IMPORTANT]
-> 对于不支持 `SDF 字体` 的游戏，请使用 `Shadow::PushFontNoSDF` 替代 `Shadow::PushFont`
-> 该函数可以在不影响性能的情况下修改字体尺寸，可能会对字体质量造成轻微影响。
+> Shadow GUI 的所有压栈操作都必须在作用域之外出栈。
+
+示例：
+```cpp
+if (Shadow::TreeNode("TEST")){
+
+}
+Shadow::TreePop();
+```
 
 ### 示例 / Example
 

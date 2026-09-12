@@ -5,7 +5,7 @@
 #include <algorithm>
 
 // 包含原始SDK路径
-#include "external/CppSDK/SDK.hpp"
+#include "../external/CppSDK/SDK.hpp"
 
 // U8 宏定义
 #ifndef U8

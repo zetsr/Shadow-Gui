@@ -9,8 +9,8 @@
 #include <format>
 #include <algorithm>
 
-#include "external/CppSDK/SDK.hpp"
-#include "external/Shadow-Gui/include/Shadow.h"
+#include "../external/CppSDK/SDK.hpp"
+#include "../src/Shadow.h"
 
 namespace Example_Nav {
     void DrawGUI() {

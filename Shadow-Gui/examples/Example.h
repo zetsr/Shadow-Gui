@@ -9,8 +9,9 @@
 #include <format>
 #include <algorithm>
 
-#include "external/CppSDK/SDK.hpp"
-#include "external/Shadow-Gui/include/Shadow.h"
+#include "../external/CppSDK/SDK.hpp"
+#include "../src/Shadow.h"
+
 float G_SIZE = 1.5f;
 
 namespace Example {

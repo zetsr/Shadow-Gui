@@ -30,8 +30,9 @@
     <ClCompile Include="external\MinHook\src\trampoline.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Example.h" />
-    <ClInclude Include="Example_Nav.h" />
+    <ClInclude Include="examples\Example.h" />
+    <ClInclude Include="examples\Example_Nav.h" />
+    <ClInclude Include="examples\shadow_demo.h" />
     <ClInclude Include="external\AOBScan\AOBScan.hpp" />
     <ClInclude Include="external\CppSDK\PropertyFixup.hpp" />
     <ClInclude Include="external\CppSDK\SDK.hpp" />
@@ -45,8 +46,7 @@
     <ClInclude Include="external\MinHook\src\hde\table32.h" />
     <ClInclude Include="external\MinHook\src\hde\table64.h" />
     <ClInclude Include="external\MinHook\src\trampoline.h" />
-    <ClInclude Include="external\Shadow-Gui\include\Shadow.h" />
-    <ClInclude Include="shadow_demo.h" />
+    <ClInclude Include="src\Shadow.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="external\CppSDK\Assertions.inl" />

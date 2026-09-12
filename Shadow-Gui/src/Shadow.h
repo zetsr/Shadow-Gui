@@ -22,7 +22,7 @@ Credit:
 #include <cstdio>
 #include <optional>
 
-#include "../../CppSDK/SDK.hpp"
+#include "../external/CppSDK/SDK.hpp"
 
 namespace Shadow {
     enum class HotkeyMode {

@@ -3,10 +3,10 @@
 #include "external/AOBScan/AOBScan.hpp"
 #include "external/MinHook/include/MinHook.h"
 #include "external/CppSDK/SDK.hpp"
-#include "external/Shadow-Gui/include/Shadow.h"
-#include "shadow_demo.h"
-#include "Example.h"
-#include "Example_Nav.h"
+#include "src/Shadow.h"
+#include "examples/shadow_demo.h"
+#include "examples/Example.h"
+#include "examples/Example_Nav.h"
 
 namespace Hook {
     bool bShowMenu = false;

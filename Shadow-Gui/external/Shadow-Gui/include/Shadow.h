@@ -1881,9 +1881,17 @@ namespace Shadow {
             EmptyClipboard();
             HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, text.size() + 1);
             if (hMem) {
-                memcpy(GlobalLock(hMem), text.c_str(), text.size() + 1);
-                GlobalUnlock(hMem);
-                SetClipboardData(CF_TEXT, hMem);
+                void* p = GlobalLock(hMem);
+                if (p) {
+                    memcpy(p, text.c_str(), text.size() + 1);
+                    GlobalUnlock(hMem);
+                    if (!SetClipboardData(CF_TEXT, hMem)) {
+                        GlobalFree(hMem);
+                    }
+                }
+                else {
+                    GlobalFree(hMem);
+                }
             }
             CloseClipboard();
         }

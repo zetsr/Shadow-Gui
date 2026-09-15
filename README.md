@@ -81,8 +81,6 @@ Shadow::EndTabBar();
 
 #### 画一个简单的窗口 / Draw simple window
 
-<img width="576" height="433" alt="1" src="https://github.com/user-attachments/assets/29bbf19e-d53d-41b3-8b64-985293be887c" />
-
 <details>
 <summary>Show code</summary>
 
@@ -111,11 +109,11 @@ Shadow::End();
 
 </details>
 
+<img width="576" height="433" alt="1" src="https://github.com/user-attachments/assets/29bbf19e-d53d-41b3-8b64-985293be887c" />
+
 ---
 
 #### 画一个列表窗口 / Draw listbox
-
-<img width="501" height="400" alt="1" src="https://github.com/user-attachments/assets/83729fff-26a0-4f24-ab87-2c4d1462e0bd" />
 
 <details>
 <summary>Show code</summary>
@@ -179,6 +177,8 @@ Shadow::End();
 ```
 
 </details>
+
+<img width="501" height="400" alt="1" src="https://github.com/user-attachments/assets/83729fff-26a0-4f24-ab87-2c4d1462e0bd" />
 
 ---
 

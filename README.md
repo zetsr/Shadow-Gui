@@ -52,14 +52,27 @@
 ### 注意事项 / Notes
 
 > [!IMPORTANT]
-> Shadow GUI 的所有压栈操作都必须在作用域之外出栈。
+> 与 Dear ImGui 不同，Shadow GUI 的所有压栈操作都必须在作用域之外出栈。
 
 示例：
 ```cpp
-if (Shadow::TreeNode("TEST")){
+// -> BeginTabBar
+if (Shadow::BeginTabBar("TEST_BeginTabBar")) {
+    // -> BeginTabItem
+    if (Shadow::BeginTabItem("TEST_BeginTabItem")) {
+        // -> TreeNode
+        if (Shadow::TreeNode("TEST_TreeNode")) {
 
+        }
+        // -> TreePop
+        Shadow::TreePop();
+    }
+    // -> EndTabItem
+    Shadow::EndTabItem();
 }
-Shadow::TreePop();
+// -> EndTabBar
+Shadow::EndTabBar();
+
 ```
 
 ---
@@ -157,6 +170,18 @@ Shadow::End();
 
 ---
 
+#### 绑定热键 / Bind Hotkeys
+
+```cpp
+// 初始化 Shadow GUI 的时候需要先 RegisterHotkey，否则在上下文执行到 Shadow::HotKey 之前无法使用对应热键
+Shadow::RegisterHotkey(&g_Config::kTestKey, &g_Config::eTestKey, &g_Config::bTestKey);
+
+// 与 RegisterHotkey 保持一致，正常声明即可
+Shadow::HotKey("TestKey", &g_Config::kTestKey, &g_Config::bTestKey, &g_Config::eTestKey);
+```
+
+---
+
 #### 输入处理 / Input Processing
 
 ```cpp
@@ -229,6 +254,9 @@ void __fastcall hkPostRender(SDK::UGameViewportClient* rcx, SDK::UCanvas* canvas
     // 开始新的一帧
     // Begin a new frame
     Shadow::NewFrame(canvas);
+
+    // 如果使用 Hotkey，需要先注册热键，虽然缺少手动注册也能用
+    // Shadow::RegisterHotkey(&g_Config::kTestKey, &g_Config::eTestKey, &g_Config::bTestKey);
 
     // 更新所有热键状态
     // Update all hotkey states

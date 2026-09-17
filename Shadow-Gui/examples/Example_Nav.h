@@ -11,11 +11,36 @@
 
 #include "../external/CppSDK/SDK.hpp"
 #include "../src/Shadow.h"
+#include "Example_Texture.h"
 
 namespace Example_Nav {
+    void DrawLogoFromBuffer()
+    {
+        SDK::UTexture2D* Texture = Shadow::LoadTextureFromBuffer(Example_Texture::Logo, sizeof(Example_Texture::Logo));
+
+        if (Texture)
+        {
+            Shadow::GetBackgroundDrawList()->AddTexture({ 100.f, 100.f }, { 480.f, 173.f }, { 1.f, 1.f, 1.f, 1.f }, Texture);
+        }
+    }
+
+    void DrawLogoFromFile()
+    {
+        SDK::UTexture2D* Texture = Shadow::LoadTextureFromFile(L"C:\\Example_Texture.png");
+
+        if (Texture)
+        {
+            Shadow::GetBackgroundDrawList()->AddTexture({ 100.f, 100.f }, { 480.f, 173.f }, { 1.f, 1.f, 1.f, 1.f }, Texture);
+        }
+    }
+
     void DrawGUI() {
     // 默认尺寸 { 480.f, 760.f }
-        if (Shadow::Nav::Begin("Shadow Menu", "v1.6.1", { 100.f, 100.f }, { 480.f, 760.f })) {
+
+        DrawLogoFromBuffer();
+        // DrawLogoFromFile();
+
+        if (Shadow::Nav::Begin("Shadow Menu", "v1.6.1.1", { 100.f, 100.f + 173.f }, { 480.f, 760.f })) {
             if (Shadow::Nav::BeginTabBar("MainTabs")) {
 
                 // --- TAB 1: Local (包含状态显示和 Disabled 控件演示) ---

@@ -25,6 +25,121 @@ Credit:
 #include "../external/CppSDK/SDK.hpp"
 
 namespace Shadow {
+    namespace Detail {
+        constexpr int32_t INTERNAL_FLAG_ROOTSET = 1 << 30; // 0x40000000
+
+        // 映射引擎的 FUObjectItem 内部字段
+        struct FUObjectItemInternal {
+            SDK::UObject* Object;
+            int32_t       Flags;
+            int32_t       ClusterRootIndex;
+            int32_t       SerialNumber;
+        };
+
+        static_assert(sizeof(FUObjectItemInternal) == sizeof(SDK::FUObjectItem),
+            "FUObjectItem size mismatch! Please verify SDK::FUObjectItem");
+
+        // 内部 GC 保活
+        static void InternalAddToRoot(SDK::UObject* Obj) {
+            if (!Obj)
+                return;
+
+            SDK::TUObjectArray* ObjectsArray = SDK::UObject::GObjects.GetTypedPtr();
+            if (!ObjectsArray)
+                return;
+
+            const int32_t Index = Obj->Index;
+            const int32_t ChunkIndex = Index / SDK::TUObjectArray::ElementsPerChunk;
+            const int32_t InChunkIdx = Index % SDK::TUObjectArray::ElementsPerChunk;
+
+            if (Index < 0 || ChunkIndex >= ObjectsArray->NumChunks || Index >= ObjectsArray->NumElements)
+                return;
+
+            SDK::FUObjectItem* ChunkPtr = ObjectsArray->GetDecrytedObjPtr()[ChunkIndex];
+            if (!ChunkPtr)
+                return;
+
+            FUObjectItemInternal* Item = reinterpret_cast<FUObjectItemInternal*>(&ChunkPtr[InChunkIdx]);
+            if (Item->Object == Obj)
+            {
+                Item->Flags |= INTERNAL_FLAG_ROOTSET;
+            }
+        }
+
+        static SDK::UWorld* s_CachedWorld = nullptr;
+        static std::unordered_map<const void*, SDK::UTexture2D*> s_BufferTextureCache;
+        static std::unordered_map<std::wstring, SDK::UTexture2D*> s_FileTextureCache;
+
+        // 检查并自动维护 World 变动
+        static SDK::UWorld* GetReadyWorld() {
+            SDK::UWorld* CurrentWorld = SDK::UWorld::GetWorld();
+            if (!CurrentWorld || !CurrentWorld->OwningGameInstance || !CurrentWorld->PersistentLevel)
+                return nullptr;
+
+            // 一旦切服/换图导致 UWorld 改变，自动清空旧缓存
+            if (CurrentWorld != s_CachedWorld)
+            {
+                s_CachedWorld = CurrentWorld;
+                s_BufferTextureCache.clear();
+                s_FileTextureCache.clear();
+            }
+
+            return CurrentWorld;
+        }
+    }
+
+    static SDK::UTexture2D* LoadTextureFromBuffer(const unsigned char* BufferData, size_t BufferSize) {
+        if (!BufferData || BufferSize == 0) return nullptr;
+
+        SDK::UWorld* World = Detail::GetReadyWorld();
+        if (!World) return nullptr;
+
+        // 1. 命中缓存：返回现有纹理
+        auto It = Detail::s_BufferTextureCache.find(BufferData);
+        if (It != Detail::s_BufferTextureCache.end() && It->second != nullptr)
+        {
+            return It->second;
+        }
+
+        // 2. 缓存未命中（首次调用或切服后第一帧）：创建新纹理
+        SDK::TArray<uint8_t> ImageBuffer(
+            const_cast<uint8_t*>(BufferData),
+            static_cast<int32_t>(BufferSize),
+            static_cast<int32_t>(BufferSize)
+        );
+
+        SDK::UTexture2D* LoadedTexture = SDK::UKismetRenderingLibrary::ImportBufferAsTexture2D(World, ImageBuffer);
+        if (LoadedTexture) {
+            Detail::InternalAddToRoot(LoadedTexture); // 保证在同关卡内的 GC 安全
+            Detail::s_BufferTextureCache[BufferData] = LoadedTexture;
+        }
+
+        return LoadedTexture;
+    }
+
+    static SDK::UTexture2D* LoadTextureFromFile(const wchar_t* FilePath) {
+        if (!FilePath) return nullptr;
+
+        SDK::UWorld* World = Detail::GetReadyWorld();
+        if (!World) return nullptr;
+
+        // 1. 命中缓存
+        auto It = Detail::s_FileTextureCache.find(FilePath);
+        if (It != Detail::s_FileTextureCache.end() && It->second != nullptr) {
+            return It->second;
+        }
+
+        // 2. 未命中：加载并缓存
+        SDK::FString PathStr(FilePath);
+        SDK::UTexture2D* LoadedTexture = SDK::UKismetRenderingLibrary::ImportFileAsTexture2D(World, PathStr);
+        if (LoadedTexture) {
+            Detail::InternalAddToRoot(LoadedTexture); // 保证在同关卡内的 GC 安全
+            Detail::s_FileTextureCache[FilePath] = LoadedTexture;
+        }
+
+        return LoadedTexture;
+    }
+
     enum class HotkeyMode {
         None,
         HoldOn,
@@ -522,6 +637,7 @@ namespace Shadow {
         float CurrentScrollbarWidth = 0.f;
 
         std::vector<float> TextWrapPosStack;
+        std::vector<bool> TextPixelSnapStack;
 
         std::unordered_map<size_t, bool> TreeNodeOpenStates;
         float IndentX = 0.f;
@@ -1755,6 +1871,16 @@ namespace Shadow {
         }
     }
 
+    inline void PushTextPixelSnap(bool snap = true) {
+        g_Ctx.TextPixelSnapStack.push_back(snap);
+    }
+
+    inline void PopTextPixelSnap() {
+        if (!g_Ctx.TextPixelSnapStack.empty()) {
+            g_Ctx.TextPixelSnapStack.pop_back();
+        }
+    }
+
     inline std::string ClipTextString(std::string_view text, Vec2 pos, Vec2& outPos, bool& shouldDraw) {
         shouldDraw = true;
         outPos = pos;
@@ -1850,6 +1976,11 @@ namespace Shadow {
     }
 
     inline void ShadowDrawList::AddText(Vec2 pos, Color color, std::string_view text) {
+        if (!g_Ctx.TextPixelSnapStack.empty() && g_Ctx.TextPixelSnapStack.back()) {
+            pos.x = std::round(pos.x);
+            pos.y = std::round(pos.y);
+        }
+
         SDK::UFont* font = g_Ctx.DefaultFont;
         float scaleVal = 1.0f;
         bool noSDF = false;
@@ -1877,6 +2008,12 @@ namespace Shadow {
 
     inline void ShadowDrawList::AddText(SDK::UFont* font, float fontScale, Color shadowColor, Color outlineColor, Vec2 pos, Color color, std::string_view text, bool outline, bool noSDF) {
         if (!g_Ctx.Canvas || !font) return;
+
+        if (!g_Ctx.TextPixelSnapStack.empty() && g_Ctx.TextPixelSnapStack.back()) {
+            pos.x = std::round(pos.x);
+            pos.y = std::round(pos.y);
+        }
+
         Vec2 clippedPos = pos;
         bool shouldDraw = true;
         std::string clippedText = ClipTextString(text, pos, clippedPos, shouldDraw);
@@ -2761,6 +2898,7 @@ namespace Shadow {
         else if (g_Ctx.ListBoxStack < 0) errorMsg = std::format("ERROR: EndListBox() called {} time(s) without matching BeginListBox()!", -g_Ctx.ListBoxStack);
         else if (g_Ctx.FontStack.size() > 0) errorMsg = std::format("ERROR: PushFont() called {} time(s) without matching PopFont()!", g_Ctx.FontStack.size());
         else if (g_Ctx.TextOutlineStack.size() > 0) errorMsg = std::format("ERROR: PushTextOutline() called {} time(s) without matching PopTextOutline()!", g_Ctx.TextOutlineStack.size());
+        else if (g_Ctx.TextPixelSnapStack.size() > 0) errorMsg = std::format("ERROR: PushTextPixelSnap() called {} time(s) without matching PopTextPixelSnap()!", g_Ctx.TextPixelSnapStack.size());
         else if (g_Ctx.ClipStack.size() > 0) errorMsg = std::format("ERROR: PushClipRect() called {} time(s) without matching PopClipRect()!", g_Ctx.ClipStack.size());
         else if (g_Ctx.DisabledStack.size() > 0) errorMsg = std::format("ERROR: BeginDisabled() called {} time(s) without matching EndDisabled()!", g_Ctx.DisabledStack.size());
         else if (g_Ctx.TextWrapPosStack.size() > 0) errorMsg = std::format("ERROR: PushTextWrapPos() called {} time(s) without matching PopTextWrapPos()!", g_Ctx.TextWrapPosStack.size());
@@ -3093,6 +3231,7 @@ namespace Shadow {
 
         g_Ctx.FontStack.clear();
         g_Ctx.TextOutlineStack.clear();
+        g_Ctx.TextPixelSnapStack.clear();
         UpdateItemHeight();
 
         g_Ctx.InActiveTab = true;

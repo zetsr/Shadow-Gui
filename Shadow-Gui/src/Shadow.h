@@ -26,8 +26,7 @@ Credit:
 #include "Shadow_Texture.h"
 
 namespace Shadow {
-    namespace Detail
-    {
+    namespace Detail {
         // UObject::Flags 标志位定义 (EObjectFlags)
         constexpr uint32_t OBJECT_FLAG_PUBLIC = 0x00000001;                // RF_Public: 对象公开可被外部索引
         constexpr uint32_t OBJECT_FLAG_STANDALONE = 0x00000002;            // RF_Standalone: 对象为独立根对象，阻止无引用常规回收
@@ -50,8 +49,7 @@ namespace Shadow {
             INTERNAL_FLAG_PENDING_KILL;
 
         // 映射引擎的 FUObjectItem 内部字段
-        struct FUObjectItemInternal
-        {
+        struct FUObjectItemInternal {
             SDK::UObject* Object;
             int32_t       Flags;
             int32_t       ClusterRootIndex;
@@ -62,56 +60,52 @@ namespace Shadow {
             "FUObjectItem size mismatch! Please verify SDK::FUObjectItem");
 
         // 获取 FUObjectItem 指针
-        static FUObjectItemInternal* GetObjectItem(SDK::UObject* Obj)
-        {
-            if (!Obj)
-                return nullptr;
+        static FUObjectItemInternal* GetObjectItem(SDK::UObject* Obj) {
+            if (!Obj) return nullptr;
 
             SDK::TUObjectArray* ObjectsArray = SDK::UObject::GObjects.GetTypedPtr();
-            if (!ObjectsArray)
-                return nullptr;
+            if (!ObjectsArray) return nullptr;
 
             const int32_t Index = Obj->Index;
             const int32_t ChunkIndex = Index / SDK::TUObjectArray::ElementsPerChunk;
             const int32_t InChunkIdx = Index % SDK::TUObjectArray::ElementsPerChunk;
 
-            if (Index < 0 || ChunkIndex >= ObjectsArray->NumChunks || Index >= ObjectsArray->NumElements)
+            if (Index < 0 || ChunkIndex >= ObjectsArray->NumChunks || Index >= ObjectsArray->NumElements) {
                 return nullptr;
+            }
 
             SDK::FUObjectItem* ChunkPtr = ObjectsArray->GetDecrytedObjPtr()[ChunkIndex];
-            if (!ChunkPtr)
-                return nullptr;
+            if (!ChunkPtr) return nullptr;
 
             return reinterpret_cast<FUObjectItemInternal*>(&ChunkPtr[InChunkIdx]);
         }
 
         // 核心安全自检：判断贴图是否处于真正可绘制的存活状态
-        static bool IsTextureAliveAndValid(SDK::UTexture2D* Texture)
-        {
-            if (!Texture)
-                return false;
+        static bool IsTextureAliveAndValid(SDK::UTexture2D* Texture) {
+            if (!Texture) return false;
 
             // 1. 检查 UObject 自身的基础 Flags 是否正处于析构中
             const uint32_t ObjFlags = *reinterpret_cast<uint32_t*>(&Texture->Flags);
-            if (ObjFlags & (OBJECT_FLAG_BEGIN_DESTROYED | OBJECT_FLAG_FINISH_DESTROYED))
+            if (ObjFlags & (OBJECT_FLAG_BEGIN_DESTROYED | OBJECT_FLAG_FINISH_DESTROYED)) {
                 return false;
+            }
 
             // 2. 检查 FUObjectItem 底层状态是否已被打上垃圾/即将销毁标记
             FUObjectItemInternal* Item = GetObjectItem(Texture);
-            if (!Item || Item->Object != Texture)
+            if (!Item || Item->Object != Texture) {
                 return false;
+            }
 
-            if (Item->Flags & INTERNAL_FLAGS_GARBAGE_MASK)
+            if (Item->Flags & INTERNAL_FLAGS_GARBAGE_MASK) {
                 return false;
+            }
 
             return true;
         }
 
         // 内部 GC 保活与固化
-        static void InternalSolidify(SDK::UTexture2D* Texture)
-        {
-            if (!Texture)
-                return;
+        static void InternalSolidify(SDK::UTexture2D* Texture) {
+            if (!Texture) return;
 
             // 1. 剥离 Transient 与临时垃圾标记，赋予持久独立标志
             *(uint32_t*)(&Texture->Flags) &= ~(OBJECT_FLAG_TRANSIENT | OBJECT_FLAG_TAG_GARBAGE_TEMP);
@@ -123,8 +117,7 @@ namespace Shadow {
 
             // 3. 清理已有的垃圾标记并写入 RootSet
             FUObjectItemInternal* Item = GetObjectItem(Texture);
-            if (Item && Item->Object == Texture)
-            {
+            if (Item && Item->Object == Texture) {
                 Item->Flags &= ~INTERNAL_FLAGS_GARBAGE_MASK;
                 Item->Flags |= INTERNAL_FLAG_ROOTSET;
             }
@@ -135,15 +128,14 @@ namespace Shadow {
         static std::unordered_map<std::wstring, SDK::UTexture2D*> s_FileTextureCache;
 
         // 检查并自动维护 World 变动
-        static SDK::UWorld* GetReadyWorld()
-        {
+        static SDK::UWorld* GetReadyWorld() {
             SDK::UWorld* CurrentWorld = SDK::UWorld::GetWorld();
-            if (!CurrentWorld || !CurrentWorld->OwningGameInstance || !CurrentWorld->PersistentLevel)
+            if (!CurrentWorld || !CurrentWorld->OwningGameInstance || !CurrentWorld->PersistentLevel) {
                 return nullptr;
+            }
 
             // 一旦切服/换图导致 UWorld 改变，自动清空旧缓存
-            if (CurrentWorld != s_CachedWorld)
-            {
+            if (CurrentWorld != s_CachedWorld) {
                 s_CachedWorld = CurrentWorld;
                 s_BufferTextureCache.clear();
                 s_FileTextureCache.clear();
@@ -155,23 +147,20 @@ namespace Shadow {
 
     static SDK::UTexture2D* LoadTextureFromBuffer(const unsigned char* BufferData, size_t BufferSize)
     {
-        if (!BufferData || BufferSize == 0)
+        if (!BufferData || BufferSize == 0) {
             return nullptr;
+        }
 
         SDK::UWorld* World = Detail::GetReadyWorld();
-        if (!World)
-            return nullptr;
+        if (!World) return nullptr;
 
         // 1. 命中缓存：必须通过严格的活跃有效性检查
         auto It = Detail::s_BufferTextureCache.find(BufferData);
-        if (It != Detail::s_BufferTextureCache.end())
-        {
-            if (Detail::IsTextureAliveAndValid(It->second))
-            {
+        if (It != Detail::s_BufferTextureCache.end()) {
+            if (Detail::IsTextureAliveAndValid(It->second)) {
                 return It->second;
             }
-            else
-            {
+            else {
                 // 如果死于定期 GC / 玩家死亡清理，从缓存移除并触发就地重构
                 Detail::s_BufferTextureCache.erase(It);
             }
@@ -185,8 +174,7 @@ namespace Shadow {
         );
 
         SDK::UTexture2D* LoadedTexture = SDK::UKismetRenderingLibrary::ImportBufferAsTexture2D(World, ImageBuffer);
-        if (LoadedTexture)
-        {
+        if (LoadedTexture) {
             Detail::InternalSolidify(LoadedTexture);
             Detail::s_BufferTextureCache[BufferData] = LoadedTexture;
         }
@@ -194,25 +182,19 @@ namespace Shadow {
         return LoadedTexture;
     }
 
-    static SDK::UTexture2D* LoadTextureFromFile(const wchar_t* FilePath)
-    {
-        if (!FilePath)
-            return nullptr;
+    static SDK::UTexture2D* LoadTextureFromFile(const wchar_t* FilePath) {
+        if (!FilePath) return nullptr;
 
         SDK::UWorld* World = Detail::GetReadyWorld();
-        if (!World)
-            return nullptr;
+        if (!World) return nullptr;
 
         // 1. 命中缓存：进行有效性检查
         auto It = Detail::s_FileTextureCache.find(FilePath);
-        if (It != Detail::s_FileTextureCache.end())
-        {
-            if (Detail::IsTextureAliveAndValid(It->second))
-            {
+        if (It != Detail::s_FileTextureCache.end()) {
+            if (Detail::IsTextureAliveAndValid(It->second)) {
                 return It->second;
             }
-            else
-            {
+            else {
                 Detail::s_FileTextureCache.erase(It);
             }
         }
@@ -220,8 +202,7 @@ namespace Shadow {
         // 2. 未命中或已失效：重新加载
         SDK::FString PathStr(FilePath);
         SDK::UTexture2D* LoadedTexture = SDK::UKismetRenderingLibrary::ImportFileAsTexture2D(World, PathStr);
-        if (LoadedTexture)
-        {
+        if (LoadedTexture) {
             Detail::InternalSolidify(LoadedTexture);
             Detail::s_FileTextureCache[FilePath] = LoadedTexture;
         }

@@ -75,6 +75,32 @@ Shadow::EndTabBar();
 
 ```
 
+> [!IMPORTANT]
+> LoadTextureFromBuffer、LoadTextureFromFile 必须每帧调用
+
+示例：
+```cpp
+void DrawLogoFromBuffer()
+    {
+        SDK::UTexture2D* Texture = Shadow::LoadTextureFromBuffer(Example_Texture::Logo, sizeof(Example_Texture::Logo));
+
+        if (Texture)
+        {
+            Shadow::GetBackgroundDrawList()->AddTexture({ 100.f, 100.f }, { 480.f, 173.f }, { 1.f, 1.f, 1.f, 1.f }, Texture);
+        }
+    }
+
+    void DrawLogoFromFile()
+    {
+        SDK::UTexture2D* Texture = Shadow::LoadTextureFromFile(L"C:\\Example_Texture.png");
+
+        if (Texture)
+        {
+            Shadow::GetBackgroundDrawList()->AddTexture({ 100.f, 100.f }, { 480.f, 173.f }, { 1.f, 1.f, 1.f, 1.f }, Texture);
+        }
+    }
+```
+
 ---
 
 ### 示例 / Example

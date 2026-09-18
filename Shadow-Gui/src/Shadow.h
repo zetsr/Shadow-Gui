@@ -10,6 +10,7 @@ Credit:
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <format>
 #include <algorithm>
 #include <cstdint>
@@ -21,34 +22,34 @@ Credit:
 #include <ranges>
 #include <cstdio>
 #include <optional>
+#include <fstream>
+#include <filesystem>
+#include <deque>
 
 #include "../external/CppSDK/SDK.hpp"
 #include "Shadow_Texture.h"
 
 namespace Shadow {
     namespace Detail {
-        // UObject::Flags 标志位定义 (EObjectFlags)
-        constexpr uint32_t OBJECT_FLAG_PUBLIC = 0x00000001;                // RF_Public: 对象公开可被外部索引
-        constexpr uint32_t OBJECT_FLAG_STANDALONE = 0x00000002;            // RF_Standalone: 对象为独立根对象，阻止无引用常规回收
-        constexpr uint32_t OBJECT_FLAG_TRANSIENT = 0x00000040;             // RF_Transient: 瞬态标记，切关卡时会被强行清理
-        constexpr uint32_t OBJECT_FLAG_TAG_GARBAGE_TEMP = 0x00000100;      // RF_TagGarbageTemp: 临时垃圾标记
-        constexpr uint32_t OBJECT_FLAG_BEGIN_DESTROYED = 0x40000000;       // RF_BeginDestroyed: 对象已进入析构流程
-        constexpr uint32_t OBJECT_FLAG_FINISH_DESTROYED = 0x80000000;      // RF_FinishDestroyed: 对象析构彻底完成
+        // 通用标志位定义 (UObject Flags & Internal GC Flags)
+        constexpr uint32_t OBJECT_FLAG_PUBLIC = 0x00000001; // RF_Public
+        constexpr uint32_t OBJECT_FLAG_STANDALONE = 0x00000002; // RF_Standalone
+        constexpr uint32_t OBJECT_FLAG_TRANSIENT = 0x00000040; // RF_Transient
+        constexpr uint32_t OBJECT_FLAG_TAG_GARBAGE_TEMP = 0x00000100; // RF_TagGarbageTemp
+        constexpr uint32_t OBJECT_FLAG_DESTROYED_MASK = 0x40000000 | 0x80000000; // RF_BeginDestroyed | RF_FinishDestroyed
 
-        // FUObjectItem::Flags 标志位定义 (EInternalObjectFlags)
         constexpr int32_t INTERNAL_FLAG_NONE = 0;
-        constexpr int32_t INTERNAL_FLAG_GARBAGE = 1 << 27;                 // 0x08000000: 已被 GC 判定为垃圾
-        constexpr int32_t INTERNAL_FLAG_PERSISTENT_GARBAGE = 1 << 28;      // 0x10000000: 持久性垃圾标记
-        constexpr int32_t INTERNAL_FLAG_ROOTSET = 1 << 30;                 // 0x40000000: 根对象标记，彻底免疫 GC 扫描
-        constexpr int32_t INTERNAL_FLAG_PENDING_KILL = 1 << 31;            // 0x80000000: 即将被引擎销毁杀死
+        constexpr int32_t INTERNAL_FLAG_GARBAGE = 1 << 27; // 0x08000000
+        constexpr int32_t INTERNAL_FLAG_PERSISTENT_GARBAGE = 1 << 28; // 0x10000000
+        constexpr int32_t INTERNAL_FLAG_ROOTSET = 1 << 30; // 0x40000000
+        constexpr int32_t INTERNAL_FLAG_PENDING_KILL = 1 << 31; // 0x80000000
 
-        // 用于快速判断/清除所有垃圾相关标志的组合掩码
         constexpr int32_t INTERNAL_FLAGS_GARBAGE_MASK =
             INTERNAL_FLAG_GARBAGE |
             INTERNAL_FLAG_PERSISTENT_GARBAGE |
             INTERNAL_FLAG_PENDING_KILL;
 
-        // 映射引擎的 FUObjectItem 内部字段
+        // 通用底层 FUObjectItem 映射与探针
         struct FUObjectItemInternal {
             SDK::UObject* Object;
             int32_t       Flags;
@@ -59,12 +60,15 @@ namespace Shadow {
         static_assert(sizeof(FUObjectItemInternal) == sizeof(SDK::FUObjectItem),
             "FUObjectItem size mismatch! Please verify SDK::FUObjectItem");
 
-        // 获取 FUObjectItem 指针
         static FUObjectItemInternal* GetObjectItem(SDK::UObject* Obj) {
-            if (!Obj) return nullptr;
+            if (!Obj) {
+                return nullptr;
+            }
 
             SDK::TUObjectArray* ObjectsArray = SDK::UObject::GObjects.GetTypedPtr();
-            if (!ObjectsArray) return nullptr;
+            if (!ObjectsArray) {
+                return nullptr;
+            }
 
             const int32_t Index = Obj->Index;
             const int32_t ChunkIndex = Index / SDK::TUObjectArray::ElementsPerChunk;
@@ -75,66 +79,90 @@ namespace Shadow {
             }
 
             SDK::FUObjectItem* ChunkPtr = ObjectsArray->GetDecrytedObjPtr()[ChunkIndex];
-            if (!ChunkPtr) return nullptr;
+            if (!ChunkPtr) {
+                return nullptr;
+            }
 
             return reinterpret_cast<FUObjectItemInternal*>(&ChunkPtr[InChunkIdx]);
         }
 
-        // 核心安全自检：判断贴图是否处于真正可绘制的存活状态
-        static bool IsTextureAliveAndValid(SDK::UTexture2D* Texture) {
-            if (!Texture) return false;
-
-            // 1. 检查 UObject 自身的基础 Flags 是否正处于析构中
-            const uint32_t ObjFlags = *reinterpret_cast<uint32_t*>(&Texture->Flags);
-            if (ObjFlags & (OBJECT_FLAG_BEGIN_DESTROYED | OBJECT_FLAG_FINISH_DESTROYED)) {
+        // 判断 Texture 是否处于存活可渲染状态
+        static bool IsObjectAliveAndValid(SDK::UObject* Obj) {
+            if (!Obj) {
                 return false;
             }
 
-            // 2. 检查 FUObjectItem 底层状态是否已被打上垃圾/即将销毁标记
-            FUObjectItemInternal* Item = GetObjectItem(Texture);
-            if (!Item || Item->Object != Texture) {
+            const uint32_t ObjFlags = *reinterpret_cast<uint32_t*>(&Obj->Flags);
+            if (ObjFlags & OBJECT_FLAG_DESTROYED_MASK) {
                 return false;
             }
 
-            if (Item->Flags & INTERNAL_FLAGS_GARBAGE_MASK) {
+            FUObjectItemInternal* Item = GetObjectItem(Obj);
+            if (!Item || Item->Object != Obj || (Item->Flags & INTERNAL_FLAGS_GARBAGE_MASK)) {
                 return false;
             }
 
             return true;
         }
 
-        // 内部 GC 保活与固化
-        static void InternalSolidify(SDK::UTexture2D* Texture) {
-            if (!Texture) return;
+        // 剔除瞬态标志，打上 Standalone 与 RootSet
+        static void InternalSolidifyBase(SDK::UObject* Obj) {
+            if (!Obj) {
+                return;
+            }
 
-            // 1. 剥离 Transient 与临时垃圾标记，赋予持久独立标志
-            *(uint32_t*)(&Texture->Flags) &= ~(OBJECT_FLAG_TRANSIENT | OBJECT_FLAG_TAG_GARBAGE_TEMP);
-            *(uint32_t*)(&Texture->Flags) |= (OBJECT_FLAG_PUBLIC | OBJECT_FLAG_STANDALONE);
+            *(uint32_t*)(&Obj->Flags) &= ~(OBJECT_FLAG_TRANSIENT | OBJECT_FLAG_TAG_GARBAGE_TEMP);
+            *(uint32_t*)(&Obj->Flags) |= (OBJECT_FLAG_PUBLIC | OBJECT_FLAG_STANDALONE);
 
-            // 2. 锁定显存
-            Texture->bTemporarilyDisableStreaming = 1;
-            Texture->LODGroup = SDK::ETextureGroup::TEXTUREGROUP_UI;
-
-            // 3. 清理已有的垃圾标记并写入 RootSet
-            FUObjectItemInternal* Item = GetObjectItem(Texture);
-            if (Item && Item->Object == Texture) {
+            FUObjectItemInternal* Item = GetObjectItem(Obj);
+            if (Item && Item->Object == Obj) {
                 Item->Flags &= ~INTERNAL_FLAGS_GARBAGE_MASK;
                 Item->Flags |= INTERNAL_FLAG_ROOTSET;
             }
         }
 
+        // 针对 Texture2D 的专用固化（包含显存流送与 UI 组别锁定）
+        static void SolidifyTexture(SDK::UTexture2D* Texture) {
+            if (!Texture) {
+                return;
+            }
+
+            InternalSolidifyBase(Texture);
+            Texture->bTemporarilyDisableStreaming = 1;
+            Texture->LODGroup = SDK::ETextureGroup::TEXTUREGROUP_UI;
+        }
+
+        // 将对象从全局池中抹除，使引擎在退出时彻底忽略它，阻止 FMemory::Free 释放 CRT 内存
+        static void GhostObject(SDK::UObject* Obj) {
+            if (!Obj) {
+                return;
+            }
+
+            FUObjectItemInternal* Item = GetObjectItem(Obj);
+            if (Item && Item->Object == Obj) {
+                Item->Object = nullptr; // 引擎从此失去对该对象的记忆
+                Item->Flags = 0;
+            }
+        }
+
+        // 上下文、环境检查与持久数据池
         static SDK::UWorld* s_CachedWorld = nullptr;
         static std::unordered_map<const void*, SDK::UTexture2D*> s_BufferTextureCache;
         static std::unordered_map<std::wstring, SDK::UTexture2D*> s_FileTextureCache;
 
-        // 检查并自动维护 World 变动
+        // 字体是全局且免疫 GC 的，使用独立永生池
+        static std::unordered_set<std::wstring> s_PermanentPathPool;
+        static std::unordered_map<std::wstring, SDK::UFont*> s_FileFontCache;
+        static std::unordered_map<const void*, SDK::UFont*> s_BufferFontCache;
+        static std::deque<SDK::FTypefaceEntry> s_PermanentTypefaceEntries;
+
+        // 检查并自动维护 World 变动（关卡切换时清空易失的 Texture 显存缓存）
         static SDK::UWorld* GetReadyWorld() {
             SDK::UWorld* CurrentWorld = SDK::UWorld::GetWorld();
             if (!CurrentWorld || !CurrentWorld->OwningGameInstance || !CurrentWorld->PersistentLevel) {
                 return nullptr;
             }
 
-            // 一旦切服/换图导致 UWorld 改变，自动清空旧缓存
             if (CurrentWorld != s_CachedWorld) {
                 s_CachedWorld = CurrentWorld;
                 s_BufferTextureCache.clear();
@@ -143,30 +171,65 @@ namespace Shadow {
 
             return CurrentWorld;
         }
-    }
 
-    static SDK::UTexture2D* LoadTextureFromBuffer(const unsigned char* BufferData, size_t BufferSize)
-    {
+        // 获取持久化 Outer 容器
+        static SDK::UObject* GetPersistentOuter() {
+            SDK::UObject* TransientPkg = SDK::UObject::FindObjectFastImpl("Transient");
+            if (TransientPkg) {
+                return TransientPkg;
+            }
+
+            SDK::UWorld* World = SDK::UWorld::GetWorld();
+            if (World && World->OwningGameInstance) {
+                return World->OwningGameInstance;
+            }
+
+            return World;
+        }
+
+        // 永久缓存字符串指针，杜绝 FreeType 读取到悬垂路径
+        static const wchar_t* GetPermanentPathPtr(const std::wstring& Path) {
+            auto Pair = s_PermanentPathPool.insert(Path);
+            return Pair.first->c_str();
+        }
+
+        // 创建 Slate 专用的全局持久 Runtime UFont 实例
+        static SDK::UFont* CreatePermanentRuntimeFont() {
+            SDK::UClass* FontClass = SDK::UFont::StaticClass();
+            if (!FontClass) {
+                return nullptr;
+            }
+
+            SDK::UObject* Outer = GetPersistentOuter();
+            if (!Outer) {
+                return nullptr;
+            }
+
+            SDK::UObject* NewObj = SDK::UGameplayStatics::SpawnObject(FontClass, Outer);
+            return static_cast<SDK::UFont*>(NewObj);
+        }
+    } // namespace Detail
+
+    static SDK::UTexture2D* LoadTextureFromBuffer(const unsigned char* BufferData, size_t BufferSize) {
         if (!BufferData || BufferSize == 0) {
             return nullptr;
         }
 
         SDK::UWorld* World = Detail::GetReadyWorld();
-        if (!World) return nullptr;
+        if (!World) {
+            return nullptr;
+        }
 
-        // 1. 命中缓存：必须通过严格的活跃有效性检查
         auto It = Detail::s_BufferTextureCache.find(BufferData);
         if (It != Detail::s_BufferTextureCache.end()) {
-            if (Detail::IsTextureAliveAndValid(It->second)) {
+            if (Detail::IsObjectAliveAndValid(It->second)) {
                 return It->second;
             }
             else {
-                // 如果死于定期 GC / 玩家死亡清理，从缓存移除并触发就地重构
                 Detail::s_BufferTextureCache.erase(It);
             }
         }
 
-        // 2. 缓存未命中或已失效：重新安全解码
         SDK::TArray<uint8_t> ImageBuffer(
             const_cast<uint8_t*>(BufferData),
             static_cast<int32_t>(BufferSize),
@@ -175,7 +238,7 @@ namespace Shadow {
 
         SDK::UTexture2D* LoadedTexture = SDK::UKismetRenderingLibrary::ImportBufferAsTexture2D(World, ImageBuffer);
         if (LoadedTexture) {
-            Detail::InternalSolidify(LoadedTexture);
+            Detail::SolidifyTexture(LoadedTexture);
             Detail::s_BufferTextureCache[BufferData] = LoadedTexture;
         }
 
@@ -183,15 +246,18 @@ namespace Shadow {
     }
 
     static SDK::UTexture2D* LoadTextureFromFile(const wchar_t* FilePath) {
-        if (!FilePath) return nullptr;
+        if (!FilePath) {
+            return nullptr;
+        }
 
         SDK::UWorld* World = Detail::GetReadyWorld();
-        if (!World) return nullptr;
+        if (!World) {
+            return nullptr;
+        }
 
-        // 1. 命中缓存：进行有效性检查
         auto It = Detail::s_FileTextureCache.find(FilePath);
         if (It != Detail::s_FileTextureCache.end()) {
-            if (Detail::IsTextureAliveAndValid(It->second)) {
+            if (Detail::IsObjectAliveAndValid(It->second)) {
                 return It->second;
             }
             else {
@@ -199,15 +265,84 @@ namespace Shadow {
             }
         }
 
-        // 2. 未命中或已失效：重新加载
         SDK::FString PathStr(FilePath);
         SDK::UTexture2D* LoadedTexture = SDK::UKismetRenderingLibrary::ImportFileAsTexture2D(World, PathStr);
         if (LoadedTexture) {
-            Detail::InternalSolidify(LoadedTexture);
+            Detail::SolidifyTexture(LoadedTexture);
             Detail::s_FileTextureCache[FilePath] = LoadedTexture;
         }
 
         return LoadedTexture;
+    }
+
+    static SDK::UFont* LoadFontFromFile(const wchar_t* FilePath) {
+        if (!FilePath) {
+            return nullptr;
+        }
+
+        // 字体已幽灵化，永不被 GC 且终生有效，直接返回命中缓存即可
+        auto It = Detail::s_FileFontCache.find(FilePath);
+        if (It != Detail::s_FileFontCache.end()) {
+            return It->second;
+        }
+
+        SDK::UFont* NewFont = Detail::CreatePermanentRuntimeFont();
+        if (!NewFont) {
+            return nullptr;
+        }
+
+        NewFont->FontCacheType = SDK::EFontCacheType::Runtime;
+
+        const wchar_t* SafePathPtr = Detail::GetPermanentPathPtr(FilePath);
+
+        // deque 就地构造指针
+        SDK::FTypefaceEntry& Entry = Detail::s_PermanentTypefaceEntries.emplace_back();
+        Entry.Name = SDK::FName();
+        Entry.Font.FontFilename = SDK::FString(SafePathPtr);
+        Entry.Font.Hinting = SDK::EFontHinting::Default;
+        Entry.Font.LoadingPolicy = SDK::EFontLoadingPolicy::LazyLoad;
+        Entry.Font.SubFaceIndex = 0;
+        Entry.Font.FontFaceAsset = nullptr;
+
+        NewFont->CompositeFont.DefaultTypeface.Fonts = SDK::TArray<SDK::FTypefaceEntry>(&Entry, 1, 1);
+
+        // 将其变成幽灵对象，切断引擎退出时对该 CRT 内存的所有销毁链路
+        Detail::GhostObject(NewFont);
+
+        Detail::s_FileFontCache[FilePath] = NewFont;
+
+        return NewFont;
+    }
+
+    static SDK::UFont* LoadFontFromBuffer(const unsigned char* BufferData, size_t BufferSize) {
+        if (!BufferData || BufferSize == 0) {
+            return nullptr;
+        }
+
+        auto It = Detail::s_BufferFontCache.find(BufferData);
+        if (It != Detail::s_BufferFontCache.end()) {
+            return It->second;
+        }
+
+        std::filesystem::path TempDir = std::filesystem::temp_directory_path();
+        std::wstring TempFileName = L"mod_font_" + std::to_wstring(reinterpret_cast<uintptr_t>(BufferData)) + L".ttf";
+        std::filesystem::path TempFilePath = TempDir / TempFileName;
+
+        if (!std::filesystem::exists(TempFilePath)) {
+            std::ofstream Out(TempFilePath, std::ios::binary);
+            if (!Out.is_open()) {
+                return nullptr;
+            }
+            Out.write(reinterpret_cast<const char*>(BufferData), BufferSize);
+            Out.close();
+        }
+
+        SDK::UFont* LoadedFont = LoadFontFromFile(TempFilePath.c_str());
+        if (LoadedFont) {
+            Detail::s_BufferFontCache[BufferData] = LoadedFont;
+        }
+
+        return LoadedFont;
     }
 
     enum class HotkeyMode {

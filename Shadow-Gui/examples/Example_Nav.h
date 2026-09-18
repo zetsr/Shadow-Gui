@@ -12,6 +12,7 @@
 #include "../external/CppSDK/SDK.hpp"
 #include "../src/Shadow.h"
 #include "Example_Texture.h"
+#include "Example_Font.h"
 
 namespace Example_Nav {
     void DrawLogoFromBuffer()
@@ -34,9 +35,40 @@ namespace Example_Nav {
         }
     }
 
+    void DrawCustomText()
+    {
+        // 内存
+        SDK::UFont* Icon = Shadow::LoadFontFromBuffer(Example_Font::Icon, sizeof(Example_Font::Icon));
+
+        // 文件
+        SDK::UFont* msyh = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\msyh.ttc");
+
+        if (Icon)
+        {
+            Shadow::Color Color = { 1.f, 1.f, 1.f, 0.75f };
+
+            Shadow::PushFont(Icon, 2.f);
+            Shadow::GetBackgroundDrawList()->AddText({ 50.f, 50.f }, Color, "A");
+            Shadow::GetBackgroundDrawList()->AddText({ 50.f, 100.f }, Color, "B");
+            Shadow::GetBackgroundDrawList()->AddText({ 50.f, 150.f }, Color, "C");
+            Shadow::GetBackgroundDrawList()->AddText({ 50.f, 200.f }, Color, "D");
+            Shadow::GetBackgroundDrawList()->AddText({ 50.f, 250.f }, Color, "E");
+            Shadow::PopFont();
+        }
+
+		if (msyh)
+		{
+			Shadow::Color Color = { 1.f, 1.f, 1.f, 1.f };
+			Shadow::PushFont(msyh, 2.f);
+			Shadow::GetBackgroundDrawList()->AddText({ 50.f, 300.f }, Color, SDK::FString(L"示例文本").ToString());
+			Shadow::PopFont();
+		}
+    }
+
     void DrawGUI() {
 		// Shadow::GetBackgroundDrawList()->AddCircleFilled({ 100.f, 100.f }, 50.f, { 0.2f, 0.8f, 0.4f, 1.f });
 
+        DrawCustomText();
         DrawLogoFromBuffer();
         // DrawLogoFromFile();
 

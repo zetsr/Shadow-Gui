@@ -23,6 +23,7 @@ Credit:
 #include <optional>
 
 #include "../external/CppSDK/SDK.hpp"
+#include "Shadow_Texture.h"
 
 namespace Shadow {
     namespace Detail {
@@ -380,6 +381,7 @@ namespace Shadow {
         void AddLine(Vec2 start, Vec2 end, Color color, float thickness = 1.0f);
         void AddRect(Vec2 pos, Vec2 size, Color color, float thickness = 1.0f);
         void AddRectFilled(Vec2 pos, Vec2 size, Color color);
+        void AddCircleFilled(Vec2 center, float radius, Color color);
         void AddTexture(Vec2 pos, Vec2 size, Color color, SDK::UTexture* texture = nullptr);
         void AddTriangle(Vec2 p1, Vec2 p2, Vec2 p3, Color color, float thickness = 1.0f);
         void AddTriangleFilled(Vec2 p1, Vec2 p2, Vec2 p3, Color color);
@@ -1973,6 +1975,42 @@ namespace Shadow {
 
     inline void ShadowDrawList::AddTriangleFilled(Vec2 p1, Vec2 p2, Vec2 p3, Color color) {
         CmdBuffer.push_back({ ShadowDrawCmdType::TriangleFilled, {0,0}, {0,0}, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, p1, p2, p3, {0,0,0,0}, {0,0,0,0} });
+    }
+
+    inline void ShadowDrawList::AddCircleFilled(Vec2 center, float radius, Color color) {
+        if (radius <= 0.0f) return;
+
+        float diameter = radius * 2.0f;
+        SDK::UTexture2D* texture = nullptr;
+
+        if (diameter <= 16.0f) {
+            texture = LoadTextureFromBuffer(Shadow_Texture::CircleFilled_16, sizeof(Shadow_Texture::CircleFilled_16));
+        }
+        else if (diameter <= 32.0f) {
+            texture = LoadTextureFromBuffer(Shadow_Texture::CircleFilled_32, sizeof(Shadow_Texture::CircleFilled_32));
+        }
+        else if (diameter <= 64.0f) {
+            texture = LoadTextureFromBuffer(Shadow_Texture::CircleFilled_64, sizeof(Shadow_Texture::CircleFilled_64));
+        }
+        else if (diameter <= 128.0f) {
+            texture = LoadTextureFromBuffer(Shadow_Texture::CircleFilled_128, sizeof(Shadow_Texture::CircleFilled_128));
+        }
+        else if (diameter <= 256.0f) {
+            texture = LoadTextureFromBuffer(Shadow_Texture::CircleFilled_256, sizeof(Shadow_Texture::CircleFilled_256));
+        }
+        else if (diameter <= 512.0f) {
+            texture = LoadTextureFromBuffer(Shadow_Texture::CircleFilled_512, sizeof(Shadow_Texture::CircleFilled_512));
+        }
+        else {
+            texture = LoadTextureFromBuffer(Shadow_Texture::CircleFilled_1024, sizeof(Shadow_Texture::CircleFilled_1024));
+        }
+
+        if (!texture) return;
+
+        Vec2 pos = { center.x - radius, center.y - radius };
+        Vec2 size = { diameter, diameter };
+
+        AddTexture(pos, size, color, texture);
     }
 
     inline void ShadowDrawList::AddText(Vec2 pos, Color color, std::string_view text) {

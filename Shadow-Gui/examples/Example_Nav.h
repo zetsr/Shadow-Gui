@@ -35,11 +35,12 @@ namespace Example_Nav {
     }
 
     void DrawGUI() {
-    // 默认尺寸 { 480.f, 760.f }
+		// Shadow::GetBackgroundDrawList()->AddCircleFilled({ 100.f, 100.f }, 50.f, { 0.2f, 0.8f, 0.4f, 1.f });
 
         DrawLogoFromBuffer();
         // DrawLogoFromFile();
 
+         // 默认尺寸 { 480.f, 760.f }
         if (Shadow::Nav::Begin("Shadow Menu", "v1.6.1.1", { 100.f, 100.f + 173.f }, { 480.f, 760.f })) {
             if (Shadow::Nav::BeginTabBar("MainTabs")) {
 

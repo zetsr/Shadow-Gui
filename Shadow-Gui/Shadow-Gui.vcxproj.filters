@@ -119,6 +119,9 @@
     <ClInclude Include="examples\Example_Texture.h">
       <Filter>Shadow-Gui\examples</Filter>
     </ClInclude>
+    <ClInclude Include="src\Shadow_Texture.h">
+      <Filter>Shadow-Gui\src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="external\CppSDK\Assertions.inl">

@@ -137,7 +137,7 @@ namespace Hook {
 
         if (bShowMenu) {
             if (!bInit) {
-                Shadow::SetNextWindowPos({ 500.f, 100.f });
+                Shadow::SetNextWindowPos({ 100.f, 100.f });
             }
 
 			Shadow::PushTextPixelSnap(true);
@@ -147,7 +147,7 @@ namespace Hook {
             Shadow::PopFont();
 
             if (!bInit) {
-                Shadow::SetNextWindowPos({ 1000.f, 100.f });
+                Shadow::SetNextWindowPos({ 500.f, 100.f });
             }
 
             Shadow::StyleColorsOcean();

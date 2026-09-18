@@ -21,7 +21,7 @@ namespace Example_Nav {
 
         if (Texture)
         {
-            Shadow::GetBackgroundDrawList()->AddTexture({ 100.f, 100.f }, { 480.f, 173.f }, { 1.f, 1.f, 1.f, 1.f }, Texture);
+            Shadow::GetBackgroundDrawList()->AddTexture({ 1200.f, 100.f }, { 480.f, 173.f }, { 1.f, 1.f, 1.f, 1.f }, Texture);
         }
     }
 
@@ -31,7 +31,7 @@ namespace Example_Nav {
 
         if (Texture)
         {
-            Shadow::GetBackgroundDrawList()->AddTexture({ 100.f, 100.f }, { 480.f, 173.f }, { 1.f, 1.f, 1.f, 1.f }, Texture);
+            Shadow::GetBackgroundDrawList()->AddTexture({ 1200.f, 100.f }, { 480.f, 173.f }, { 1.f, 1.f, 1.f, 1.f }, Texture);
         }
     }
 
@@ -43,24 +43,58 @@ namespace Example_Nav {
         // 文件
         SDK::UFont* msyh = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\msyh.ttc");
 
+		SDK::UFont* tahoma_bold = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\tahomabd.ttf");
+
+		SDK::UFont* verdana_bold = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\verdanab.ttf");
+
         if (Icon)
         {
             Shadow::Color Color = { 1.f, 1.f, 1.f, 0.75f };
 
             Shadow::PushFont(Icon, 2.f);
+            Shadow::GetBackgroundDrawList()->AddText({ 0.f, 50.f }, Color, "A");
+            Shadow::GetBackgroundDrawList()->AddText({ 0.f, 100.f }, Color, "B");
+            Shadow::GetBackgroundDrawList()->AddText({ 0.f, 150.f }, Color, "C");
+            Shadow::GetBackgroundDrawList()->AddText({ 0.f, 200.f }, Color, "D");
+            Shadow::GetBackgroundDrawList()->AddText({ 0.f, 250.f }, Color, "E");
+
+            Shadow::PushTextOutline(Shadow::Color(0.f, 0.f, 0.f, 0.75f));
             Shadow::GetBackgroundDrawList()->AddText({ 50.f, 50.f }, Color, "A");
             Shadow::GetBackgroundDrawList()->AddText({ 50.f, 100.f }, Color, "B");
             Shadow::GetBackgroundDrawList()->AddText({ 50.f, 150.f }, Color, "C");
             Shadow::GetBackgroundDrawList()->AddText({ 50.f, 200.f }, Color, "D");
             Shadow::GetBackgroundDrawList()->AddText({ 50.f, 250.f }, Color, "E");
+            Shadow::PopTextOutline();
             Shadow::PopFont();
         }
 
-		if (msyh)
+        if (msyh)
+        {
+            Shadow::Color Color = { 1.f, 1.f, 1.f, 1.f };
+            Shadow::PushFont(msyh, 2.f);
+            Shadow::PushTextOutline(Shadow::Color(0.f, 0.f, 0.f, 1.f));
+            Shadow::GetBackgroundDrawList()->AddText({ 0.f, 300.f }, Color, "This is a test message using the msyh.ttc font.");
+            Shadow::PopTextOutline();
+            Shadow::PopFont();
+        }
+
+		if (tahoma_bold)
 		{
-			Shadow::Color Color = { 1.f, 1.f, 1.f, 1.f };
-			Shadow::PushFont(msyh, 2.f);
-			Shadow::GetBackgroundDrawList()->AddText({ 50.f, 300.f }, Color, SDK::FString(L"示例文本").ToString());
+			Shadow::Color Color = { 1.f, 1.f, 0.f, 1.f };
+			Shadow::PushFont(tahoma_bold, 2.f);
+			Shadow::PushTextOutline(Shadow::Color(0.f, 0.f, 0.f, 1.f));
+			Shadow::GetBackgroundDrawList()->AddText({ 0.f, 350.f }, Color, "This is a test message using the tahomabd.ttf font.");
+			Shadow::PopTextOutline();
+			Shadow::PopFont();
+		}
+
+		if (verdana_bold)
+		{
+			Shadow::Color Color = { 0.f, 1.f, 1.f, 1.f };
+			Shadow::PushFont(verdana_bold, 2.f);
+			Shadow::PushTextOutline(Shadow::Color(0.f, 0.f, 0.f, 1.f));
+			Shadow::GetBackgroundDrawList()->AddText({ 0.f, 400.f }, Color, "This is a test message using the verdanab.ttf font.");
+			Shadow::PopTextOutline();
 			Shadow::PopFont();
 		}
     }
@@ -73,7 +107,7 @@ namespace Example_Nav {
         // DrawLogoFromFile();
 
          // 默认尺寸 { 480.f, 760.f }
-        if (Shadow::Nav::Begin("Shadow Menu", "v1.6.1.1", { 100.f, 100.f + 173.f }, { 480.f, 760.f })) {
+        if (Shadow::Nav::Begin("Shadow Menu", "v1.6.1.1", { 1200.f, 100.f + 173.f }, { 480.f, 760.f })) {
             if (Shadow::Nav::BeginTabBar("MainTabs")) {
 
                 // --- TAB 1: Local (包含状态显示和 Disabled 控件演示) ---

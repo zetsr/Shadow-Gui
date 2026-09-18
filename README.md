@@ -37,12 +37,14 @@
 
 #### 中文
 * `#include "src/Shadow.h"`
+* `#include "src/Shadow_Texture.h"`
 * 修改 `Shadow.h` 的 `#include "../external/CppSDK/SDK.hpp"` 为实际路径
 * 在 `UGameViewportClient::PostRender` 运行 `Shadow::NewFrame(Canvas);`
 * 在 `Shadow::NewFrame(Canvas);` 之后添加 `Shadow::Render();`
 
 #### English
 * `#include "src/Shadow.h"`
+* `#include "src/Shadow_Texture.h"`
 * Modify `#include "../external/CppSDK/SDK.hpp"` in `Shadow.h` to the actual path
 * Run `Shadow::NewFrame(Canvas);` in `UGameViewportClient::PostRender`
 * Run `Shadow::Render();` after `Shadow::NewFrame(Canvas);`

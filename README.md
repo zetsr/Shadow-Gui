@@ -2,16 +2,16 @@
 
 欢迎大家 PR 各种好看的主题配色和控件样式，或者提交你们的使用示例代码！
 
-## Demo Window
+## 效果展示 / Showcase
 
-### Dark
+### ShowDemoWindow
 <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/c4df028e-20f0-43d0-a1f6-d53f3280d3be" />
 
-### Ocean
-<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/5cbe32eb-1bc1-42c7-8a23-6ac04c41d6c3" />
+### Nav UI
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/02977324-df2d-4411-85c8-49345f318120" />
 
-### Nav
-<img width="1920" height="1080" alt="9196d38726013468be8b69a51f05c493" src="https://github.com/user-attachments/assets/a8c0b44c-894f-44b1-afc4-c26c7dbf0dfc" />
+### AddCircleFilled
+<img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/64b51ead-a162-4144-bece-4a8f42fef637" />
 
 ---
 

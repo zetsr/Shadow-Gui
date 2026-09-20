@@ -713,6 +713,7 @@ namespace Shadow {
         Vec2 WindowSizeConstraintMax = { 10000.f, 10000.f };
 
         std::vector<FontContext> FontStack;
+        std::vector<SDK::UTexture*> TextureStack;
         std::vector<TextOutlineContext> TextOutlineStack;
         std::unordered_map<SDK::UFont*, int32_t> FontOriginalSizes;
 
@@ -1788,8 +1789,10 @@ namespace Shadow {
         if (size.y < 0.f) size.y = 0.f;
     }
 
-    inline void InternalDrawLine(Vec2 start, Vec2 end, Color color, float thickness, bool clipEnabled, Vec2 clipMin, Vec2 clipMax) {
-        if (!g_Ctx.Canvas || !g_Ctx.Canvas->DefaultTexture) return;
+    inline void InternalDrawLine(Vec2 start, Vec2 end, Color color, float thickness, bool clipEnabled, Vec2 clipMin, Vec2 clipMax, SDK::UTexture* texture = nullptr) {
+        if (!g_Ctx.Canvas) return;
+        SDK::UTexture* tex = texture ? texture : (g_Ctx.Canvas ? g_Ctx.Canvas->DefaultTexture : nullptr);
+        if (!tex) return;
 
         float dx = end.x - start.x;
         float dy = end.y - start.y;
@@ -1803,7 +1806,7 @@ namespace Shadow {
         SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
 
         g_Ctx.Canvas->K2_DrawTexture(
-            g_Ctx.Canvas->DefaultTexture,
+            tex,
             uePos, ueSize,
             SDK::FVector2D{ 0.0f, 0.0f }, SDK::FVector2D{ 1.0f, 1.0f },
             ueColor, SDK::EBlendMode::BLEND_Translucent,
@@ -1811,7 +1814,7 @@ namespace Shadow {
         );
     }
 
-    inline void InternalDrawRect(Vec2 pos, Vec2 size, Color color, float thickness, bool clipEnabled, Vec2 clipMin, Vec2 clipMax) {
+    inline void InternalDrawRect(Vec2 pos, Vec2 size, Color color, float thickness, bool clipEnabled, Vec2 clipMin, Vec2 clipMax, SDK::UTexture* texture = nullptr) {
         if (!g_Ctx.Canvas) return;
         if (size.x <= 0.f || size.y <= 0.f) return;
 
@@ -1837,28 +1840,28 @@ namespace Shadow {
         Vec2 topL = ClampVec({ pos.x - halfThick, pos.y });
         Vec2 topR = ClampVec({ pos.x + size.x + halfThick, pos.y });
         if (topL.x < topR.x) {
-            InternalDrawLine(topL, topR, color, thickness, clipEnabled, clipMin, clipMax);
+            InternalDrawLine(topL, topR, color, thickness, clipEnabled, clipMin, clipMax, texture);
         }
 
         // 2. 下边 (水平线)
         Vec2 botL = ClampVec({ pos.x - halfThick, pos.y + size.y });
         Vec2 botR = ClampVec({ pos.x + size.x + halfThick, pos.y + size.y });
         if (botL.x < botR.x) {
-            InternalDrawLine(botL, botR, color, thickness, clipEnabled, clipMin, clipMax);
+            InternalDrawLine(botL, botR, color, thickness, clipEnabled, clipMin, clipMax, texture);
         }
 
         // 3. 左边 (垂直线)
         Vec2 leftT = ClampVec({ pos.x, pos.y + halfThick });
         Vec2 leftB = ClampVec({ pos.x, pos.y + size.y - halfThick });
         if (leftT.y < leftB.y) {
-            InternalDrawLine(leftT, leftB, color, thickness, clipEnabled, clipMin, clipMax);
+            InternalDrawLine(leftT, leftB, color, thickness, clipEnabled, clipMin, clipMax, texture);
         }
 
         // 4. 右边 (垂直线)
         Vec2 rightT = ClampVec({ pos.x + size.x, pos.y + halfThick });
         Vec2 rightB = ClampVec({ pos.x + size.x, pos.y + size.y - halfThick });
         if (rightT.y < rightB.y) {
-            InternalDrawLine(rightT, rightB, color, thickness, clipEnabled, clipMin, clipMax);
+            InternalDrawLine(rightT, rightB, color, thickness, clipEnabled, clipMin, clipMax, texture);
         }
     }
 
@@ -1904,7 +1907,7 @@ namespace Shadow {
         g_Ctx.Canvas->K2_DrawText(font, SDK::FString(wstr.c_str()), uePos, scale, ueColor, 0.0f, shadow, shadowOff, false, false, textOutline, outline);
     }
 
-    inline void InternalDrawTriangleFilled(Vec2 p1, Vec2 p2, Vec2 p3, Color color, bool clipEnabled, Vec2 clipMin, Vec2 clipMax) {
+    inline void InternalDrawTriangleFilled(Vec2 p1, Vec2 p2, Vec2 p3, Color color, bool clipEnabled, Vec2 clipMin, Vec2 clipMax, SDK::UTexture* texture = nullptr) {
         Vec2 v[3] = { p1, p2, p3 };
         if (v[0].y > v[1].y) std::swap(v[0], v[1]);
         if (v[0].y > v[2].y) std::swap(v[0], v[2]);
@@ -1930,7 +1933,7 @@ namespace Shadow {
             float w = x_max - x_min + 1.0f;
 
             if (w > 0.0f) {
-                InternalDrawRectFilled({ x_min, static_cast<float>(y) }, { w, 1.0f }, color, clipEnabled, clipMin, clipMax);
+                InternalDrawRectFilled({ x_min, static_cast<float>(y) }, { w, 1.0f }, color, clipEnabled, clipMin, clipMax, texture);
             }
         }
     }
@@ -2012,6 +2015,16 @@ namespace Shadow {
         }
         g_Ctx.FontStack.push_back({ font, scale, true });
         UpdateItemHeight();
+    }
+
+    inline void PushTexture(SDK::UTexture* texture) {
+        g_Ctx.TextureStack.push_back(texture);
+    }
+
+    inline void PopTexture() {
+        if (!g_Ctx.TextureStack.empty()) {
+            g_Ctx.TextureStack.pop_back();
+        }
     }
 
     inline void PushID(int int_id) {
@@ -2151,34 +2164,35 @@ namespace Shadow {
         return result;
     }
 
-    inline void InternalDrawTriangle(Vec2 p1, Vec2 p2, Vec2 p3, Color color, float thickness, bool clipEnabled, Vec2 clipMin, Vec2 clipMax) {
-        InternalDrawLine(p1, p2, color, thickness, clipEnabled, clipMin, clipMax);
-        InternalDrawLine(p2, p3, color, thickness, clipEnabled, clipMin, clipMax);
-        InternalDrawLine(p3, p1, color, thickness, clipEnabled, clipMin, clipMax);
+    inline void InternalDrawTriangle(Vec2 p1, Vec2 p2, Vec2 p3, Color color, float thickness, bool clipEnabled, Vec2 clipMin, Vec2 clipMax, SDK::UTexture* texture = nullptr) {
+        InternalDrawLine(p1, p2, color, thickness, clipEnabled, clipMin, clipMax, texture);
+        InternalDrawLine(p2, p3, color, thickness, clipEnabled, clipMin, clipMax, texture);
+        InternalDrawLine(p3, p1, color, thickness, clipEnabled, clipMin, clipMax, texture);
     }
 
     inline void ShadowDrawList::AddLine(Vec2 start, Vec2 end, Color color, float thickness) {
-        CmdBuffer.push_back({ ShadowDrawCmdType::Line, start, end, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0} });
+        CmdBuffer.push_back({ ShadowDrawCmdType::Line, start, end, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
     }
 
     inline void ShadowDrawList::AddRect(Vec2 pos, Vec2 size, Color color, float thickness) {
-        CmdBuffer.push_back({ ShadowDrawCmdType::Rect, pos, size, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0} });
+        CmdBuffer.push_back({ ShadowDrawCmdType::Rect, pos, size, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
     }
 
     inline void ShadowDrawList::AddRectFilled(Vec2 pos, Vec2 size, Color color) {
-        CmdBuffer.push_back({ ShadowDrawCmdType::RectFilled, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0} });
+        CmdBuffer.push_back({ ShadowDrawCmdType::RectFilled, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
     }
 
     inline void ShadowDrawList::AddTexture(Vec2 pos, Vec2 size, Color color, SDK::UTexture* texture) {
-        CmdBuffer.push_back({ ShadowDrawCmdType::Texture, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, texture });
+        SDK::UTexture* tex = texture ? texture : (!g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr);
+        CmdBuffer.push_back({ ShadowDrawCmdType::Texture, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, tex });
     }
 
     inline void ShadowDrawList::AddTriangle(Vec2 p1, Vec2 p2, Vec2 p3, Color color, float thickness) {
-        CmdBuffer.push_back({ ShadowDrawCmdType::Triangle, {0,0}, {0,0}, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, p1, p2, p3, {0,0,0,0}, {0,0,0,0} });
+        CmdBuffer.push_back({ ShadowDrawCmdType::Triangle, {0,0}, {0,0}, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, p1, p2, p3, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
     }
 
     inline void ShadowDrawList::AddTriangleFilled(Vec2 p1, Vec2 p2, Vec2 p3, Color color) {
-        CmdBuffer.push_back({ ShadowDrawCmdType::TriangleFilled, {0,0}, {0,0}, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, p1, p2, p3, {0,0,0,0}, {0,0,0,0} });
+        CmdBuffer.push_back({ ShadowDrawCmdType::TriangleFilled, {0,0}, {0,0}, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, p1, p2, p3, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
     }
 
     inline void ShadowDrawList::AddCircleFilled(Vec2 center, float radius, Color color) {
@@ -3139,6 +3153,7 @@ namespace Shadow {
         else if (g_Ctx.ListBoxStack > 0) errorMsg = std::format("ERROR: BeginListBox() called {} time(s) without matching EndListBox()!", g_Ctx.ListBoxStack);
         else if (g_Ctx.ListBoxStack < 0) errorMsg = std::format("ERROR: EndListBox() called {} time(s) without matching BeginListBox()!", -g_Ctx.ListBoxStack);
         else if (g_Ctx.FontStack.size() > 0) errorMsg = std::format("ERROR: PushFont() called {} time(s) without matching PopFont()!", g_Ctx.FontStack.size());
+        else if (g_Ctx.TextureStack.size() > 0) errorMsg = std::format("ERROR: PushTexture() called {} time(s) without matching PopTexture()!", g_Ctx.TextureStack.size());
         else if (g_Ctx.TextOutlineStack.size() > 0) errorMsg = std::format("ERROR: PushTextOutline() called {} time(s) without matching PopTextOutline()!", g_Ctx.TextOutlineStack.size());
         else if (g_Ctx.TextPixelSnapStack.size() > 0) errorMsg = std::format("ERROR: PushTextPixelSnap() called {} time(s) without matching PopTextPixelSnap()!", g_Ctx.TextPixelSnapStack.size());
         else if (g_Ctx.ClipStack.size() > 0) errorMsg = std::format("ERROR: PushClipRect() called {} time(s) without matching PopClipRect()!", g_Ctx.ClipStack.size());
@@ -3472,6 +3487,7 @@ namespace Shadow {
         }
 
         g_Ctx.FontStack.clear();
+        g_Ctx.TextureStack.clear();
         g_Ctx.TextOutlineStack.clear();
         g_Ctx.TextPixelSnapStack.clear();
         UpdateItemHeight();
@@ -4263,13 +4279,13 @@ namespace Shadow {
             if (n <= 1) {
                 const auto& cmd = cmds[0];
                 if (cmd.type == ShadowDrawCmdType::Line) {
-                    InternalDrawLine(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
+                    InternalDrawLine(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
                 }
                 else if (cmd.type == ShadowDrawCmdType::Rect) {
-                    InternalDrawRect(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
+                    InternalDrawRect(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
                 }
                 else if (cmd.type == ShadowDrawCmdType::RectFilled) {
-                    InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
+                    InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
                 }
                 else if (cmd.type == ShadowDrawCmdType::Texture) {
                     InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
@@ -4278,10 +4294,10 @@ namespace Shadow {
                     InternalDrawText(cmd.text, cmd.pos, cmd.color, cmd.font, cmd.fontScale, cmd.textShadowColor, cmd.textOutlineColor, cmd.textOutline, cmd.noSDF);
                 }
                 else if (cmd.type == ShadowDrawCmdType::TriangleFilled) {
-                    InternalDrawTriangleFilled(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
+                    InternalDrawTriangleFilled(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
                 }
                 else if (cmd.type == ShadowDrawCmdType::Triangle) {
-                    InternalDrawTriangle(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
+                    InternalDrawTriangle(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
                 }
                 return;
             }
@@ -4307,20 +4323,23 @@ namespace Shadow {
                     float ht = cmd.thickness * 0.5f;
                     box.min = { minX - ht, minY - ht };
                     box.max = { maxX + ht, maxY + ht };
-                    box.resourceKey = reinterpret_cast<uintptr_t>(defaultTex);
+                    SDK::UTexture* tex = cmd.texture ? cmd.texture : defaultTex;
+                    box.resourceKey = reinterpret_cast<uintptr_t>(tex);
                     break;
                 }
                 case ShadowDrawCmdType::Rect: {
                     float ht = cmd.thickness * 0.5f;
                     box.min = { cmd.pos.x - ht, cmd.pos.y - ht };
                     box.max = { cmd.pos.x + cmd.size.x + ht, cmd.pos.y + cmd.size.y + ht };
-                    box.resourceKey = reinterpret_cast<uintptr_t>(defaultTex);
+                    SDK::UTexture* tex = cmd.texture ? cmd.texture : defaultTex;
+                    box.resourceKey = reinterpret_cast<uintptr_t>(tex);
                     break;
                 }
                 case ShadowDrawCmdType::RectFilled: {
                     box.min = cmd.pos;
                     box.max = { cmd.pos.x + cmd.size.x, cmd.pos.y + cmd.size.y };
-                    box.resourceKey = reinterpret_cast<uintptr_t>(defaultTex);
+                    SDK::UTexture* tex = cmd.texture ? cmd.texture : defaultTex;
+                    box.resourceKey = reinterpret_cast<uintptr_t>(tex);
                     break;
                 }
                 case ShadowDrawCmdType::Texture: {
@@ -4339,7 +4358,8 @@ namespace Shadow {
                     float ht = (cmd.type == ShadowDrawCmdType::Triangle) ? cmd.thickness * 0.5f : 0.0f;
                     box.min = { minX - ht, minY - ht };
                     box.max = { maxX + ht, maxY + ht };
-                    box.resourceKey = reinterpret_cast<uintptr_t>(defaultTex);
+                    SDK::UTexture* tex = cmd.texture ? cmd.texture : defaultTex;
+                    box.resourceKey = reinterpret_cast<uintptr_t>(tex);
                     break;
                 }
                 case ShadowDrawCmdType::Text: {
@@ -4398,13 +4418,13 @@ namespace Shadow {
 
             auto ExecuteSingleCmd = [](const ShadowDrawCmd& cmd) {
                 if (cmd.type == ShadowDrawCmdType::Line) {
-                    InternalDrawLine(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
+                    InternalDrawLine(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
                 }
                 else if (cmd.type == ShadowDrawCmdType::Rect) {
-                    InternalDrawRect(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
+                    InternalDrawRect(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
                 }
                 else if (cmd.type == ShadowDrawCmdType::RectFilled) {
-                    InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
+                    InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
                 }
                 else if (cmd.type == ShadowDrawCmdType::Texture) {
                     InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
@@ -4413,10 +4433,10 @@ namespace Shadow {
                     InternalDrawText(cmd.text, cmd.pos, cmd.color, cmd.font, cmd.fontScale, cmd.textShadowColor, cmd.textOutlineColor, cmd.textOutline, cmd.noSDF);
                 }
                 else if (cmd.type == ShadowDrawCmdType::TriangleFilled) {
-                    InternalDrawTriangleFilled(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
+                    InternalDrawTriangleFilled(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
                 }
                 else if (cmd.type == ShadowDrawCmdType::Triangle) {
-                    InternalDrawTriangle(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax);
+                    InternalDrawTriangle(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
                 }
                 };
 

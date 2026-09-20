@@ -84,6 +84,7 @@ Shadow::EndTabBar();
 ```cpp
 void DrawLogoFromBuffer()
     {
+        // 不要对 LoadTextureFromBuffer / LoadTextureFromFile 返回的指针判空，每帧调用函数更新该指针即可，因为引擎GC会导致旧的指针得到一个损坏的UObject从而导致崩溃。
         SDK::UTexture2D* Texture = Shadow::LoadTextureFromBuffer(Example_Texture::Logo, sizeof(Example_Texture::Logo));
 
         if (Texture)

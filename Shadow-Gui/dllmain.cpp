@@ -7,6 +7,7 @@
 #include "examples/shadow_demo.h"
 #include "examples/Example.h"
 #include "examples/Example_Nav.h"
+#include "misc/fonts/CangErShuYuanTi_W03.h"
 
 namespace Hook {
     bool bShowMenu = false;
@@ -136,10 +137,13 @@ namespace Hook {
         Shadow::UpdateAllHotkeyStates();
 
         if (bShowMenu) {
+            /*
             if (!bInit) {
                 Shadow::SetNextWindowPos({ 100.f, 100.f });
             }
+            */
 
+            /*
 			Shadow::PushTextPixelSnap(true);
             Shadow::StyleColorsDark();
             Shadow::PushFont(Shadow::DefaultFont, G_SIZE);
@@ -149,19 +153,25 @@ namespace Hook {
             if (!bInit) {
                 Shadow::SetNextWindowPos({ 500.f, 100.f });
             }
+            */
 
-            Shadow::StyleColorsOcean();
-            Shadow::PushFont(Shadow::DefaultFont, G_SIZE);
+			SDK::UFont* font = Shadow::LoadFontFromBuffer(g_Fonts::CangErShuYuanTi_W03, sizeof(g_Fonts::CangErShuYuanTi_W03));
+
+            // Shadow::StyleColorsOcean();
+            // Shadow::PushFont(font, G_SIZE);
+			Shadow::DefaultFont = font;
             Shadow::ShowDemoWindow();
-            Shadow::PopFont();
+            // Shadow::PopFont();
 
+            /*
             Shadow::StyleColorsGrey();
             Shadow::PushFont(Shadow::DefaultFont, G_SIZE);
             Example_Nav::DrawGUI();
             Shadow::PopFont();
 			Shadow::PopTextPixelSnap();
+            */
 
-            bInit = true;
+            // bInit = true;
         }
 
         Shadow::Render();

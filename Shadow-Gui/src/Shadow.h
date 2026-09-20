@@ -401,6 +401,13 @@ namespace Shadow {
         GuiCol_COUNT
     };
 
+    enum ShadowChannel_ {
+        Channel_Background = 0,
+        Channel_Midground = 1,
+        Channel_Foreground = 2
+    };
+    using ShadowChannel = int;
+
     enum ShadowWindowFlags_ {
         ShadowWindowFlags_None = 0,
         ShadowWindowFlags_NoResize = 1 << 0,
@@ -577,10 +584,25 @@ namespace Shadow {
         static constexpr size_t PreallocMemorySize = PreallocMemorySizeKB * 1024;
         std::vector<ShadowDrawCmd> CmdBuffer;
 
+        int _ChannelsCurrent = 0;
+        int _ChannelsCount = 1;
+        std::vector<std::vector<ShadowDrawCmd>> _Channels;
+
+        std::vector<ShadowDrawCmd>& GetCmdBuffer() {
+            if (_ChannelsCount > 1 && _ChannelsCurrent >= 0 && _ChannelsCurrent < static_cast<int>(_Channels.size())) {
+                return _Channels[_ChannelsCurrent];
+            }
+            return CmdBuffer;
+        }
+
         ShadowDrawList() {
             // sizeof(ShadowDrawCmd) 大约为 160 字节，此处预分配将会直接在堆上开辟 1MB 左右的空间
             CmdBuffer.reserve(PreallocMemorySize / sizeof(ShadowDrawCmd));
         }
+
+        void ChannelsSplit(int count);
+        void SetChannel(int channel_idx);
+        void ChannelsMerge();
 
         void AddLine(Vec2 start, Vec2 end, Color color, float thickness = 1.0f);
         void AddRect(Vec2 pos, Vec2 size, Color color, float thickness = 1.0f);
@@ -2171,28 +2193,28 @@ namespace Shadow {
     }
 
     inline void ShadowDrawList::AddLine(Vec2 start, Vec2 end, Color color, float thickness) {
-        CmdBuffer.push_back({ ShadowDrawCmdType::Line, start, end, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::Line, start, end, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
     }
 
     inline void ShadowDrawList::AddRect(Vec2 pos, Vec2 size, Color color, float thickness) {
-        CmdBuffer.push_back({ ShadowDrawCmdType::Rect, pos, size, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::Rect, pos, size, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
     }
 
     inline void ShadowDrawList::AddRectFilled(Vec2 pos, Vec2 size, Color color) {
-        CmdBuffer.push_back({ ShadowDrawCmdType::RectFilled, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::RectFilled, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
     }
 
     inline void ShadowDrawList::AddTexture(Vec2 pos, Vec2 size, Color color, SDK::UTexture* texture) {
         SDK::UTexture* tex = texture ? texture : (!g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr);
-        CmdBuffer.push_back({ ShadowDrawCmdType::Texture, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, tex });
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::Texture, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, tex });
     }
 
     inline void ShadowDrawList::AddTriangle(Vec2 p1, Vec2 p2, Vec2 p3, Color color, float thickness) {
-        CmdBuffer.push_back({ ShadowDrawCmdType::Triangle, {0,0}, {0,0}, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, p1, p2, p3, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::Triangle, {0,0}, {0,0}, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, p1, p2, p3, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
     }
 
     inline void ShadowDrawList::AddTriangleFilled(Vec2 p1, Vec2 p2, Vec2 p3, Color color) {
-        CmdBuffer.push_back({ ShadowDrawCmdType::TriangleFilled, {0,0}, {0,0}, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, p1, p2, p3, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::TriangleFilled, {0,0}, {0,0}, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, p1, p2, p3, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
     }
 
     inline void ShadowDrawList::AddCircleFilled(Vec2 center, float radius, Color color) {
@@ -2259,7 +2281,7 @@ namespace Shadow {
         }
 
         Vec2 textSize = MeasureTextSize(clippedText);
-        CmdBuffer.push_back({ ShadowDrawCmdType::Text, clippedPos, textSize, color, 1.0f, clippedText, font, scaleVal, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, g_Ctx.Style.Colors[GuiCol_TextShadow], outlineColor, outline, noSDF, nullptr });
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::Text, clippedPos, textSize, color, 1.0f, clippedText, font, scaleVal, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, g_Ctx.Style.Colors[GuiCol_TextShadow], outlineColor, outline, noSDF, nullptr });
     }
 
     inline void ShadowDrawList::AddText(SDK::UFont* font, float fontScale, Color shadowColor, Color outlineColor, Vec2 pos, Color color, std::string_view text, bool outline, bool noSDF) {
@@ -2281,7 +2303,48 @@ namespace Shadow {
         SDK::FVector2D s = g_Ctx.Canvas->K2_TextSize(font, SDK::FString(wstr.c_str()), scale);
         Vec2 textSize = { static_cast<float>(s.X), static_cast<float>(s.Y) };
 
-        CmdBuffer.push_back({ ShadowDrawCmdType::Text, clippedPos, textSize, color, 1.0f, clippedText, font, fontScale, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, shadowColor, outlineColor, outline, noSDF, nullptr });
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::Text, clippedPos, textSize, color, 1.0f, clippedText, font, fontScale, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, shadowColor, outlineColor, outline, noSDF, nullptr });
+    }
+
+    inline void ShadowDrawList::ChannelsSplit(int count) {
+        if (count <= 1) {
+            _ChannelsCount = 1;
+            _ChannelsCurrent = 0;
+            return;
+        }
+
+        _ChannelsCount = count;
+        _ChannelsCurrent = 0;
+        _Channels.resize(count);
+        for (auto& ch : _Channels) {
+            ch.clear();
+        }
+    }
+
+    inline void ShadowDrawList::SetChannel(int channel_idx) {
+        if (channel_idx >= 0 && channel_idx < _ChannelsCount) {
+            _ChannelsCurrent = channel_idx;
+        }
+    }
+
+    inline void ShadowDrawList::ChannelsMerge() {
+        if (_ChannelsCount <= 1) {
+            return;
+        }
+
+        for (auto& ch : _Channels) {
+            if (!ch.empty()) {
+                CmdBuffer.insert(
+                    CmdBuffer.end(),
+                    std::make_move_iterator(ch.begin()),
+                    std::make_move_iterator(ch.end())
+                );
+                ch.clear();
+            }
+        }
+
+        _ChannelsCurrent = 0;
+        _ChannelsCount = 1;
     }
 
     // --- 剪贴板操作 ---

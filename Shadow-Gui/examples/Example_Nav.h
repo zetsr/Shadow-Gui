@@ -11,13 +11,12 @@
 
 #include "../external/CppSDK/SDK.hpp"
 #include "../src/Shadow.h"
-#include "Example_Texture.h"
-#include "Example_Font.h"
+#include "../misc/textures/Shadow_Titlebar.h"
 
 namespace Example_Nav {
     void DrawLogoFromBuffer()
     {
-        SDK::UTexture2D* Texture = Shadow::LoadTextureFromBuffer(Example_Texture::Logo, sizeof(Example_Texture::Logo));
+        SDK::UTexture2D* Texture = Shadow::LoadTextureFromBuffer(Shadow_Titlebar::Logo, sizeof(Shadow_Titlebar::Logo));
 
         if (Texture)
         {
@@ -27,7 +26,7 @@ namespace Example_Nav {
 
     void DrawLogoFromFile()
     {
-        SDK::UTexture2D* Texture = Shadow::LoadTextureFromFile(L"C:\\Example_Texture.png");
+        SDK::UTexture2D* Texture = Shadow::LoadTextureFromFile(L"C:\\Shadow_Titlebar.png");
 
         if (Texture)
         {
@@ -38,7 +37,7 @@ namespace Example_Nav {
     void DrawCustomText()
     {
         // 内存
-        SDK::UFont* Icon = Shadow::LoadFontFromBuffer(Example_Font::Icon, sizeof(Example_Font::Icon));
+        // SDK::UFont* Icon = Shadow::LoadFontFromBuffer(Example_Font::Icon, sizeof(Example_Font::Icon));
 
         // 文件
         SDK::UFont* msyh = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\msyh.ttc");
@@ -47,6 +46,7 @@ namespace Example_Nav {
 
 		SDK::UFont* verdana_bold = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\verdanab.ttf");
 
+        /*
         if (Icon)
         {
             Shadow::Color Color = { 1.f, 1.f, 1.f, 0.75f };
@@ -67,7 +67,7 @@ namespace Example_Nav {
             Shadow::PopTextOutline();
             Shadow::PopFont();
         }
-
+        */
         if (msyh)
         {
             Shadow::Color Color = { 1.f, 1.f, 1.f, 1.f };
@@ -100,6 +100,24 @@ namespace Example_Nav {
     }
 
     void DrawGUI() {
+        Shadow::ShadowDrawList* drawlist = Shadow::GetWindowDrawList();
+
+        drawlist->ChannelsSplit(4);
+
+        drawlist->SetChannel(Shadow::Channel_Midground); // 1
+        drawlist->AddRectFilled({ 10.f, 0.f }, { 50.f, 50.f }, { 0.1f, 0.1f, 0.1f, 1.f });
+
+        drawlist->SetChannel(3);                        // 3
+        drawlist->AddRectFilled({ 30.f, 0.f }, { 50.f, 50.f }, { 0.3f, 0.3f, 0.3f, 1.f });
+
+        drawlist->SetChannel(Shadow::Channel_Foreground); // 2
+        drawlist->AddRectFilled({ 20.f, 0.f }, { 50.f, 50.f }, { 0.2f, 0.2f, 0.2f, 1.f });
+
+        drawlist->SetChannel(Shadow::Channel_Background); // 0
+        drawlist->AddRectFilled({ 0.f, 0.f }, { 50.f, 50.f }, { 0.f, 0.f, 0.f, 1.f });
+
+        drawlist->ChannelsMerge();
+
 		// Shadow::GetBackgroundDrawList()->AddCircleFilled({ 100.f, 100.f }, 50.f, { 0.2f, 0.8f, 0.4f, 1.f });
 
         DrawCustomText();

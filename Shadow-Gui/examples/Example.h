@@ -12,7 +12,7 @@
 #include "../external/CppSDK/SDK.hpp"
 #include "../src/Shadow.h"
 
-float G_SIZE = 1.5f;
+float G_SIZE = 1.f;
 
 namespace Example {
     inline void StyleColorsExample() {

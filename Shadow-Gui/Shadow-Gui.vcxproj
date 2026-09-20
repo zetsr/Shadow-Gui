@@ -32,7 +32,6 @@
   <ItemGroup>
     <ClInclude Include="examples\Example.h" />
     <ClInclude Include="examples\Example_Nav.h" />
-    <ClInclude Include="examples\Example_Texture.h" />
     <ClInclude Include="examples\shadow_demo.h" />
     <ClInclude Include="external\AOBScan\AOBScan.hpp" />
     <ClInclude Include="external\CppSDK\PropertyFixup.hpp" />
@@ -47,6 +46,8 @@
     <ClInclude Include="external\MinHook\src\hde\table32.h" />
     <ClInclude Include="external\MinHook\src\hde\table64.h" />
     <ClInclude Include="external\MinHook\src\trampoline.h" />
+    <ClInclude Include="misc\fonts\CangErShuYuanTi_W03.h" />
+    <ClInclude Include="misc\textures\Shadow_Titlebar.h" />
     <ClInclude Include="src\Shadow.h" />
     <ClInclude Include="src\Shadow_Texture.h" />
   </ItemGroup>

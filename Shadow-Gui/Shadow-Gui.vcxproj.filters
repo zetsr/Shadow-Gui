@@ -34,6 +34,15 @@
     <Filter Include="Shadow-Gui\examples">
       <UniqueIdentifier>{d1200b9b-d154-42f9-9d80-659b56c1f6eb}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Shadow-Gui\misc">
+      <UniqueIdentifier>{5c3d4874-4bb8-48a3-ac75-4b102c206539}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shadow-Gui\misc\fonts">
+      <UniqueIdentifier>{d79cdafc-2f40-45e2-8c8a-5dbb185e4ad3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shadow-Gui\misc\textures">
+      <UniqueIdentifier>{eff9bb65-40b4-4083-81e2-d9a52987fb9e}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
@@ -116,11 +125,14 @@
     <ClInclude Include="examples\shadow_demo.h">
       <Filter>Shadow-Gui\examples</Filter>
     </ClInclude>
-    <ClInclude Include="examples\Example_Texture.h">
-      <Filter>Shadow-Gui\examples</Filter>
-    </ClInclude>
     <ClInclude Include="src\Shadow_Texture.h">
       <Filter>Shadow-Gui\src</Filter>
+    </ClInclude>
+    <ClInclude Include="misc\textures\Shadow_Titlebar.h">
+      <Filter>Shadow-Gui\misc\textures</Filter>
+    </ClInclude>
+    <ClInclude Include="misc\fonts\CangErShuYuanTi_W03.h">
+      <Filter>Shadow-Gui\misc\fonts</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

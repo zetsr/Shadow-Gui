@@ -211,6 +211,8 @@ Shadow::EndTabBar();
 
 </details>
 
+---
+
 > [!IMPORTANT]
 > LoadTextureFromBuffer、LoadTextureFromFile、LoadFontFromBuffer、LoadFontFromFile 必须每帧调用
 

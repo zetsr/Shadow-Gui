@@ -32,7 +32,6 @@
   <ItemGroup>
     <ClInclude Include="examples\Example.h" />
     <ClInclude Include="examples\Example_Nav.h" />
-    <ClInclude Include="examples\shadow_demo.h" />
     <ClInclude Include="external\AOBScan\AOBScan.hpp" />
     <ClInclude Include="external\CppSDK\PropertyFixup.hpp" />
     <ClInclude Include="external\CppSDK\SDK.hpp" />
@@ -49,6 +48,7 @@
     <ClInclude Include="misc\fonts\CangErShuYuanTi_W03.h" />
     <ClInclude Include="misc\textures\Shadow_Titlebar.h" />
     <ClInclude Include="src\Shadow.h" />
+    <ClInclude Include="src\Shadow_Demo.h" />
     <ClInclude Include="src\Shadow_Nav.h" />
     <ClInclude Include="src\Shadow_Texture.h" />
   </ItemGroup>
@@ -160,7 +160,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>

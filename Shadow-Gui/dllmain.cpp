@@ -4,7 +4,7 @@
 #include "external/MinHook/include/MinHook.h"
 #include "external/CppSDK/SDK.hpp"
 #include "src/Shadow.h"
-#include "examples/shadow_demo.h"
+#include "src/Shadow_Demo.h"
 #include "examples/Example.h"
 #include "examples/Example_Nav.h"
 #include "misc/fonts/CangErShuYuanTi_W03.h"

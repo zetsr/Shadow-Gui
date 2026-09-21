@@ -1,11 +1,5 @@
 ﻿#pragma once
-#include <string>
-#include <vector>
-#include <format>
-#include <algorithm>
-
-// Include original SDK path
-#include "../external/CppSDK/SDK.hpp"
+#include "Shadow.h"
 #include "../misc/textures/Shadow_Titlebar.h"
 
 namespace Shadow {

@@ -122,9 +122,6 @@
     <ClInclude Include="examples\Example_Nav.h">
       <Filter>Shadow-Gui\examples</Filter>
     </ClInclude>
-    <ClInclude Include="examples\shadow_demo.h">
-      <Filter>Shadow-Gui\examples</Filter>
-    </ClInclude>
     <ClInclude Include="src\Shadow_Texture.h">
       <Filter>Shadow-Gui\src</Filter>
     </ClInclude>
@@ -135,6 +132,9 @@
       <Filter>Shadow-Gui\misc\fonts</Filter>
     </ClInclude>
     <ClInclude Include="src\Shadow_Nav.h">
+      <Filter>Shadow-Gui\src</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Shadow_Demo.h">
       <Filter>Shadow-Gui\src</Filter>
     </ClInclude>
   </ItemGroup>

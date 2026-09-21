@@ -61,6 +61,9 @@
 > 与 Dear ImGui 不同，Shadow GUI 的所有压栈操作都必须在作用域之外出栈。
 
 示例：
+<details>
+<summary>Show code</summary>
+
 ```cpp
 // -> BeginTabBar
 if (Shadow::BeginTabBar("TEST_BeginTabBar")) {
@@ -81,10 +84,15 @@ Shadow::EndTabBar();
 
 ```
 
+</details>
+
 > [!IMPORTANT]
 > LoadTextureFromBuffer、LoadTextureFromFile、LoadFontFromBuffer、LoadFontFromFile 必须每帧调用
 
 示例：
+<details>
+<summary>Show code</summary>
+
 ```cpp
 void DrawLogoFromBuffer()
     {
@@ -119,6 +127,8 @@ void DrawLogoFromBuffer()
 		SDK::UFont* verdana_bold = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\verdanab.ttf");
     }
 ```
+
+</details>
 
 ---
 
@@ -303,6 +313,9 @@ if (verdana_bold)
 
 #### 绑定热键 / Bind Hotkeys
 
+<details>
+<summary>Show code</summary>
+
 ```cpp
 // 初始化 Shadow GUI 的时候需要先 RegisterHotkey，否则在上下文执行到 Shadow::HotKey 之前无法使用对应热键
 Shadow::RegisterHotkey(&g_Config::kTestKey, &g_Config::eTestKey, &g_Config::bTestKey);
@@ -311,9 +324,14 @@ Shadow::RegisterHotkey(&g_Config::kTestKey, &g_Config::eTestKey, &g_Config::bTes
 Shadow::HotKey("TestKey", &g_Config::kTestKey, &g_Config::bTestKey, &g_Config::eTestKey);
 ```
 
+</details>
+
 ---
 
 #### 输入处理 / Input Processing
+
+<details>
+<summary>Show code</summary>
 
 ```cpp
     LRESULT APIENTRY WndProcHook(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -371,7 +389,12 @@ Shadow::HotKey("TestKey", &g_Config::kTestKey, &g_Config::bTestKey, &g_Config::e
     }
 ```
 
+</details>
+
 ---
+
+<details>
+<summary>Show code</summary>
 
 #### 创建菜单 / Creating Menu
 
@@ -408,3 +431,5 @@ void __fastcall hkPostRender(SDK::UGameViewportClient* rcx, SDK::UCanvas* canvas
 }
 
 ```
+
+</details>

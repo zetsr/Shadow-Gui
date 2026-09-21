@@ -21,7 +21,7 @@ namespace Example_Nav {
 
         if (Texture)
         {
-            Shadow::GetBackgroundDrawList()->AddTexture({ 1200.f, 100.f }, { 480.f, 173.f }, { 1.f, 1.f, 1.f, 1.f }, Texture);
+            Shadow::GetBackgroundDrawList()->AddTexture({ 1400.f, 100.f }, { 480.f, 173.f }, { 1.f, 1.f, 1.f, 1.f }, Texture);
         }
     }
 
@@ -31,7 +31,7 @@ namespace Example_Nav {
 
         if (Texture)
         {
-            Shadow::GetBackgroundDrawList()->AddTexture({ 1200.f, 100.f }, { 480.f, 173.f }, { 1.f, 1.f, 1.f, 1.f }, Texture);
+            Shadow::GetBackgroundDrawList()->AddTexture({ 1400.f, 100.f }, { 480.f, 173.f }, { 1.f, 1.f, 1.f, 1.f }, Texture);
         }
     }
 
@@ -101,6 +101,7 @@ namespace Example_Nav {
     }
 
     void DrawGUI() {
+        /*
         Shadow::ShadowDrawList* drawlist = Shadow::GetWindowDrawList();
 
         drawlist->ChannelsSplit(4);
@@ -118,15 +119,16 @@ namespace Example_Nav {
         drawlist->AddRectFilled({ 0.f, 0.f }, { 50.f, 50.f }, { 0.f, 0.f, 0.f, 1.f });
 
         drawlist->ChannelsMerge();
+        */
 
 		// Shadow::GetBackgroundDrawList()->AddCircleFilled({ 100.f, 100.f }, 50.f, { 0.2f, 0.8f, 0.4f, 1.f });
 
-        DrawCustomText();
+        // DrawCustomText();
         DrawLogoFromBuffer();
         // DrawLogoFromFile();
 
          // 默认尺寸 { 480.f, 760.f }
-        if (Shadow::Nav::Begin("Shadow Menu", "v1.6.1.1", { 1200.f, 100.f + 173.f }, { 480.f, 760.f })) {
+        if (Shadow::Nav::Begin("Shadow Menu", "v1.6.1.1", { 1400.f, 100.f + 173.f }, { 480.f, 760.f })) {
             if (Shadow::Nav::BeginTabBar("MainTabs")) {
 
                 // --- TAB 1: Local (包含状态显示和 Disabled 控件演示) ---

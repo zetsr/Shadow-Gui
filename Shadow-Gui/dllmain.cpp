@@ -163,13 +163,11 @@ namespace Hook {
             Shadow::ShowDemoWindow();
             // Shadow::PopFont();
 
-            /*
             Shadow::StyleColorsGrey();
             Shadow::PushFont(Shadow::DefaultFont, G_SIZE);
             Example_Nav::DrawGUI();
             Shadow::PopFont();
 			Shadow::PopTextPixelSnap();
-            */
 
             // bInit = true;
         }

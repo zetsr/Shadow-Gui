@@ -49,6 +49,7 @@
     <ClInclude Include="misc\fonts\CangErShuYuanTi_W03.h" />
     <ClInclude Include="misc\textures\Shadow_Titlebar.h" />
     <ClInclude Include="src\Shadow.h" />
+    <ClInclude Include="src\Shadow_Nav.h" />
     <ClInclude Include="src\Shadow_Texture.h" />
   </ItemGroup>
   <ItemGroup>

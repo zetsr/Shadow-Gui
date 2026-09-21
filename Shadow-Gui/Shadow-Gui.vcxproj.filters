@@ -134,6 +134,9 @@
     <ClInclude Include="misc\fonts\CangErShuYuanTi_W03.h">
       <Filter>Shadow-Gui\misc\fonts</Filter>
     </ClInclude>
+    <ClInclude Include="src\Shadow_Nav.h">
+      <Filter>Shadow-Gui\src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="external\CppSDK\Assertions.inl">

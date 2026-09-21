@@ -11,6 +11,7 @@
 
 #include "../external/CppSDK/SDK.hpp"
 #include "../src/Shadow.h"
+#include "../src/Shadow_Nav.h"
 #include "../misc/textures/Shadow_Titlebar.h"
 
 namespace Example_Nav {

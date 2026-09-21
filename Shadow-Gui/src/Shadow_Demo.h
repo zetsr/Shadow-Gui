@@ -3,10 +3,7 @@
 #include "../misc/textures/Shadow_Titlebar.h"
 
 namespace Shadow {
-
-    // ============================================================================
-    // Basic custom composite: HelpMarker
-    // ============================================================================
+    // HelpMarker
     inline void HelpMarker(std::string_view desc, float TextWrap = 200.f) {
         Shadow::SameLine();
         Shadow::TextColored(Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_TextDisabled], "(?)");
@@ -19,9 +16,7 @@ namespace Shadow {
         }
     }
 
-    // ============================================================================
-    // Comprehensive Demo
-    // ============================================================================
+    // ShowDemoWindow
     inline void ShowDemoWindow() {
         static bool show_demo = true;
         if (!show_demo) return;
@@ -32,9 +27,7 @@ namespace Shadow {
         if (Shadow::Begin("Shadow Gui Demo##DemoWindow", win_flags)) {
             if (Shadow::BeginTabBar("DemoTabBar", tab_flags)) {
 
-                // ----------------------------------------------------------------
                 // Page 1: All standard controls and full flag tests (with combined flag demos)
-                // ----------------------------------------------------------------
                 if (Shadow::BeginTabItem("Standard Controls")) {
 
                     if (Shadow::TreeNode("Text Elements")) {
@@ -248,6 +241,65 @@ namespace Shadow {
                     }
                     Shadow::TreePop();
 
+                    if (Shadow::TreeNode("Cursor & Scroll APIs")) {
+                        // --- 1. Cursor Position Queries ---
+                        if (Shadow::TreeNode("Cursor Queries")) {
+                            Vec2 cur_pos = Shadow::GetCursorPos();
+                            float cur_x = Shadow::GetCursorPosX();
+                            float cur_y = Shadow::GetCursorPosY();
+                            Vec2 screen_pos = Shadow::GetCursorScreenPos();
+                            Vec2 start_pos = Shadow::GetCursorStartPos();
+
+                            Shadow::Text(std::format("GetCursorPos(): ({:.1f}, {:.1f})", cur_pos.x, cur_pos.y));
+                            Shadow::Text(std::format("GetCursorPosX(): {:.1f} | GetCursorPosY(): {:.1f}", cur_x, cur_y));
+                            Shadow::Text(std::format("GetCursorScreenPos(): ({:.1f}, {:.1f})", screen_pos.x, screen_pos.y));
+                            Shadow::Text(std::format("GetCursorStartPos(): ({:.1f}, {:.1f})", start_pos.x, start_pos.y));
+
+                            Shadow::HelpMarker("GetCursorPos/X/Y get coordinates relative to content origin.\nGetCursorScreenPos gets absolute screen coordinates.\nGetCursorStartPos gets content top-left screen position.");
+                        }
+                        Shadow::TreePop();
+
+                        // --- 2. Cursor Position Modifiers ---
+                        if (Shadow::TreeNode("Cursor Modifiers")) {
+                            Shadow::Text("1. SetCursorPosX demo (Aligning item horizontally):");
+                            Shadow::SetCursorPosX(120.f);
+                            Shadow::Button("Button at Relative X = 120##PosXBtn");
+
+                            Shadow::Text("2. SetCursorPosY demo (Adding custom vertical gap):");
+                            float current_y = Shadow::GetCursorPosY();
+                            Shadow::SetCursorPosY(current_y + 15.f);
+                            Shadow::Button("Button with +15px Y Offset##PosYBtn");
+
+                            Shadow::Text("3. SetCursorPos demo (Placing custom widget at relative X/Y):");
+                            Vec2 base_pos = Shadow::GetCursorPos();
+                            Shadow::SetCursorPos({ base_pos.x + 40.f, base_pos.y + 5.f });
+                            Shadow::Button("Custom Pos Button (X+40, Y+5)##PosBtn");
+
+                            Shadow::Text("4. SetCursorScreenPos demo (Screen space positioning):");
+                            Vec2 screen_p = Shadow::GetCursorScreenPos();
+                            Shadow::SetCursorScreenPos({ screen_p.x + 20.f, screen_p.y + 5.f });
+                            Shadow::Button("Screen Shifted Button##ScreenPosBtn");
+
+                            Shadow::HelpMarker("SetCursorPos/X/Y manually reposition the drawing cursor relative to content.\nSetCursorScreenPos directly sets absolute screen cursor coordinates.");
+                        }
+                        Shadow::TreePop();
+
+                        // --- 3. Scroll Queries ---
+                        if (Shadow::TreeNode("Scroll Queries")) {
+                            float scroll_x = Shadow::GetScrollX();
+                            float scroll_y = Shadow::GetScrollY();
+                            float scroll_max_x = Shadow::GetScrollMaxX();
+                            float scroll_max_y = Shadow::GetScrollMaxY();
+
+                            Shadow::Text(std::format("Scroll Y: {:.1f} / {:.1f} (Max)", scroll_y, scroll_max_y));
+                            Shadow::Text(std::format("Scroll X: {:.1f} / {:.1f} (Max)", scroll_x, scroll_max_x));
+
+                            Shadow::HelpMarker("GetScrollX/Y return current horizontal and vertical pixel scroll offsets.\nGetScrollMaxX/Y return maximum allowed scroll range.");
+                        }
+                        Shadow::TreePop();
+                    }
+                    Shadow::TreePop();
+
                     if (Shadow::TreeNode("Layout, Spacing & Stack Modifiers")) {
                         Shadow::Text("Item 1");
                         Shadow::SameLine();
@@ -392,9 +444,7 @@ namespace Shadow {
                     }
                     Shadow::TreePop();
 
-                    // ========================================================
                     // Item Status & Query API Demonstrations
-                    // ========================================================
                     if (Shadow::TreeNode("Item Status & Query APIs")) {
 
                         // --- 1. IsItemActive, IsItemActivated, IsItemDeactivated ---
@@ -463,7 +513,7 @@ namespace Shadow {
                             Shadow::Text(std::format("Above Button Visible in viewport: {}", is_vis ? "TRUE" : "FALSE"));
                             Shadow::HelpMarker("IsItemVisible() returns false if the item was completely clipped outside the window/clipping area.");
 
-                            Shadow::Button("Visible Check Button##VisBtn", {500.f, 500.f});
+                            Shadow::Button("Visible Check Button##VisBtn", { 500.f, 500.f });
                             is_vis = Shadow::IsItemVisible();
                         }
                         Shadow::TreePop();
@@ -665,7 +715,7 @@ namespace Shadow {
                     Shadow::TreePop();
 
                     if (Shadow::TreeNode("DrawList Texture & PushTexture")) {
-                        static SDK::UTexture2D* circleTex = Shadow::LoadTextureFromBuffer(Shadow_Titlebar::Logo, sizeof(Shadow_Titlebar::Logo));
+                        SDK::UTexture2D* circleTex = Shadow::LoadTextureFromBuffer(Shadow_Titlebar::Logo, sizeof(Shadow_Titlebar::Logo));
 
                         Vec2 p = Shadow::g_Ctx.Cursor;
                         Shadow::Dummy({ 200.f, 80.f });

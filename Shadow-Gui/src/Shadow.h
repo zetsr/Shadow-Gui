@@ -1261,6 +1261,81 @@ namespace Shadow {
         g_Ctx.NextWindowSize = size;
     }
 
+    inline Vec2 GetCursorStartPos() {
+        return { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x, g_Ctx.ContentStartY };
+    }
+
+    inline Vec2 GetCursorScreenPos() {
+        return g_Ctx.Cursor;
+    }
+
+    inline void SetCursorScreenPos(Vec2 pos) {
+        g_Ctx.Cursor = pos;
+    }
+
+    inline Vec2 GetCursorPos() {
+        return {
+            g_Ctx.Cursor.x - (g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x),
+            g_Ctx.Cursor.y - g_Ctx.ContentStartY + (g_Ctx.IsScrollApplied ? g_Ctx.ScrollY : 0.f)
+        };
+    }
+
+    inline float GetCursorPosX() {
+        return GetCursorPos().x;
+    }
+
+    inline float GetCursorPosY() {
+        return GetCursorPos().y;
+    }
+
+    inline void SetCursorPosX(float x) {
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + x;
+    }
+
+    inline void SetCursorPosY(float y) {
+        g_Ctx.Cursor.y = g_Ctx.ContentStartY + y - (g_Ctx.IsScrollApplied ? g_Ctx.ScrollY : 0.f);
+    }
+
+    inline void SetCursorPos(Vec2 pos) {
+        SetCursorPosX(pos.x);
+        SetCursorPosY(pos.y);
+    }
+
+    inline float GetScrollX() {
+        if (g_Ctx.CurrentTabBarId != 0) {
+            auto it = g_Ctx.TabBarScrollX.find(g_Ctx.CurrentTabBarId);
+            if (it != g_Ctx.TabBarScrollX.end()) {
+                return it->second;
+            }
+        }
+        return 0.f;
+    }
+
+    inline float GetScrollY() {
+        return g_Ctx.ScrollY;
+    }
+
+    inline float GetScrollMaxX() {
+        if (g_Ctx.CurrentTabBarId != 0) {
+            return std::max(0.f, g_Ctx.TabBarContentWidth - g_Ctx.TabBarViewWidth);
+        }
+        return 0.f;
+    }
+
+    inline float GetScrollMaxY() {
+        if (!g_Ctx.ListBoxStateStack.empty()) {
+            size_t id = g_Ctx.ListBoxStateStack.back().Id;
+            float boxHeight = g_Ctx.ListBoxStateStack.back().Size.y;
+            auto it = g_Ctx.ListBoxContentHeight.find(id);
+            float contentHeight = (it != g_Ctx.ListBoxContentHeight.end()) ? it->second : 0.f;
+            return std::max(0.f, contentHeight - boxHeight);
+        }
+
+        float viewHeight = (g_Ctx.WindowPos.y + g_Ctx.WindowSize.y) - g_Ctx.ContentStartY - g_Ctx.Style.ResizeGripSize - 4.f;
+        if (viewHeight < 10.f) viewHeight = 10.f;
+        return std::max(0.f, g_Ctx.ContentHeight - viewHeight);
+    }
+
     // 允许放行透传给游戏的按键列表
     inline std::vector<int> AllowedKeys;
     inline void SetAllowedKeys(const std::vector<int>& keys) {

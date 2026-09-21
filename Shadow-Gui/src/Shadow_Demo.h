@@ -356,6 +356,27 @@ namespace Shadow {
                     }
                     Shadow::TreePop();
 
+                    if (Shadow::TreeNode("Text Measurement & Rect Visibility")) {
+                        Shadow::Vec2 text_size = Shadow::MeasureTextSize("Measure Me");
+                        float char_w = Shadow::MeasureCharWidth(L'A');
+                        float text_h = Shadow::MeasureTextHeight("Measure Height");
+                        Shadow::Text(std::format("MeasureTextSize: {:.1f} x {:.1f}", text_size.x, text_size.y));
+                        Shadow::Text(std::format("MeasureCharWidth('A'): {:.1f}", char_w));
+                        Shadow::Text(std::format("MeasureTextHeight: {:.1f}", text_h));
+
+                        Shadow::Vec2 test_pos = Shadow::g_Ctx.Cursor;
+                        Shadow::Vec2 test_size = { 100.f, 50.f };
+                        bool visible = Shadow::IsRectVisible(test_pos, test_size);
+                        bool fully_visible = Shadow::IsRectFullyVisible(test_pos, test_size);
+                        Shadow::Text(std::format("IsRectVisible: {} | IsRectFullyVisible: {}", visible ? "TRUE" : "FALSE", fully_visible ? "TRUE" : "FALSE"));
+
+                        Shadow::Vec2 clipped_pos = test_pos;
+                        Shadow::Vec2 clipped_size = test_size;
+                        Shadow::ClipRect(clipped_pos, clipped_size);
+                        Shadow::Text(std::format("ClipRect result: pos({:.1f},{:.1f}) size({:.1f},{:.1f})", clipped_pos.x, clipped_pos.y, clipped_size.x, clipped_size.y));
+                    }
+                    Shadow::TreePop();
+
                     if (Shadow::TreeNode("Layout, Spacing & Stack Modifiers")) {
                         Shadow::Text("Item 1");
                         Shadow::SameLine();
@@ -403,6 +424,28 @@ namespace Shadow {
                         Shadow::Text("Text with Font scale 3.x");
                         Shadow::PopFont();
                         Shadow::HelpMarker("PushFont / PopFont Demonstration.");
+                    }
+                    Shadow::TreePop();
+
+                    if (Shadow::TreeNode("Input Allowed Keys & Mouse")) {
+                        static bool allow_w = false;
+                        static bool allow_a = false;
+                        static bool allow_mouse = false;
+                        Shadow::Checkbox("Allow 'W' Key", &allow_w);
+                        Shadow::Checkbox("Allow 'A' Key", &allow_a);
+                        Shadow::Checkbox("Allow Mouse Move", &allow_mouse);
+
+                        std::vector<int> keys;
+                        if (allow_w) keys.push_back('W');
+                        if (allow_a) keys.push_back('A');
+                        Shadow::SetAllowedKeys(keys);
+
+                        std::vector<UINT> msgs;
+                        if (allow_mouse) msgs.push_back(WM_MOUSEMOVE);
+                        Shadow::SetAllowedMouseMsgs(msgs);
+
+                        Shadow::Text(std::format("IsKeyAllowed('W'): {}", Shadow::IsKeyAllowed('W') ? "TRUE" : "FALSE"));
+                        Shadow::Text(std::format("IsMouseMsgAllowed(WM_MOUSEMOVE): {}", Shadow::IsMouseMsgAllowed(WM_MOUSEMOVE) ? "TRUE" : "FALSE"));
                     }
                     Shadow::TreePop();
 
@@ -460,6 +503,55 @@ namespace Shadow {
                             Shadow::PushStyleVar(Shadow::GuiStyleVar_TabExtraWidth, 40.f);
                             Shadow::Text("Modified ScrollbarSize (20px) and TabExtraWidth (40px)");
                             Shadow::PopStyleVar(2);
+
+                            Shadow::Text("3. More StyleVar demos:");
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_WindowPadding, { 20.f, 20.f });
+                            Shadow::Text("WindowPadding set to 20,20");
+                            Shadow::PopStyleVar();
+
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_ScrollbarMargin, 10.f);
+                            Shadow::Text("ScrollbarMargin set to 10");
+                            Shadow::PopStyleVar();
+
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_ResizeGripSize, 20.f);
+                            Shadow::Text("ResizeGripSize set to 20");
+                            Shadow::PopStyleVar();
+
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_ControlOffsetMin, 150.f);
+                            Shadow::Text("ControlOffsetMin set to 150");
+                            Shadow::PopStyleVar();
+
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_ControlOffsetRatio, 0.6f);
+                            Shadow::Text("ControlOffsetRatio set to 0.6");
+                            Shadow::PopStyleVar();
+
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_CPPadding, 12.f);
+                            Shadow::Text("CPPadding set to 12");
+                            Shadow::PopStyleVar();
+
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_CPSVSize, 300.f);
+                            Shadow::Text("CPSVSize set to 300");
+                            Shadow::PopStyleVar();
+
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_CPHueWidth, 30.f);
+                            Shadow::Text("CPHueWidth set to 30");
+                            Shadow::PopStyleVar();
+
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_CPAlphaWidth, 30.f);
+                            Shadow::Text("CPAlphaWidth set to 30");
+                            Shadow::PopStyleVar();
+
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_CPSpacing, 12.f);
+                            Shadow::Text("CPSpacing set to 12");
+                            Shadow::PopStyleVar();
+
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_WindowMinSize, { 300.f, 200.f });
+                            Shadow::Text("WindowMinSize set to 300,200");
+                            Shadow::PopStyleVar();
+
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_FontScaleDpi, 1.5f);
+                            Shadow::Text("FontScaleDpi set to 1.5");
+                            Shadow::PopStyleVar();
 
                             Shadow::HelpMarker("PushStyleVar supports both float (e.g. ScrollbarSize) and Vec2 (e.g. FramePadding, ItemSpacing).\nPopStyleVar() restores previous style metric unconditionally.");
                         }
@@ -832,6 +924,20 @@ namespace Shadow {
                     }
                     Shadow::TreePop();
 
+                    if (Shadow::TreeNode("DrawList Primitives")) {
+                        Shadow::Vec2 p = Shadow::g_Ctx.Cursor;
+                        Shadow::Dummy({ 300.f, 200.f });
+                        ShadowDrawList* dl = Shadow::GetWindowDrawList();
+                        dl->AddLine({ p.x, p.y }, { p.x + 100.f, p.y + 50.f }, { 1.f, 0.f, 0.f, 1.f }, 2.f);
+                        dl->AddRect({ p.x + 120.f, p.y }, { 80.f, 60.f }, { 0.f, 1.f, 0.f, 1.f }, 2.f);
+                        dl->AddRectFilled({ p.x + 220.f, p.y }, { 60.f, 40.f }, { 0.f, 0.f, 1.f, 1.f });
+                        dl->AddCircleFilled({ p.x + 50.f, p.y + 120.f }, 30.f, { 1.f, 1.f, 0.f, 1.f });
+                        dl->AddTriangle({ p.x + 120.f, p.y + 100.f }, { p.x + 180.f, p.y + 100.f }, { p.x + 150.f, p.y + 150.f }, { 1.f, 0.f, 1.f, 1.f }, 2.f);
+                        dl->AddTriangleFilled({ p.x + 200.f, p.y + 100.f }, { p.x + 260.f, p.y + 100.f }, { p.x + 230.f, p.y + 150.f }, { 0.f, 1.f, 1.f, 1.f });
+                        dl->AddText({ p.x + 10.f, p.y + 180.f }, { 1.f, 1.f, 1.f, 1.f }, "DrawList Text");
+                    }
+                    Shadow::TreePop();
+
                     if (Shadow::TreeNode("DrawList Texture & PushTexture")) {
                         SDK::UTexture2D* circleTex = Shadow::LoadTextureFromBuffer(Shadow_Titlebar::Logo, sizeof(Shadow_Titlebar::Logo));
 
@@ -847,6 +953,42 @@ namespace Shadow {
                         }
 
                         Shadow::HelpMarker("AddTexture explicit texture and via PushTexture / PopTexture.");
+                    }
+                    Shadow::TreePop();
+
+                    if (Shadow::TreeNode("Load Texture & Font from File")) {
+                        static std::string tex_path = "C:\\path\\to\\texture.png";
+                        static std::string font_path = "C:\\path\\to\\font.ttf";
+                        Shadow::InputText("Texture Path", tex_path);
+                        Shadow::InputText("Font Path", font_path);
+                        if (Shadow::Button("Load Texture")) {
+                            SDK::UTexture2D* tex = Shadow::LoadTextureFromFile(Shadow::ToWString(tex_path).c_str());
+                            if (tex) {
+                                Shadow::Text("Texture loaded!");
+                            }
+                            else {
+                                Shadow::Text("Failed to load texture.");
+                            }
+                        }
+                        Shadow::SameLine();
+                        if (Shadow::Button("Load Font")) {
+                            SDK::UFont* font = Shadow::LoadFontFromFile(Shadow::ToWString(font_path).c_str());
+                            if (font) {
+                                Shadow::Text("Font loaded!");
+                            }
+                            else {
+                                Shadow::Text("Failed to load font.");
+                            }
+                        }
+                        static std::vector<unsigned char> font_buffer;
+                        if (Shadow::Button("Load Font from Buffer")) {
+                            if (!font_buffer.empty()) {
+                                SDK::UFont* font = Shadow::LoadFontFromBuffer(font_buffer.data(), font_buffer.size());
+                                if (font) {
+                                    Shadow::Text("Font from buffer loaded!");
+                                }
+                            }
+                        }
                     }
                     Shadow::TreePop();
 

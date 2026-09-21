@@ -397,6 +397,7 @@ namespace Shadow {
         GuiCol_SwitchBgActiveHovered,
         GuiCol_SwitchKnob,
         GuiCol_DropdownActive,
+        GuiCol_Transparent,
 
         GuiCol_COUNT
     };
@@ -573,6 +574,114 @@ namespace Shadow {
         // 窗口最小尺寸 和 FontScaleDpi
         Vec2 WindowMinSize = { 200.f, 150.f };
         float FontScaleDpi = 1.0f;           // 默认 1.0，用于文本与菜单自适应
+
+        // 通用控件间距与尺寸
+        float DisabledAlpha = 0.5f;                 // 禁用状态透明度乘数
+        float LabelSpacing = 10.f;                  // 标签文本与右侧控件之间的间距
+        float WindowScrollBottomPadding = 4.f;      // 窗口滚动区域底部额外留白
+        float WindowScrollMinViewHeight = 10.f;     // 窗口滚动区域最小可视高度
+        float DefaultItemHeight = 20.f;             // 未测量到字体时的默认控件高度
+
+        // TreeNode
+        float TreeNodeArrowSizeRatio = 0.55f;
+        float TreeNodeTextSpacing = 8.f;
+        float TreeNodeIndent = 20.f;
+
+        // Checkbox
+        float CheckboxCheckPaddingRatio = 0.2f;
+
+        // Switch
+        float SwitchPadding = 2.f;
+
+        // Combo
+        float ComboArrowSizeRatio = 0.5f;
+        float ComboMinWidth = 100.f;
+        float ComboMinWidthNoRightAlign = 50.f;
+
+        // Slider
+        float SliderMinWidth = 50.f;
+        float SliderKnobWidth = 4.f;
+        float SliderFocusBorderThickness = 1.f;
+        float SliderInputExtraWidth = 4.f;
+        float SliderKeyboardStepRatio = 0.01f;
+        int   SliderDefaultPrecision = 3;
+
+        // ColorPicker
+        int   ColorPickerCheckerSize = 5;
+        float ColorPickerHexBoxMinHeight = 24.f;
+        float ColorPickerHexBoxExtraHeight = 4.f;
+        float ColorPickerCursorSize = 8.f;
+        float ColorPickerCursorInnerSize = 6.f;
+        float ColorPickerCursorCenterSize = 4.f;
+
+        // HotKey
+        float HotkeyDotSizeMin = 6.f;
+        float HotkeyDotSizeRatio = 0.4f;
+        float HotkeyModePopupWidth = 100.f;
+
+        // 窗口/菜单栏/标题栏
+        float TitleBarMinHeight = 30.f;
+        float TitleBarPaddingY = 10.f;
+        float TitleBarTextOffsetX = 10.f;
+        float TitleBarTextOffsetY = 7.f;
+        float MenuBarBorderThickness = 1.f;
+
+        // Tooltip
+        float TooltipOffset = 15.f;
+        float TooltipMinSize = 30.f;
+
+        // TabBar
+        float TabBarTabSpacing = 5.f;
+        float TabBarSeparatorHeight = 2.f;
+        float TabBarScrollbarReserve = 4.f;
+        float TabBarScrollSpeed = 30.f;
+
+        // 滚动条/列表
+        float ScrollbarThumbMinSize = 20.f;
+        float ScrollSpeed = 30.f;
+        float ListBoxDefaultHeightItems = 5.f;
+
+        // InputText
+        float InputTextCursorWidth = 2.f;
+        float InputTextSelectionPaddingY = 2.f;
+        float InputTextMinWidth = 50.f;
+        int   InputTextCursorBlinkIntervalMS = 500;
+
+        // Menu
+        float MenuArrowSizeRatio = 0.55f;
+        float MenuArrowSpacing = 10.f;
+        float MenuShortcutSpacing = 20.f;
+
+        // Popup
+        float PopupBorderInset = 1.f;
+        float PopupFillInset = 2.f;
+        float PopupInitialSize = 100.f;
+        float PopupMinWidth = 10.f;
+        float PopupHeightExtra = 4.f;
+
+        // ResizeGrip
+        float ResizeGripPad = 3.f;
+
+        // 字体
+        float NoSDFFontBaseSize = 100.f;
+        float FallbackFontSize = 12.f;
+        float FontSizeMin = 1.f;
+        float FontSizeMax = 10000.f;
+
+        // 悬停延迟
+        float HoverDelayShortMS = 150.f;
+        float HoverDelayNormalMS = 400.f;
+        float HoverSharedDelayMS = 250.f;
+        float MouseStationaryMoveThreshold = 2.f;   // 平方距离阈值 4.0f 的平方根
+        float MouseStationaryTimeMS = 150.f;
+
+        float SeparatorHeight = 4.f;
+        float SeparatorThickness = 1.f;
+
+        float InputFloatEmptyThreshold = 0.000001f;
+
+        float TextShadowOffsetX = 1.0f;
+        float TextShadowOffsetY = 1.0f;
     };
 
     struct TabDisplayInfo {
@@ -1010,21 +1119,21 @@ namespace Shadow {
                 OriginalSize = it->second;
             }
 
-            int32_t baseSize = OriginalSize > 0 ? OriginalSize : 12;
+            int32_t baseSize = OriginalSize > 0 ? OriginalSize : static_cast<int32_t>(g_Ctx.Style.FallbackFontSize);
             float finalScale = fontScale * g_Ctx.Style.FontScaleDpi;
 
             if (NoSDF) {
                 // 确保字号为 100（仅在不等于 100 时执行写入）
-                if (font->LegacyFontSize != 100) {
-                    font->LegacyFontSize = 100;
+                if (font->LegacyFontSize != static_cast<int32_t>(g_Ctx.Style.NoSDFFontBaseSize)) {
+                    font->LegacyFontSize = static_cast<int32_t>(g_Ctx.Style.NoSDFFontBaseSize);
                 }
                 // 计算期望尺寸并 clamp，计算出相对于 100pt 字体所需的缩放倍率
-                float desiredSize = std::clamp(static_cast<float>(baseSize) * finalScale, 1.0f, 10000.0f);
-                CalculatedScale = desiredSize / 100.0f;
+                float desiredSize = std::clamp(static_cast<float>(baseSize) * finalScale, g_Ctx.Style.FontSizeMin, g_Ctx.Style.FontSizeMax);
+                CalculatedScale = desiredSize / g_Ctx.Style.NoSDFFontBaseSize;
             }
             else {
                 // 普通模式：直接修改 LegacyFontSize，scale 保持 1.0f
-                int32_t targetSize = std::clamp(static_cast<int32_t>(baseSize * finalScale), 1, 10000);
+                int32_t targetSize = std::clamp(static_cast<int32_t>(baseSize * finalScale), static_cast<int32_t>(g_Ctx.Style.FontSizeMin), static_cast<int32_t>(g_Ctx.Style.FontSizeMax));
                 font->LegacyFontSize = targetSize;
                 CalculatedScale = 1.0f;
             }
@@ -1122,6 +1231,8 @@ namespace Shadow {
         colors[GuiCol_SwitchKnob] = { 0.850f, 0.900f, 0.950f, 1.000f };
 
         colors[GuiCol_DropdownActive] = { 0.022f, 0.055f, 0.115f, 1.000f };
+
+        colors[GuiCol_Transparent] = { 0.000f, 0.000f, 0.000f, 0.000f };
     }
 
     // 紫曜主题
@@ -1180,6 +1291,8 @@ namespace Shadow {
         colors[GuiCol_SwitchKnob] = { 0.920f, 0.900f, 0.980f, 1.000f };
 
         colors[GuiCol_DropdownActive] = { 0.045f, 0.030f, 0.085f, 0.950f };
+
+        colors[GuiCol_Transparent] = { 0.000f, 0.000f, 0.000f, 0.000f };
     }
 
     // 黑暗主题
@@ -1238,6 +1351,8 @@ namespace Shadow {
         colors[GuiCol_SwitchKnob] = { 0.900f, 0.900f, 0.950f, 1.000f };
 
         colors[GuiCol_DropdownActive] = { 0.015f, 0.015f, 0.018f, 1.000f };
+
+        colors[GuiCol_Transparent] = { 0.000f, 0.000f, 0.000f, 0.000f };
     }
 
     // 灰色主题
@@ -1296,6 +1411,8 @@ namespace Shadow {
         colors[GuiCol_SwitchKnob] = { 0.010f, 0.010f, 0.010f, 1.000f };
 
         colors[GuiCol_DropdownActive] = { 0.700f, 0.700f, 0.700f, 0.850f };
+
+        colors[GuiCol_Transparent] = { 0.000f, 0.000f, 0.000f, 0.000f };
     }
 
     inline Vec2 GetWindowSize() {
@@ -1403,8 +1520,8 @@ namespace Shadow {
             return std::max(0.f, contentHeight - boxHeight);
         }
 
-        float viewHeight = (g_Ctx.WindowPos.y + g_Ctx.WindowSize.y) - g_Ctx.ContentStartY - g_Ctx.Style.ResizeGripSize - 4.f;
-        if (viewHeight < 10.f) viewHeight = 10.f;
+        float viewHeight = (g_Ctx.WindowPos.y + g_Ctx.WindowSize.y) - g_Ctx.ContentStartY - g_Ctx.Style.ResizeGripSize - g_Ctx.Style.WindowScrollBottomPadding;
+        if (viewHeight < g_Ctx.Style.WindowScrollMinViewHeight) viewHeight = g_Ctx.Style.WindowScrollMinViewHeight;
         return std::max(0.f, g_Ctx.ContentHeight - viewHeight);
     }
 
@@ -1992,6 +2109,51 @@ namespace Shadow {
         SDK::UTexture* tex = texture ? texture : (g_Ctx.Canvas ? g_Ctx.Canvas->DefaultTexture : nullptr);
         if (!tex) return;
 
+        // 新增：Liang-Barsky 线段裁剪算法
+        // 如果开启了裁剪，对线段端点进行裁剪
+        if (clipEnabled) {
+            float dx = end.x - start.x;
+            float dy = end.y - start.y;
+            float t0 = 0.0f, t1 = 1.0f;
+
+            auto ClipTest = [](float p, float q, float& t0, float& t1) -> bool {
+                if (p == 0.0f) {
+                    // 线段平行于边界且位于边界外
+                    return q >= 0.0f;
+                }
+                float r = q / p;
+                if (p < 0.0f) {
+                    // 从外部进入
+                    if (r > t1) return false;
+                    if (r > t0) t0 = r;
+                }
+                else {
+                    // 从内部离开
+                    if (r < t0) return false;
+                    if (r < t1) t1 = r;
+                }
+                return true;
+                };
+
+            // 针对四条边界进行裁剪测试
+            if (!ClipTest(-dx, start.x - clipMin.x, t0, t1)) return;
+            if (!ClipTest(dx, clipMax.x - start.x, t0, t1)) return;
+            if (!ClipTest(-dy, start.y - clipMin.y, t0, t1)) return;
+            if (!ClipTest(dy, clipMax.y - start.y, t0, t1)) return;
+
+            // 如果 t1 < 1.0f，说明 end 点需要被裁剪
+            if (t1 < 1.0f) {
+                end.x = start.x + t1 * dx;
+                end.y = start.y + t1 * dy;
+            }
+            // 如果 t0 > 0.0f，说明 start 点需要被裁剪
+            if (t0 > 0.0f) {
+                start.x += t0 * dx;
+                start.y += t0 * dy;
+            }
+        }
+
+        // 重新计算 dx, dy，因为 start 和 end 可能已经被修改
         float dx = end.x - start.x;
         float dy = end.y - start.y;
         float length = std::sqrt(dx * dx + dy * dy);
@@ -2099,7 +2261,7 @@ namespace Shadow {
 
         SDK::FLinearColor shadow{ textShadowColor.r, textShadowColor.g, textShadowColor.b, textShadowColor.a };
         SDK::FLinearColor outline{ textOutlineColor.r, textOutlineColor.g, textOutlineColor.b, textOutlineColor.a };
-        SDK::FVector2D shadowOff{ 1.0f, 1.0f };
+        SDK::FVector2D shadowOff{ g_Ctx.Style.TextShadowOffsetX, g_Ctx.Style.TextShadowOffsetY };
 
         std::wstring wstr = ToWString(text);
         g_Ctx.Canvas->K2_DrawText(font, SDK::FString(wstr.c_str()), uePos, scale, ueColor, 0.0f, shadow, shadowOff, false, false, textOutline, outline);
@@ -2184,7 +2346,7 @@ namespace Shadow {
 
     inline void UpdateItemHeight() {
         Vec2 charSize = MeasureTextSize("A");
-        g_Ctx.ItemHeight = charSize.y > 0.f ? charSize.y + g_Ctx.Style.FramePadding.y * 2.f : 20.f;
+        g_Ctx.ItemHeight = charSize.y > 0.f ? charSize.y + g_Ctx.Style.FramePadding.y * 2.f : g_Ctx.Style.DefaultItemHeight;
     }
 
     inline void PushFont(SDK::UFont* font, float scale = 1.0f) {
@@ -2851,7 +3013,7 @@ namespace Shadow {
             win.Id = id;
             win.Name = std::string(display);
             win.Pos = g_Ctx.WindowPos;
-            win.Size = { 100.f, 100.f };
+            win.Size = { g_Ctx.Style.PopupInitialSize, g_Ctx.Style.PopupInitialSize };
         }
 
         win.LastAccessedFrame = g_Ctx.FrameCount;
@@ -2865,7 +3027,7 @@ namespace Shadow {
         if (g_Ctx.HasNextWindowSize) {
             win.Size = g_Ctx.NextWindowSize;
             if (win.Size.x <= 0.f) {
-                win.Size.x = 100.f; // 初始安全宽度，防止裁剪区域过小导致后续控件无法显示
+                win.Size.x = g_Ctx.Style.PopupInitialSize; // 初始安全宽度，防止裁剪区域过小导致后续控件无法显示
             }
             if (win.Size.y <= 0.f) {
                 win.Size.y = g_Ctx.ItemHeight;
@@ -2921,7 +3083,7 @@ namespace Shadow {
         g_Ctx.PopupStack.back().BgBorderCmdIdx = drawList->GetCmdBuffer().size();
         drawList->AddRect(g_Ctx.WindowPos, g_Ctx.WindowSize, g_Ctx.Style.Colors[GuiCol_PopupBorder]);
         g_Ctx.PopupStack.back().BgFilledCmdIdx = drawList->GetCmdBuffer().size();
-        drawList->AddRectFilled({ g_Ctx.WindowPos.x + 1.f, g_Ctx.WindowPos.y + 1.f }, { g_Ctx.WindowSize.x - 2.f, g_Ctx.WindowSize.y - 2.f }, g_Ctx.Style.Colors[GuiCol_PopupBg]);
+        drawList->AddRectFilled({ g_Ctx.WindowPos.x + g_Ctx.Style.PopupBorderInset, g_Ctx.WindowPos.y + g_Ctx.Style.PopupBorderInset }, { g_Ctx.WindowSize.x - g_Ctx.Style.PopupFillInset, g_Ctx.WindowSize.y - g_Ctx.Style.PopupFillInset }, g_Ctx.Style.Colors[GuiCol_PopupBg]);
 
         g_Ctx.IndentX = 0.f;
         g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x, g_Ctx.WindowPos.y + g_Ctx.Style.WindowPadding.y };
@@ -2953,7 +3115,7 @@ namespace Shadow {
             auto& win = g_Ctx.Windows[backup.Id];
             win.Size.y = g_Ctx.Cursor.y - g_Ctx.WindowPos.y + g_Ctx.Style.WindowPadding.y;
             // 完全跟随内容宽度，仅保留最小宽度限制
-            win.Size.x = std::max(10.f, g_Ctx.LastItemMaxX - g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x);
+            win.Size.x = std::max(g_Ctx.Style.PopupMinWidth, g_Ctx.LastItemMaxX - g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x);
 
             // 追溯修复首帧弹窗闪烁问题 (更新已发射的背景命令与子裁剪区域)
             auto& cmds = win.DrawList.GetCmdBuffer();
@@ -2961,7 +3123,7 @@ namespace Shadow {
                 cmds[backup.BgBorderCmdIdx].size = win.Size;
             }
             if (backup.BgFilledCmdIdx < cmds.size()) {
-                cmds[backup.BgFilledCmdIdx].size = { win.Size.x - 2.f, win.Size.y - 2.f };
+                cmds[backup.BgFilledCmdIdx].size = { win.Size.x - g_Ctx.Style.PopupFillInset, win.Size.y - g_Ctx.Style.PopupFillInset };
             }
 
             Vec2 trueClipMax = { g_Ctx.WindowPos.x + win.Size.x, g_Ctx.WindowPos.y + win.Size.y };
@@ -3036,13 +3198,13 @@ namespace Shadow {
         bool noIndent = (flags & ShadowTreeNodeFlags_NoIndent) != 0;
 
         float itemHeight = size_arg.y > 0.f ? size_arg.y : g_Ctx.ItemHeight;
-        float arrowSize = itemHeight * 0.55f;
+        float arrowSize = itemHeight * g_Ctx.Style.TreeNodeArrowSizeRatio;
         float textWidth = MeasureTextSize(display).x;
-        Vec2 interactSize = { arrowSize + 10.f + textWidth, itemHeight };
+        Vec2 interactSize = { arrowSize + g_Ctx.Style.LabelSpacing + textWidth, itemHeight };
 
         if (isFramed) {
             if (isFitText) {
-                interactSize.x = g_Ctx.Style.FramePadding.x + arrowSize + 8.f + textWidth + g_Ctx.Style.FramePadding.x;
+                interactSize.x = g_Ctx.Style.FramePadding.x + arrowSize + g_Ctx.Style.TreeNodeTextSpacing + textWidth + g_Ctx.Style.FramePadding.x;
             }
             else {
                 float rightMargin = GetRightMargin();
@@ -3058,7 +3220,7 @@ namespace Shadow {
             SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
             g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
             g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-            if (!noIndent) g_Ctx.IndentX += 20.f;
+            if (!noIndent) g_Ctx.IndentX += g_Ctx.Style.TreeNodeIndent;
             g_Ctx.TreeNodeNoIndentStack.push_back(noIndent);
             g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
             return isOpen;
@@ -3103,7 +3265,7 @@ namespace Shadow {
             GetWindowDrawList()->AddTriangleFilled(p1, p2, p3, arrowColor);
         }
 
-        float textStartX = std::round(arrowX + arrowSize + 8.f);
+        float textStartX = std::round(arrowX + arrowSize + g_Ctx.Style.TreeNodeTextSpacing);
         GetWindowDrawList()->AddText({ textStartX, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
 
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
@@ -3128,7 +3290,7 @@ namespace Shadow {
         }
 
         if (!noIndent) {
-            g_Ctx.IndentX = std::max(0.f, g_Ctx.IndentX - 20.f);
+            g_Ctx.IndentX = std::max(0.f, g_Ctx.IndentX - g_Ctx.Style.TreeNodeIndent);
         }
 
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
@@ -3225,8 +3387,8 @@ namespace Shadow {
         }
 
         uint32_t requiredDelay = 0;
-        if (flags & ShadowHoveredFlags_DelayNormal) requiredDelay = 400;
-        else if (flags & ShadowHoveredFlags_DelayShort) requiredDelay = 150;
+        if (flags & ShadowHoveredFlags_DelayNormal) requiredDelay = static_cast<uint32_t>(g_Ctx.Style.HoverDelayNormalMS);
+        else if (flags & ShadowHoveredFlags_DelayShort) requiredDelay = static_cast<uint32_t>(g_Ctx.Style.HoverDelayShortMS);
 
         if (requiredDelay > 0) {
             bool useSharedDelay = !(flags & ShadowHoveredFlags_NoSharedDelay);
@@ -3246,7 +3408,7 @@ namespace Shadow {
 
             if (useSharedDelay && (g_Ctx.HoveredIdDelayTriggered || requiredDelay == 0)) {
                 g_Ctx.SharedDelayActive = true;
-                g_Ctx.SharedDelayExpirationTime = currentTime + 250;
+                g_Ctx.SharedDelayExpirationTime = currentTime + static_cast<uint64_t>(g_Ctx.Style.HoverSharedDelayMS);
             }
         }
 
@@ -3270,7 +3432,7 @@ namespace Shadow {
         }
         float boxHeight = size.y;
         if (boxHeight <= 0.f) {
-            boxHeight = g_Ctx.ItemHeight * 5.f;
+            boxHeight = g_Ctx.ItemHeight * g_Ctx.Style.ListBoxDefaultHeightItems;
         }
 
         Vec2 boxPos = g_Ctx.Cursor;
@@ -3321,7 +3483,7 @@ namespace Shadow {
         if (hoveringListBox) {
             g_Ctx.HoveredListBoxIdCurrentFrame = id;
             if (g_Ctx.MouseWheel != 0.f) {
-                scrollY -= g_Ctx.MouseWheel * 30.f;
+                scrollY -= g_Ctx.MouseWheel * g_Ctx.Style.ScrollSpeed;
                 scrollY = std::clamp(scrollY, 0.f, maxScroll);
                 g_Ctx.ScrollY = scrollY;
                 g_Ctx.MouseWheel = 0.f;
@@ -3363,7 +3525,7 @@ namespace Shadow {
 
             GetWindowDrawList()->AddRect(trackPos, trackSize, g_Ctx.Style.Colors[GuiCol_FrameBg]);
 
-            float thumbHeight = std::max(20.f, (viewHeight / contentHeight) * trackSize.y);
+            float thumbHeight = std::max(g_Ctx.Style.ScrollbarThumbMinSize, (viewHeight / contentHeight) * trackSize.y);
             float thumbY = trackPos.y + (maxScroll > 0.f ? (scrollY / maxScroll) * (trackSize.y - thumbHeight) : 0.f);
             Vec2 thumbPos = { trackPos.x, thumbY };
             Vec2 thumbSize = { scrollbarWidth, thumbHeight };
@@ -3619,7 +3781,7 @@ namespace Shadow {
             std::string selStr = displayText.substr(s, e - s);
             float preW = MeasureTextSize(preStr).x;
             float selW = MeasureTextSize(selStr).x;
-            GetWindowDrawList()->AddRectFilled({ textX + preW, pos.y + 2.f }, { selW, size.y - 4.f }, g_Ctx.Style.Colors[GuiCol_SliderGrab]);
+            GetWindowDrawList()->AddRectFilled({ textX + preW, pos.y + g_Ctx.Style.InputTextSelectionPaddingY }, { selW, size.y - g_Ctx.Style.InputTextSelectionPaddingY * 2.f }, g_Ctx.Style.Colors[GuiCol_SliderGrab]);
         }
 
         if (text.empty() && !isActive && !hint.empty()) {
@@ -3637,9 +3799,9 @@ namespace Shadow {
 
             uint64_t currentMS = static_cast<uint64_t>(g_Ctx.RealTimeSeconds * 1000.0);
 
-            if ((currentMS / 500) % 2 == 0) {
+            if ((currentMS / g_Ctx.Style.InputTextCursorBlinkIntervalMS) % 2 == 0) {
                 Color cursorColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
-                GetWindowDrawList()->AddRectFilled({ textX + curW, textY }, { 2.f, size.y - 4.f }, cursorColor);
+                GetWindowDrawList()->AddRectFilled({ textX + curW, textY }, { g_Ctx.Style.InputTextCursorWidth, size.y - g_Ctx.Style.InputTextSelectionPaddingY * 2.f }, cursorColor);
             }
         }
         PopClipRect();
@@ -3660,7 +3822,7 @@ namespace Shadow {
         g_Ctx.BackupMenuBarClipMax = g_Ctx.ClipMax;
         g_Ctx.BackupMenuBarClippingEnabled = g_Ctx.ClippingEnabled;
 
-        float titleBarHeight = (g_Ctx.CurrentWindowFlags & ShadowWindowFlags_NoTitleBar) ? 0.f : std::max(30.f, g_Ctx.ItemHeight + 10.f);
+        float titleBarHeight = (g_Ctx.CurrentWindowFlags & ShadowWindowFlags_NoTitleBar) ? 0.f : std::max(g_Ctx.Style.TitleBarMinHeight, g_Ctx.ItemHeight + g_Ctx.Style.TitleBarPaddingY);
 
         // 与 Dear ImGui 一致：菜单栏高度等于 ItemHeight，菜单项本身占满菜单栏高度
         float menuBarHeight = g_Ctx.ItemHeight;
@@ -3694,7 +3856,7 @@ namespace Shadow {
         bool in_menubar = (g_Ctx.MenuBarStack > 0 && g_Ctx.MenuStack == 1);
         float textWidth = MeasureTextSize(display).x;
         float paddingX = g_Ctx.Style.FramePadding.x * 2.f;
-        float arrowSize = g_Ctx.ItemHeight * 0.55f;
+        float arrowSize = g_Ctx.ItemHeight * g_Ctx.Style.MenuArrowSizeRatio;
 
         float minWidth;
         Vec2 itemSize;
@@ -3703,7 +3865,7 @@ namespace Shadow {
             itemSize = { minWidth, g_Ctx.ItemHeight };
         }
         else {
-            minWidth = textWidth + paddingX + arrowSize + 10.f;
+            minWidth = textWidth + paddingX + arrowSize + g_Ctx.Style.MenuArrowSpacing;
             float availableWidth = g_Ctx.WindowSize.x - g_Ctx.Style.WindowPadding.x * 2.f;
             itemSize = { std::max(minWidth, availableWidth), g_Ctx.ItemHeight };
         }
@@ -3747,7 +3909,7 @@ namespace Shadow {
         }
 
         Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
-        Color bgColor = is_open ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : (hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : Color{ 0,0,0,0 });
+        Color bgColor = is_open ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : (hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_Transparent]);
 
         if (bgColor.a > 0.0f) {
             if (!in_menubar && g_Ctx.InPopup && !g_Ctx.PopupStack.empty()) {
@@ -3831,7 +3993,7 @@ namespace Shadow {
             itemSize = { minWidth, g_Ctx.ItemHeight };
         }
         else {
-            minWidth = textWidth + (shortcutWidth > 0.f ? shortcutWidth + 20.f : 0.f) + paddingX;
+            minWidth = textWidth + (shortcutWidth > 0.f ? shortcutWidth + g_Ctx.Style.MenuShortcutSpacing : 0.f) + paddingX;
             float availableWidth = g_Ctx.WindowSize.x - g_Ctx.Style.WindowPadding.x * 2.f;
             itemSize = { std::max(minWidth, availableWidth), g_Ctx.ItemHeight };
         }
@@ -3867,7 +4029,7 @@ namespace Shadow {
         }
 
         Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
-        Color bgColor = (hovered || selected) ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : Color{ 0,0,0,0 };
+        Color bgColor = (hovered || selected) ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_Transparent];
 
         if (bgColor.a > 0.0f) {
             if (!in_menubar && g_Ctx.InPopup && !g_Ctx.PopupStack.empty()) {
@@ -3880,7 +4042,7 @@ namespace Shadow {
 
         if (!shortcut.empty() && !in_menubar) {
             Color shortcutColor = g_Ctx.Style.Colors[GuiCol_TextDisabled];
-            if (disabled) shortcutColor.a *= 0.5f;
+            if (disabled) shortcutColor.a *= g_Ctx.Style.DisabledAlpha;
             if (g_Ctx.InPopup && !g_Ctx.PopupStack.empty()) {
                 g_Ctx.PopupStack.back().RightAlignCmds.push_back({ GetWindowDrawList()->GetCmdBuffer().size(), RightAlignCmdType::TextShortcut });
             }
@@ -4113,13 +4275,13 @@ namespace Shadow {
     inline void Separator(Vec2 size_arg = { 0.f, 0.f }) {
         if (!g_Ctx.InActiveTab) return;
 
-        float itemHeight = size_arg.y > 0.f ? size_arg.y : 4.f;
+        float itemHeight = size_arg.y > 0.f ? size_arg.y : g_Ctx.Style.SeparatorHeight;
         float x1 = g_Ctx.Cursor.x;
         float y = g_Ctx.Cursor.y + itemHeight * 0.5f;
         float x2 = size_arg.x > 0.f ? (g_Ctx.Cursor.x + size_arg.x) : (g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - GetRightMargin());
 
         if (IsRectVisible({ x1, g_Ctx.Cursor.y }, { x2 - x1, itemHeight })) {
-            GetWindowDrawList()->AddLine({ x1, y }, { x2, y }, g_Ctx.Style.Colors[GuiCol_Separator], 1.0f);
+            GetWindowDrawList()->AddLine({ x1, y }, { x2, y }, g_Ctx.Style.Colors[GuiCol_Separator], g_Ctx.Style.SeparatorThickness);
         }
 
         SetLastItemInfo({ x1, g_Ctx.Cursor.y }, { x2, g_Ctx.Cursor.y + itemHeight }, ++g_Ctx.WidgetCount, false);
@@ -4308,13 +4470,13 @@ namespace Shadow {
 
         float dx = g_Ctx.MousePos.x - g_Ctx.MousePosPrev.x;
         float dy = g_Ctx.MousePos.y - g_Ctx.MousePosPrev.y;
-        if (dx * dx + dy * dy > 4.0f) {
+        if (dx * dx + dy * dy > g_Ctx.Style.MouseStationaryMoveThreshold * g_Ctx.Style.MouseStationaryMoveThreshold) {
             g_Ctx.MouseStationaryStartTime = currentMS;
             g_Ctx.MouseIsStationary = false;
             g_Ctx.MousePosPrev = g_Ctx.MousePos;
         }
         else {
-            if (currentMS - g_Ctx.MouseStationaryStartTime >= 150) {
+            if (currentMS - g_Ctx.MouseStationaryStartTime >= static_cast<uint64_t>(g_Ctx.Style.MouseStationaryTimeMS)) {
                 g_Ctx.MouseIsStationary = true;
             }
         }
@@ -4427,7 +4589,7 @@ namespace Shadow {
         bool noTitleBar = (flags & ShadowWindowFlags_NoTitleBar) != 0;
         bool noMouseInputs = (flags & ShadowWindowFlags_NoMouseInputs) != 0;
 
-        float titleBarHeight = noTitleBar ? 0.f : std::max(30.f, g_Ctx.ItemHeight + 10.f);
+        float titleBarHeight = noTitleBar ? 0.f : std::max(g_Ctx.Style.TitleBarMinHeight, g_Ctx.ItemHeight + g_Ctx.Style.TitleBarPaddingY);
         float menuBarHeight = (flags & ShadowWindowFlags_MenuBar) ? g_Ctx.ItemHeight : 0.f;
         Vec2 wholeWindowSize = g_Ctx.WindowSize;
 
@@ -4452,8 +4614,8 @@ namespace Shadow {
             g_Ctx.ActiveInputId = 0;
         }
 
-        float viewHeight = (g_Ctx.WindowPos.y + g_Ctx.WindowSize.y) - g_Ctx.ContentStartY - g_Ctx.Style.ResizeGripSize - 4.f;
-        if (viewHeight < 10.f) viewHeight = 10.f;
+        float viewHeight = (g_Ctx.WindowPos.y + g_Ctx.WindowSize.y) - g_Ctx.ContentStartY - g_Ctx.Style.ResizeGripSize - g_Ctx.Style.WindowScrollBottomPadding;
+        if (viewHeight < g_Ctx.Style.WindowScrollMinViewHeight) viewHeight = g_Ctx.Style.WindowScrollMinViewHeight;
         float maxScroll = std::max(0.f, g_Ctx.ContentHeight - viewHeight);
         g_Ctx.ScrollY = std::clamp(g_Ctx.ScrollY, 0.f, maxScroll);
 
@@ -4468,7 +4630,7 @@ namespace Shadow {
         bool overListBox = (g_Ctx.HoveredListBoxIdPreviousFrame != 0);
 
         if (!noMouseInputs && hoveringWholeWindow && g_Ctx.MouseWheel != 0.f && !hasPopupOpen && !hoveringAnyTabBar && !overListBox) {
-            g_Ctx.ScrollY -= g_Ctx.MouseWheel * 30.f;
+            g_Ctx.ScrollY -= g_Ctx.MouseWheel * g_Ctx.Style.ScrollSpeed;
             g_Ctx.ScrollY = std::clamp(g_Ctx.ScrollY, 0.f, maxScroll);
         }
 
@@ -4479,7 +4641,7 @@ namespace Shadow {
             Vec2 trackPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - scrollbarWidth - scrollbarMarginRight, g_Ctx.ContentStartY };
             Vec2 trackSize = { scrollbarWidth, viewHeight };
 
-            float thumbHeight = std::max(20.f, (viewHeight / g_Ctx.ContentHeight) * trackSize.y);
+            float thumbHeight = std::max(g_Ctx.Style.ScrollbarThumbMinSize, (viewHeight / g_Ctx.ContentHeight) * trackSize.y);
             float thumbY = trackPos.y + (g_Ctx.ScrollY / maxScroll) * (trackSize.y - thumbHeight);
             Vec2 thumbPos = { trackPos.x, thumbY };
             Vec2 thumbSize = { scrollbarWidth, thumbHeight };
@@ -4555,22 +4717,22 @@ namespace Shadow {
             GetWindowDrawList()->AddRectFilled(g_Ctx.WindowPos, { g_Ctx.WindowSize.x, titleBarHeight }, g_Ctx.Style.Colors[GuiCol_TitleBarBg]);
 
             {
-                float titleTextX = g_Ctx.WindowPos.x + 10.f;
+                float titleTextX = g_Ctx.WindowPos.x + g_Ctx.Style.TitleBarTextOffsetX;
                 if (flags & ShadowWindowFlags_TextAlignCenter) {
                     float textW = MeasureTextSize(display).x;
                     titleTextX = g_Ctx.WindowPos.x + (g_Ctx.WindowSize.x - textW) * 0.5f;
                 }
                 else if (flags & ShadowWindowFlags_TextAlignRight) {
                     float textW = MeasureTextSize(display).x;
-                    titleTextX = g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - 10.f - textW;
+                    titleTextX = g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - g_Ctx.Style.TitleBarTextOffsetX - textW;
                 }
-                GetWindowDrawList()->AddText({ titleTextX, g_Ctx.WindowPos.y + 7.f }, g_Ctx.Style.Colors[GuiCol_Text], display);
+                GetWindowDrawList()->AddText({ titleTextX, g_Ctx.WindowPos.y + g_Ctx.Style.TitleBarTextOffsetY }, g_Ctx.Style.Colors[GuiCol_Text], display);
             }
         }
 
         if (flags & ShadowWindowFlags_MenuBar) {
             GetWindowDrawList()->AddRectFilled({ g_Ctx.WindowPos.x, g_Ctx.WindowPos.y + titleBarHeight }, { g_Ctx.WindowSize.x, menuBarHeight }, g_Ctx.Style.Colors[GuiCol_FrameBg]);
-            GetWindowDrawList()->AddLine({ g_Ctx.WindowPos.x, g_Ctx.WindowPos.y + titleBarHeight + menuBarHeight }, { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + titleBarHeight + menuBarHeight }, g_Ctx.Style.Colors[GuiCol_Border], 1.f);
+            GetWindowDrawList()->AddLine({ g_Ctx.WindowPos.x, g_Ctx.WindowPos.y + titleBarHeight + menuBarHeight }, { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + titleBarHeight + menuBarHeight }, g_Ctx.Style.Colors[GuiCol_Border], g_Ctx.Style.MenuBarBorderThickness);
         }
 
         g_Ctx.IndentX = 0.f;
@@ -4601,14 +4763,14 @@ namespace Shadow {
         g_Ctx.ClippingEnabled = false;
         g_Ctx.ClipStack.clear();
 
-        g_Ctx.WindowPos = { g_Ctx.MousePos.x + 15.f, g_Ctx.MousePos.y + 15.f };
+        g_Ctx.WindowPos = { g_Ctx.MousePos.x + g_Ctx.Style.TooltipOffset, g_Ctx.MousePos.y + g_Ctx.Style.TooltipOffset };
 
         size_t tooltipKey = g_Ctx.HoveredIdCurrentFrame;
         Vec2 bgSize = g_Ctx.TooltipSizeCache[tooltipKey];
-        if (bgSize.x < 10.f) bgSize.x = 30.f;
-        if (bgSize.y < 10.f) bgSize.y = 30.f;
+        if (bgSize.x < g_Ctx.Style.WindowScrollMinViewHeight) bgSize.x = g_Ctx.Style.TooltipMinSize;
+        if (bgSize.y < g_Ctx.Style.WindowScrollMinViewHeight) bgSize.y = g_Ctx.Style.TooltipMinSize;
 
-        GetWindowDrawList()->AddRect({ g_Ctx.WindowPos.x - 1.f, g_Ctx.WindowPos.y - 1.f }, { bgSize.x + 2.f, bgSize.y + 2.f }, g_Ctx.Style.Colors[GuiCol_PopupBorder]);
+        GetWindowDrawList()->AddRect({ g_Ctx.WindowPos.x - g_Ctx.Style.PopupBorderInset, g_Ctx.WindowPos.y - g_Ctx.Style.PopupBorderInset }, { bgSize.x + g_Ctx.Style.PopupFillInset, bgSize.y + g_Ctx.Style.PopupFillInset }, g_Ctx.Style.Colors[GuiCol_PopupBorder]);
         GetWindowDrawList()->AddRectFilled(g_Ctx.WindowPos, bgSize, g_Ctx.Style.Colors[GuiCol_PopupBg]);
 
         g_Ctx.WindowSize = bgSize;
@@ -4658,8 +4820,8 @@ namespace Shadow {
         bool noResize = (g_Ctx.CurrentWindowFlags & ShadowWindowFlags_NoResize) != 0;
         bool noScrollbar = (g_Ctx.CurrentWindowFlags & ShadowWindowFlags_NoScrollbar) != 0;
 
-        float viewHeight = (g_Ctx.WindowPos.y + g_Ctx.WindowSize.y) - g_Ctx.ContentStartY - g_Ctx.Style.ResizeGripSize - 4.f;
-        if (viewHeight < 10.f) viewHeight = 10.f;
+        float viewHeight = (g_Ctx.WindowPos.y + g_Ctx.WindowSize.y) - g_Ctx.ContentStartY - g_Ctx.Style.ResizeGripSize - g_Ctx.Style.WindowScrollBottomPadding;
+        if (viewHeight < g_Ctx.Style.WindowScrollMinViewHeight) viewHeight = g_Ctx.Style.WindowScrollMinViewHeight;
 
         g_Ctx.CurrentScrollbarWidth = 0.f;
 
@@ -4674,7 +4836,7 @@ namespace Shadow {
 
             GetWindowDrawList()->AddRect(trackPos, trackSize, g_Ctx.Style.Colors[GuiCol_FrameBg]);
 
-            float thumbHeight = std::max(20.f, (viewHeight / g_Ctx.ContentHeight) * trackSize.y);
+            float thumbHeight = std::max(g_Ctx.Style.ScrollbarThumbMinSize, (viewHeight / g_Ctx.ContentHeight) * trackSize.y);
             float thumbY = trackPos.y + (g_Ctx.ScrollY / maxScroll) * (trackSize.y - thumbHeight);
             Vec2 thumbPos = { trackPos.x, thumbY };
             Vec2 thumbSize = { scrollbarWidth, thumbHeight };
@@ -4693,7 +4855,7 @@ namespace Shadow {
                 ? g_Ctx.Style.Colors[GuiCol_ResizeGripActive]
                 : (g_Ctx.IsHoveringResize ? g_Ctx.Style.Colors[GuiCol_ResizeGripHovered] : g_Ctx.Style.Colors[GuiCol_ResizeGrip]);
 
-            float pad = 3.f;
+            float pad = g_Ctx.Style.ResizeGripPad;
             Vec2 p1 = { x + pad, y + triSize - pad };
             Vec2 p2 = { x + triSize - pad, y + triSize - pad };
             Vec2 p3 = { x + triSize - pad, y + pad };
@@ -4758,7 +4920,7 @@ namespace Shadow {
                 float w = 0.f;
                 auto itw = g_Ctx.TabWidthCache.find(oid);
                 if (itw != g_Ctx.TabWidthCache.end()) w = itw->second;
-                accum += w + 5.f;
+                accum += w + g_Ctx.Style.TabBarTabSpacing;
             }
         }
 
@@ -4769,11 +4931,11 @@ namespace Shadow {
 
         g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
 
-        float scrollbarReserve = needsScrollbar ? (g_Ctx.Style.ScrollbarSize + 4.f) : 0.f;
+        float scrollbarReserve = needsScrollbar ? (g_Ctx.Style.ScrollbarSize + g_Ctx.Style.TabBarScrollbarReserve) : 0.f;
         g_Ctx.Cursor.y += scrollbarReserve;
 
-        GetWindowDrawList()->AddRect({ g_Ctx.WindowPos.x, g_Ctx.Cursor.y }, { g_Ctx.WindowSize.x, 2.f }, g_Ctx.Style.Colors[GuiCol_Separator]);
-        g_Ctx.Cursor.y += 2.f + g_Ctx.Style.WindowPadding.y;
+        GetWindowDrawList()->AddRect({ g_Ctx.WindowPos.x, g_Ctx.Cursor.y }, { g_Ctx.WindowSize.x, g_Ctx.Style.TabBarSeparatorHeight }, g_Ctx.Style.Colors[GuiCol_Separator]);
+        g_Ctx.Cursor.y += g_Ctx.Style.TabBarSeparatorHeight + g_Ctx.Style.WindowPadding.y;
 
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;
         g_Ctx.Cursor.y -= g_Ctx.ScrollY;
@@ -4888,7 +5050,7 @@ namespace Shadow {
 
             GetWindowDrawList()->AddRect(trackPos, trackSize, g_Ctx.Style.Colors[GuiCol_FrameBg]);
 
-            float thumbWidth = std::max(20.f, (viewWidth / g_Ctx.TabBarContentWidth) * trackSize.x);
+            float thumbWidth = std::max(g_Ctx.Style.ScrollbarThumbMinSize, (viewWidth / g_Ctx.TabBarContentWidth) * trackSize.x);
             float thumbX = trackPos.x + (maxScrollX > 0.f ? (scrollX / maxScrollX) * (trackSize.x - thumbWidth) : 0.f);
             Vec2 thumbPos = { thumbX, trackPos.y };
             Vec2 thumbSize = { thumbWidth, barHeight };
@@ -4929,7 +5091,7 @@ namespace Shadow {
             bool hoveringForWheel = hoveringTabRow || hoveringTrack;
 
             if (hoveringForWheel && g_Ctx.MouseWheel != 0.f && !overListBox) {
-                scrollX -= g_Ctx.MouseWheel * 30.f;
+                scrollX -= g_Ctx.MouseWheel * g_Ctx.Style.TabBarScrollSpeed;
                 scrollX = std::clamp(scrollX, 0.f, maxScrollX);
                 g_Ctx.MouseWheel = 0.f;
             }
@@ -4939,7 +5101,7 @@ namespace Shadow {
         }
         else if (fittingScroll) {
             if (hoveringTabRow && g_Ctx.MouseWheel != 0.f && !overListBox) {
-                scrollX -= g_Ctx.MouseWheel * 30.f;
+                scrollX -= g_Ctx.MouseWheel * g_Ctx.Style.TabBarScrollSpeed;
                 scrollX = std::clamp(scrollX, 0.f, maxScrollX);
                 g_Ctx.MouseWheel = 0.f;
             }
@@ -5015,7 +5177,7 @@ namespace Shadow {
 
         g_Ctx.TabBarDisplayCache[tabBarId].push_back({ id, tabPos, tabSize, std::string(display), currentFont, currentScale, currentNoSDF });
 
-        g_Ctx.TabBarContentWidthAccum += tabSize.x + 5.f;
+        g_Ctx.TabBarContentWidthAccum += tabSize.x + g_Ctx.Style.TabBarTabSpacing;
 
         Vec2 clipMin = g_Ctx.TabBarOrigin;
         Vec2 clipMax = { g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth, g_Ctx.TabBarOrigin.y + tabSize.y };
@@ -5335,7 +5497,7 @@ namespace Shadow {
         float rightMargin = GetRightMargin();
 
         std::string currentText = (*current_item >= 0 && *current_item < static_cast<int>(items.size())) ? items[*current_item] : "Unknown";
-        float triSize = itemHeight * 0.5f;
+        float triSize = itemHeight * g_Ctx.Style.ComboArrowSizeRatio;
 
         float boxWidth;
         if (size_arg.x > 0.f) {
@@ -5347,18 +5509,18 @@ namespace Shadow {
             }
             else {
                 if (noRightAlign) {
-                    float startX = g_Ctx.Cursor.x + (noText ? 0.f : textWidth + 10.f);
-                    boxWidth = std::max(50.f, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - startX);
+                    float startX = g_Ctx.Cursor.x + (noText ? 0.f : textWidth + g_Ctx.Style.LabelSpacing);
+                    boxWidth = std::max(g_Ctx.Style.ComboMinWidthNoRightAlign, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - startX);
                 }
                 else {
-                    boxWidth = std::max(100.f, g_Ctx.WindowSize.x - controlOffsetX - rightMargin);
+                    boxWidth = std::max(g_Ctx.Style.ComboMinWidth, g_Ctx.WindowSize.x - controlOffsetX - rightMargin);
                 }
             }
         }
 
         Vec2 boxPos;
         if (noRightAlign) {
-            boxPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + 10.f), g_Ctx.Cursor.y };
+            boxPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + g_Ctx.Style.LabelSpacing), g_Ctx.Cursor.y };
         }
         else {
             if (fitText) {
@@ -5469,7 +5631,7 @@ namespace Shadow {
         float itemHeight = size_arg.y > 0.f ? size_arg.y : g_Ctx.ItemHeight;
         Vec2 boxSize = { size_arg.x > 0.f ? size_arg.x : itemHeight, itemHeight };
         float textWidth = MeasureTextSize(display).x;
-        Vec2 interactSize = { boxSize.x + 10.f + textWidth, itemHeight };
+        Vec2 interactSize = { boxSize.x + g_Ctx.Style.LabelSpacing + textWidth, itemHeight };
 
         bool disabled = IsDisabled();
 
@@ -5495,14 +5657,14 @@ namespace Shadow {
         GetWindowDrawList()->AddRectFilled(g_Ctx.Cursor, boxSize, bgColor);
 
         if (*value) {
-            float checkPad = boxSize.x * 0.2f;
+            float checkPad = boxSize.x * g_Ctx.Style.CheckboxCheckPaddingRatio;
             Color checkCol = g_Ctx.Style.Colors[GuiCol_CheckMark];
             if (disabled) checkCol.a *= 0.5f;
             GetWindowDrawList()->AddRectFilled({ g_Ctx.Cursor.x + checkPad, g_Ctx.Cursor.y + checkPad }, { boxSize.x - checkPad * 2.f, boxSize.y - checkPad * 2.f }, checkCol);
         }
 
         Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
-        GetWindowDrawList()->AddText({ g_Ctx.Cursor.x + boxSize.x + 10.f, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
+        GetWindowDrawList()->AddText({ g_Ctx.Cursor.x + boxSize.x + g_Ctx.Style.LabelSpacing, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
 
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
@@ -5518,12 +5680,12 @@ namespace Shadow {
         g_Ctx.WidgetCount++;
 
         float itemHeight = size_arg.y > 0.f ? size_arg.y : g_Ctx.ItemHeight;
-        float padding = 2.f;
+        float padding = g_Ctx.Style.SwitchPadding;
         float knobSize = itemHeight - padding * 2.f;
         float width = size_arg.x > 0.f ? size_arg.x : (knobSize * 2.f + padding * 2.f);
         Vec2 boxSize = { width, itemHeight };
         float textWidth = MeasureTextSize(display).x;
-        Vec2 interactSize = { textWidth + 10.f + boxSize.x, itemHeight };
+        Vec2 interactSize = { textWidth + g_Ctx.Style.LabelSpacing + boxSize.x, itemHeight };
 
         bool disabled = IsDisabled();
 
@@ -5542,7 +5704,7 @@ namespace Shadow {
         Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
         GetWindowDrawList()->AddText({ g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
 
-        Vec2 boxPos = { g_Ctx.Cursor.x + textWidth + 10.f, g_Ctx.Cursor.y };
+        Vec2 boxPos = { g_Ctx.Cursor.x + textWidth + g_Ctx.Style.LabelSpacing, g_Ctx.Cursor.y };
 
         Color bgColor;
         if (disabled) {
@@ -5560,7 +5722,7 @@ namespace Shadow {
         GetWindowDrawList()->AddRectFilled(boxPos, boxSize, bgColor);
 
         Color knobColor = g_Ctx.Style.Colors[GuiCol_SwitchKnob];
-        if (disabled) knobColor.a *= 0.5f;
+        if (disabled) knobColor.a *= g_Ctx.Style.DisabledAlpha;
 
         float knobX = *value ? (boxPos.x + width - padding - knobSize) : (boxPos.x + padding);
         GetWindowDrawList()->AddRectFilled({ knobX, boxPos.y + padding }, { knobSize, knobSize }, knobColor);
@@ -5603,7 +5765,7 @@ namespace Shadow {
 
         bool selected = p_selected ? *p_selected : false;
 
-        Color bgColor = { 0, 0, 0, 0 };
+        Color bgColor = g_Ctx.Style.Colors[GuiCol_Transparent];
         if (disabled) {
             if (selected) bgColor = g_Ctx.Style.Colors[GuiCol_ControlDisabled];
         }
@@ -5653,11 +5815,11 @@ namespace Shadow {
 
         if (noName) {
             boxPos = { g_Ctx.Cursor.x, g_Ctx.Cursor.y };
-            boxWidth = std::max(50.f, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - boxPos.x);
+            boxWidth = std::max(g_Ctx.Style.InputTextMinWidth, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - boxPos.x);
         }
         else {
             boxPos = { g_Ctx.WindowPos.x + controlOffsetX, g_Ctx.Cursor.y };
-            boxWidth = std::max(50.f, g_Ctx.WindowSize.x - controlOffsetX - rightMargin);
+            boxWidth = std::max(g_Ctx.Style.InputTextMinWidth, g_Ctx.WindowSize.x - controlOffsetX - rightMargin);
         }
 
         if (size_arg.x > 0.f) boxWidth = size_arg.x;
@@ -5707,11 +5869,11 @@ namespace Shadow {
 
         if (noName) {
             boxPos = { g_Ctx.Cursor.x, g_Ctx.Cursor.y };
-            boxWidth = std::max(50.f, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - boxPos.x);
+            boxWidth = std::max(g_Ctx.Style.InputTextMinWidth, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - boxPos.x);
         }
         else {
             boxPos = { g_Ctx.WindowPos.x + controlOffsetX, g_Ctx.Cursor.y };
-            boxWidth = std::max(50.f, g_Ctx.WindowSize.x - controlOffsetX - rightMargin);
+            boxWidth = std::max(g_Ctx.Style.InputTextMinWidth, g_Ctx.WindowSize.x - controlOffsetX - rightMargin);
         }
 
         if (size_arg.x > 0.f) boxWidth = size_arg.x;
@@ -5733,7 +5895,7 @@ namespace Shadow {
         size_t inputId = id ^ HashString("_inputFloat");
 
         if (g_Ctx.ActiveInputId != inputId) {
-            if ((flags & ShadowInputTextFlags_DisplayEmptyRefVal) && std::abs(*v) < 0.000001f) {
+            if ((flags & ShadowInputTextFlags_DisplayEmptyRefVal) && std::abs(*v) < g_Ctx.Style.InputFloatEmptyThreshold) {
                 g_Ctx.InputBuffers[inputId] = "";
             }
             else {
@@ -5833,7 +5995,7 @@ namespace Shadow {
 
         size_t sliderInputId = id ^ HashString("_sliderInput");
 
-        int prec = 3;
+        int prec = g_Ctx.Style.SliderDefaultPrecision;
         if (step > 0.f) {
             prec = 0;
             float temp = step;
@@ -5853,7 +6015,7 @@ namespace Shadow {
             std::string maxStr = std::format("{:.{}f}", max_val, prec);
             float wMin = MeasureTextSize(minStr).x;
             float wMax = MeasureTextSize(maxStr).x;
-            g_Ctx.SliderInputWidthCache[sliderInputId] = std::max(wMin, wMax) + g_Ctx.Style.FramePadding.x * 2.f + 4.f;
+            g_Ctx.SliderInputWidthCache[sliderInputId] = std::max(wMin, wMax) + g_Ctx.Style.FramePadding.x * 2.f + g_Ctx.Style.SliderInputExtraWidth;
         }
         float valBoxWidth = g_Ctx.SliderInputWidthCache[sliderInputId];
 
@@ -5865,11 +6027,11 @@ namespace Shadow {
 
         if (noRightAlign) {
             sliderPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + 10.f), g_Ctx.Cursor.y };
-            sliderWidth = std::max(50.f, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - sliderPos.x - valBoxWidth - g_Ctx.Style.ItemSpacing.x);
+            sliderWidth = std::max(g_Ctx.Style.SliderMinWidth, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - sliderPos.x - valBoxWidth - g_Ctx.Style.ItemSpacing.x);
         }
         else {
             sliderPos = { g_Ctx.WindowPos.x + controlOffsetX, g_Ctx.Cursor.y };
-            sliderWidth = std::max(50.f, g_Ctx.WindowSize.x - controlOffsetX - valBoxWidth - g_Ctx.Style.ItemSpacing.x - rightMargin);
+            sliderWidth = std::max(g_Ctx.Style.SliderMinWidth, g_Ctx.WindowSize.x - controlOffsetX - valBoxWidth - g_Ctx.Style.ItemSpacing.x - rightMargin);
         }
 
         if (size_arg.x > 0.f) sliderWidth = size_arg.x;
@@ -5910,12 +6072,12 @@ namespace Shadow {
 
         if (!disabled && g_Ctx.FocusedSliderId == id) {
             if (g_Ctx.KeyPressed[VK_LEFT]) {
-                float modifyVal = *value - (step > 0.f ? step : (max_val - min_val) * 0.01f);
+                float modifyVal = *value - (step > 0.f ? step : (max_val - min_val) * g_Ctx.Style.SliderKeyboardStepRatio);
                 if (step > 0.f) modifyVal = std::round(modifyVal / step) * step;
                 *value = std::clamp(modifyVal, min_val, max_val);
             }
             if (g_Ctx.KeyPressed[VK_RIGHT]) {
-                float modifyVal = *value + (step > 0.f ? step : (max_val - min_val) * 0.01f);
+                float modifyVal = *value + (step > 0.f ? step : (max_val - min_val) * g_Ctx.Style.SliderKeyboardStepRatio);
                 if (step > 0.f) modifyVal = std::round(modifyVal / step) * step;
                 *value = std::clamp(modifyVal, min_val, max_val);
             }
@@ -5929,7 +6091,7 @@ namespace Shadow {
         if (disabled) grabCol.a *= 0.5f;
         GetWindowDrawList()->AddRectFilled(sliderPos, { fillWidth, size.y }, grabCol);
 
-        float knobWidth = 4.0f;
+        float knobWidth = g_Ctx.Style.SliderKnobWidth;
         float knobX = sliderPos.x + fillWidth - knobWidth * 0.5f;
         knobX = std::clamp(knobX, sliderPos.x, sliderPos.x + sliderWidth - knobWidth);
 
@@ -5939,10 +6101,10 @@ namespace Shadow {
 
         if (g_Ctx.FocusedSliderId == id) {
             Color border = g_Ctx.Style.Colors[GuiCol_Border];
-            GetWindowDrawList()->AddRectFilled({ sliderPos.x - 1.f, sliderPos.y - 1.f }, { size.x + 2.f, 1.f }, border);
-            GetWindowDrawList()->AddRectFilled({ sliderPos.x - 1.f, sliderPos.y + size.y }, { size.x + 2.f, 1.f }, border);
-            GetWindowDrawList()->AddRectFilled({ sliderPos.x - 1.f, sliderPos.y }, { 1.f, size.y }, border);
-            GetWindowDrawList()->AddRectFilled({ sliderPos.x + size.x, sliderPos.y }, { 1.f, size.y }, border);
+            GetWindowDrawList()->AddRectFilled({ sliderPos.x - g_Ctx.Style.SliderFocusBorderThickness, sliderPos.y - g_Ctx.Style.SliderFocusBorderThickness }, { size.x + g_Ctx.Style.SliderFocusBorderThickness * 2.f, g_Ctx.Style.SliderFocusBorderThickness }, border);
+            GetWindowDrawList()->AddRectFilled({ sliderPos.x - g_Ctx.Style.SliderFocusBorderThickness, sliderPos.y + size.y }, { size.x + g_Ctx.Style.SliderFocusBorderThickness * 2.f, g_Ctx.Style.SliderFocusBorderThickness }, border);
+            GetWindowDrawList()->AddRectFilled({ sliderPos.x - g_Ctx.Style.SliderFocusBorderThickness, sliderPos.y }, { g_Ctx.Style.SliderFocusBorderThickness, size.y }, border);
+            GetWindowDrawList()->AddRectFilled({ sliderPos.x + size.x, sliderPos.y }, { g_Ctx.Style.SliderFocusBorderThickness, size.y }, border);
         }
 
         bool changed = InputTextEx(sliderInputId, valBoxPos, valBoxSize, g_Ctx.InputBuffers[sliderInputId], ShadowInputTextFlags_CharsDecimal | ShadowInputTextFlags_AlignCenter);
@@ -6032,24 +6194,24 @@ namespace Shadow {
                 float alphaWidth = g_Ctx.Style.CPAlphaWidth;
                 float spacing = g_Ctx.Style.CPSpacing;
 
-                float hexBoxHeight = std::max(24.f, g_Ctx.ItemHeight + 4.f);
+                float hexBoxHeight = std::max(g_Ctx.Style.ColorPickerHexBoxMinHeight, g_Ctx.ItemHeight + g_Ctx.Style.ColorPickerHexBoxExtraHeight);
                 float popupWidth = padding * 2.f + svSize + spacing * 2.f + hueWidth + alphaWidth;
                 float popupHeight = padding * 2.f + svSize + spacing + hexBoxHeight;
 
-                SetNextWindowPos({ boxPos.x + boxSize.x + g_Ctx.Style.ItemSpacing.x, boxPos.y + itemHeight + 4.f });
+                SetNextWindowPos({ boxPos.x + boxSize.x + g_Ctx.Style.ItemSpacing.x, boxPos.y + itemHeight + g_Ctx.Style.PopupHeightExtra });
                 SetNextWindowSize({ popupWidth, popupHeight });
             }
             g_Ctx.MouseClicked = false;
         }
 
         float globalAlpha = g_Ctx.Style.Colors[GuiCol_ColorPickerLight].a;
-        if (disabled) globalAlpha *= 0.5f;
+        if (disabled) globalAlpha *= g_Ctx.Style.DisabledAlpha;
 
         Color cbLight = g_Ctx.Style.Colors[GuiCol_CheckerboardLight];
         Color cbDark = g_Ctx.Style.Colors[GuiCol_CheckerboardDark];
 
         float currentA = a ? *a : 1.0f;
-        int checkerSize = 5;
+        int checkerSize = g_Ctx.Style.ColorPickerCheckerSize;
 
         for (int y = 0; y < boxSize.y; y += checkerSize) {
             for (int x = 0; x < boxSize.x; x += checkerSize) {
@@ -6087,7 +6249,7 @@ namespace Shadow {
             float alphaWidth = g_Ctx.Style.CPAlphaWidth;
             float spacing = g_Ctx.Style.CPSpacing;
 
-            float hexBoxHeight = std::max(24.f, g_Ctx.ItemHeight + 4.f);
+            float hexBoxHeight = std::max(g_Ctx.Style.ColorPickerHexBoxMinHeight, g_Ctx.ItemHeight + g_Ctx.Style.ColorPickerHexBoxExtraHeight);
             float popupWidth = padding * 2.f + svSize + spacing * 2.f + hueWidth + alphaWidth;
             float popupHeight = padding * 2.f + svSize + spacing + hexBoxHeight;
 
@@ -6195,19 +6357,24 @@ namespace Shadow {
                 ApplyHexInput();
             }
 
+            // 绘制 SV 选择器的 Cursor
             Vec2 cursorSV = { svPos.x + g_Ctx.ColorPickerS * svSize, svPos.y + (1.f - g_Ctx.ColorPickerV) * svSize };
-            GetWindowDrawList()->AddRect({ cursorSV.x - 4.f, cursorSV.y - 4.f }, { 8.f, 8.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
-            GetWindowDrawList()->AddRect({ cursorSV.x - 3.f, cursorSV.y - 3.f }, { 6.f, 6.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
-            GetWindowDrawList()->AddRectFilled({ cursorSV.x - 2.f, cursorSV.y - 2.f }, { 4.f, 4.f }, { *r, *g, *b, pickerAlpha });
+            float cursorOuterHalf = g_Ctx.Style.ColorPickerCursorSize * 0.5f;
+            float cursorInnerHalf = g_Ctx.Style.ColorPickerCursorInnerSize * 0.5f;
+            float cursorCenterHalf = g_Ctx.Style.ColorPickerCursorCenterSize * 0.5f;
+            GetWindowDrawList()->AddRect({ cursorSV.x - cursorOuterHalf, cursorSV.y - cursorOuterHalf }, { g_Ctx.Style.ColorPickerCursorSize, g_Ctx.Style.ColorPickerCursorSize }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
+            GetWindowDrawList()->AddRect({ cursorSV.x - cursorInnerHalf, cursorSV.y - cursorInnerHalf }, { g_Ctx.Style.ColorPickerCursorInnerSize, g_Ctx.Style.ColorPickerCursorInnerSize }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
+            GetWindowDrawList()->AddRectFilled({ cursorSV.x - cursorCenterHalf, cursorSV.y - cursorCenterHalf }, { g_Ctx.Style.ColorPickerCursorCenterSize, g_Ctx.Style.ColorPickerCursorCenterSize }, { *r, *g, *b, pickerAlpha });
 
-            Vec2 cursorHue = { huePos.x - 2.f, huePos.y + g_Ctx.ColorPickerH * svSize - 2.f };
-            GetWindowDrawList()->AddRect(cursorHue, { hueWidth + 4.f, 4.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
-            GetWindowDrawList()->AddRect({ cursorHue.x + 1.f, cursorHue.y + 1.f }, { hueWidth + 2.f, 2.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
+            // 绘制 Hue 选择器的 Cursor
+            Vec2 cursorHue = { huePos.x - cursorCenterHalf, huePos.y + g_Ctx.ColorPickerH * svSize - cursorCenterHalf };
+            GetWindowDrawList()->AddRect(cursorHue, { hueWidth + g_Ctx.Style.ColorPickerCursorCenterSize, g_Ctx.Style.ColorPickerCursorCenterSize }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
+            GetWindowDrawList()->AddRect({ cursorHue.x + g_Ctx.Style.SliderFocusBorderThickness, cursorHue.y + g_Ctx.Style.SliderFocusBorderThickness }, { hueWidth + g_Ctx.Style.ColorPickerCursorCenterSize - g_Ctx.Style.SliderFocusBorderThickness * 2.f, g_Ctx.Style.ColorPickerCursorCenterSize - g_Ctx.Style.SliderFocusBorderThickness * 2.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
 
             if (a) {
-                Vec2 cursorAlpha = { alphaPos.x - 2.f, alphaPos.y + (1.f - *a) * svSize - 2.f };
-                GetWindowDrawList()->AddRect(cursorAlpha, { alphaWidth + 4.f, 4.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
-                GetWindowDrawList()->AddRect({ cursorAlpha.x + 1.f, cursorAlpha.y + 1.f }, { alphaWidth + 2.f, 2.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
+                Vec2 cursorAlpha = { alphaPos.x - cursorCenterHalf, alphaPos.y + (1.f - *a) * svSize - cursorCenterHalf };
+                GetWindowDrawList()->AddRect(cursorAlpha, { alphaWidth + g_Ctx.Style.ColorPickerCursorCenterSize, g_Ctx.Style.ColorPickerCursorCenterSize }, g_Ctx.Style.Colors[GuiCol_ColorPickerDark]);
+                GetWindowDrawList()->AddRect({ cursorAlpha.x + g_Ctx.Style.SliderFocusBorderThickness, cursorAlpha.y + g_Ctx.Style.SliderFocusBorderThickness }, { alphaWidth + g_Ctx.Style.ColorPickerCursorCenterSize - g_Ctx.Style.SliderFocusBorderThickness * 2.f, g_Ctx.Style.ColorPickerCursorCenterSize - g_Ctx.Style.SliderFocusBorderThickness * 2.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
             }
 
             g_Ctx.Cursor.y += popupHeight;
@@ -6253,7 +6420,7 @@ namespace Shadow {
         Vec2 btnPos;
 
         if (noRightAlign) {
-            btnPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + 10.f), g_Ctx.Cursor.y };
+            btnPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + g_Ctx.Style.LabelSpacing), g_Ctx.Cursor.y };
         }
         else {
             float rightMargin = GetRightMargin();
@@ -6320,12 +6487,12 @@ namespace Shadow {
         Vec2 btnSize = { MeasureTextSize(keyName).x + g_Ctx.Style.FramePadding.x * 2.f, itemHeight };
         if (size_arg.x > 0.f) btnSize.x = size_arg.x;
 
-        float dotSize = std::max(6.f, itemHeight * 0.4f);
+        float dotSize = std::max(g_Ctx.Style.HotkeyDotSizeMin, itemHeight * g_Ctx.Style.HotkeyDotSizeRatio);
         float dotOffset = (itemHeight - dotSize) / 2.f;
 
         Vec2 btnPos;
         if (noRightAlign) {
-            btnPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + 10.f), g_Ctx.Cursor.y };
+            btnPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + g_Ctx.Style.LabelSpacing), g_Ctx.Cursor.y };
         }
         else {
             float rightMargin = GetRightMargin();
@@ -6374,7 +6541,7 @@ namespace Shadow {
                 else {
                     OpenPopup(HashString(popupName));
                     SetNextWindowPos({ btnPos.x, btnPos.y + btnSize.y });
-                    SetNextWindowSize({ 100.f, modeStrs.size() * g_Ctx.ItemHeight });
+                    SetNextWindowSize({ g_Ctx.Style.HotkeyModePopupWidth, modeStrs.size() * g_Ctx.ItemHeight });
                 }
                 g_Ctx.RightMouseClicked = false;
             }
@@ -6391,11 +6558,11 @@ namespace Shadow {
         if (BeginPopup(popupName, ShadowWindowFlags_NoMove)) {
             for (size_t i = 0; i < modeStrs.size(); ++i) {
                 Vec2 itemPos = g_Ctx.Cursor;
-                bool itemHovered = IsMouseHoveringRaw(itemPos, { 100.f, g_Ctx.ItemHeight });
+                bool itemHovered = IsMouseHoveringRaw(itemPos, { g_Ctx.Style.HotkeyModePopupWidth, g_Ctx.ItemHeight });
                 bool isCurrentItem = (*hotkey_mode == static_cast<HotkeyMode>(i));
 
                 if (itemHovered) {
-                    GetWindowDrawList()->AddRectFilled(itemPos, { 100.f, g_Ctx.ItemHeight }, g_Ctx.Style.Colors[GuiCol_FrameBgHovered]);
+                    GetWindowDrawList()->AddRectFilled(itemPos, { g_Ctx.Style.HotkeyModePopupWidth, g_Ctx.ItemHeight }, g_Ctx.Style.Colors[GuiCol_FrameBgHovered]);
                     if (g_Ctx.MouseClicked) {
                         *hotkey_mode = static_cast<HotkeyMode>(i);
                         CloseCurrentPopup();
@@ -6403,7 +6570,7 @@ namespace Shadow {
                     }
                 }
                 else if (isCurrentItem) {
-                    GetWindowDrawList()->AddRectFilled(itemPos, { 100.f, g_Ctx.ItemHeight }, g_Ctx.Style.Colors[GuiCol_DropdownActive]);
+                    GetWindowDrawList()->AddRectFilled(itemPos, { g_Ctx.Style.HotkeyModePopupWidth, g_Ctx.ItemHeight }, g_Ctx.Style.Colors[GuiCol_DropdownActive]);
                 }
 
                 Color textCol = isCurrentItem ? g_Ctx.Style.Colors[GuiCol_TextHighlight] : g_Ctx.Style.Colors[GuiCol_Text];
@@ -6411,7 +6578,7 @@ namespace Shadow {
 
                 g_Ctx.Cursor.y += g_Ctx.ItemHeight;
             }
-            g_Ctx.LastItemMaxX = g_Ctx.WindowPos.x + 100.f;
+            g_Ctx.LastItemMaxX = g_Ctx.WindowPos.x + g_Ctx.Style.HotkeyModePopupWidth;
         }
         EndPopup();
         g_Ctx.Style.WindowPadding = backupPad;
@@ -6426,7 +6593,7 @@ namespace Shadow {
 
         if (!noStateDisplay) {
             Color indicatorColor = *is_active ? g_Ctx.Style.Colors[GuiCol_ActiveIndicator] : g_Ctx.Style.Colors[GuiCol_InactiveIndicator];
-            if (disabled) indicatorColor.a *= 0.5f;
+            if (disabled) indicatorColor.a *= g_Ctx.Style.DisabledAlpha;
             GetWindowDrawList()->AddRectFilled({ btnPos.x + btnSize.x + g_Ctx.Style.ItemSpacing.x, g_Ctx.Cursor.y + dotOffset }, { dotSize, dotSize }, indicatorColor);
         }
 

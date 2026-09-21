@@ -392,6 +392,118 @@ namespace Shadow {
                     }
                     Shadow::TreePop();
 
+                    // ========================================================
+                    // Item Status & Query API Demonstrations
+                    // ========================================================
+                    if (Shadow::TreeNode("Item Status & Query APIs")) {
+
+                        // --- 1. IsItemActive, IsItemActivated, IsItemDeactivated ---
+                        if (Shadow::TreeNode("Active / Activated / Deactivated")) {
+                            static float slider_val = 0.5f;
+                            static int activated_count = 0;
+                            static int deactivated_count = 0;
+
+                            static int btn_activated_count = 0;
+                            static int btn_deactivated_count = 0;
+
+                            Shadow::Slider("Test Slider##StatusDemo", &slider_val, 0.0f, 1.0f);
+                            bool slider_active = Shadow::IsItemActive();
+                            if (Shadow::IsItemActivated()) {
+                                activated_count++;
+                            }
+                            if (Shadow::IsItemDeactivated()) {
+                                deactivated_count++;
+                            }
+
+                            Shadow::Text(std::format("Slider IsActive: {} | Activated Count: {} | Deactivated Count: {}",
+                                slider_active ? "TRUE" : "FALSE", activated_count, deactivated_count));
+
+                            Shadow::Button("Hold/Click Button##StatusBtn");
+                            bool btn_active = Shadow::IsItemActive();
+                            if (Shadow::IsItemActivated()) {
+                                btn_activated_count++;
+                            }
+                            if (Shadow::IsItemDeactivated()) {
+                                btn_deactivated_count++;
+                            }
+
+                            Shadow::Text(std::format("Button IsActive: {} | Activated Count: {} | Deactivated Count: {}",
+                                btn_active ? "TRUE" : "FALSE",
+                                btn_activated_count,
+                                btn_deactivated_count));
+
+                            Shadow::HelpMarker("IsItemActive() returns true while dragging/holding.\nIsItemActivated() returns true on the exact frame it becomes active.\nIsItemDeactivated() returns true on the frame it is released.");
+                        }
+                        Shadow::TreePop();
+
+                        // --- 2. IsItemClicked with Left, Right, Middle buttons ---
+                        if (Shadow::TreeNode("IsItemClicked (Left / Right / Middle)")) {
+                            static std::string last_click_btn = "None";
+
+                            Shadow::Button("Click Me (Left / Right / Middle)##MultiClickBtn", { 250.f, 0.f });
+
+                            if (Shadow::IsItemClicked(Shadow::ShadowMouseButton_Left)) {
+                                last_click_btn = "Left Mouse Button";
+                            }
+                            else if (Shadow::IsItemClicked(Shadow::ShadowMouseButton_Right)) {
+                                last_click_btn = "Right Mouse Button";
+                            }
+                            else if (Shadow::IsItemClicked(Shadow::ShadowMouseButton_Middle)) {
+                                last_click_btn = "Middle Mouse Button";
+                            }
+
+                            Shadow::Text(std::format("Last Clicked With: {}", last_click_btn));
+                            Shadow::HelpMarker("Shadow::IsItemClicked supports querying ShadowMouseButton_Left (0), Right (1), and Middle (2).");
+                        }
+                        Shadow::TreePop();
+
+                        // --- 3. IsItemVisible ---
+                        if (Shadow::TreeNode("IsItemVisible")) {
+                            static bool is_vis = false;
+                            Shadow::Text(std::format("Above Button Visible in viewport: {}", is_vis ? "TRUE" : "FALSE"));
+                            Shadow::HelpMarker("IsItemVisible() returns false if the item was completely clipped outside the window/clipping area.");
+
+                            Shadow::Button("Visible Check Button##VisBtn", {500.f, 500.f});
+                            is_vis = Shadow::IsItemVisible();
+                        }
+                        Shadow::TreePop();
+
+                        // --- 4. GetItemRectMin, GetItemRectMax, GetItemRectSize ---
+                        if (Shadow::TreeNode("Item Rect Bounds & Coordinates")) {
+                            Shadow::Button("Target Rect Button##BoundsBtn");
+                            Shadow::Vec2 rect_min = Shadow::GetItemRectMin();
+                            Shadow::Vec2 rect_max = Shadow::GetItemRectMax();
+                            Shadow::Vec2 rect_sz = Shadow::GetItemRectSize();
+
+                            Shadow::Text(std::format("RectMin: ({:.1f}, {:.1f})", rect_min.x, rect_min.y));
+                            Shadow::Text(std::format("RectMax: ({:.1f}, {:.1f})", rect_max.x, rect_max.y));
+                            Shadow::Text(std::format("RectSize: {:.1f} x {:.1f}", rect_sz.x, rect_sz.y));
+
+                            // 可视化：绘制上一项包围盒的绿色外框
+                            Shadow::GetWindowDrawList()->AddRect(
+                                { rect_min.x - 2.f, rect_min.y - 2.f },
+                                { rect_sz.x + 4.f, rect_sz.y + 4.f },
+                                { 0.f, 1.f, 0.f, 0.8f },
+                                1.5f
+                            );
+
+                            Shadow::HelpMarker("GetItemRectMin / GetItemRectMax / GetItemRectSize return the absolute screen AABB of the previous item.");
+                        }
+                        Shadow::TreePop();
+
+                        // --- 5. GetItemID ---
+                        if (Shadow::TreeNode("GetItemID")) {
+                            Shadow::Button("Sample ID Button##UniqueBtn");
+                            size_t item_id = Shadow::GetItemID();
+
+                            Shadow::Text(std::format("Button Global Hash ID: 0x{:016X}", item_id));
+                            Shadow::HelpMarker("GetItemID() returns the calculated 64-bit unique hash ID of the previous widget.");
+                        }
+                        Shadow::TreePop();
+
+                    }
+                    Shadow::TreePop();
+
                     if (Shadow::TreeNode("Window Flags Editor")) {
                         static bool f_NoResize = false, f_NoMove = false, f_NoScrollbar = false, f_NoTitleBar = false, f_NoMouseInputs = false;
 
@@ -595,7 +707,6 @@ namespace Shadow {
                         static int popup_counter = 0;
                         static std::string popupName = "my_popup##my_popup";
 
-                        // Open popup button (and set position)
                         if (Shadow::Button("Open Popup")) {
                             Shadow::SetNextWindowPos({ Shadow::g_Ctx.MousePos.x + 20, Shadow::g_Ctx.MousePos.y + 20 });
                             Shadow::OpenPopup(Shadow::HashString(popupName));
@@ -604,7 +715,6 @@ namespace Shadow {
                         Shadow::TextColored(Shadow::g_Ctx.Style.Colors[Shadow::GuiCol_TextDisabled],
                             "(Click to open a popup at mouse position)");
 
-                        // Show current popup status
                         bool is_open = Shadow::IsPopupOpen(Shadow::HashString(popupName));
                         std::string status_text = std::format("Popup is currently: {}", is_open ? "Open" : "Closed");
 
@@ -615,11 +725,9 @@ namespace Shadow {
                             Shadow::CloseCurrentPopup();
                         }
 
-                        // Define popup content
                         if (Shadow::BeginPopup(popupName, Shadow::ShadowWindowFlags_None)) {
                             Shadow::Text("This is a popup!");
 
-                            // Counter display
                             std::string counter_text = std::format("Counter: {}", popup_counter);
 
                             Shadow::Text(counter_text);
@@ -686,11 +794,11 @@ namespace Shadow {
 
                         if (Shadow::TreeNode("ListBox with Color Pickers")) {
                             static std::vector<Shadow::Color> customColors = {
-                                { 1.0f, 0.0f, 0.0f, 1.0f },  // Red
-                                { 0.0f, 1.0f, 0.0f, 1.0f },  // Green
-                                { 0.0f, 0.0f, 1.0f, 1.0f },  // Blue
-                                { 1.0f, 1.0f, 0.0f, 1.0f },  // Yellow
-                                { 0.0f, 1.0f, 1.0f, 1.0f }   // Cyan
+                                { 1.0f, 0.0f, 0.0f, 1.0f },
+                                { 0.0f, 1.0f, 0.0f, 1.0f },
+                                { 0.0f, 0.0f, 1.0f, 1.0f },
+                                { 1.0f, 1.0f, 0.0f, 1.0f },
+                                { 0.0f, 1.0f, 1.0f, 1.0f }
                             };
 
                             if (Shadow::BeginListBox("ColorPickerListBox", { 300.f, 180.f })) {

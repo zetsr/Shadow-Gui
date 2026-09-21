@@ -401,6 +401,43 @@ namespace Shadow {
         GuiCol_COUNT
     };
 
+    enum GuiStyleVar_ {
+        GuiStyleVar_WindowPadding,
+        GuiStyleVar_FramePadding,
+        GuiStyleVar_ItemSpacing,
+        GuiStyleVar_ScrollbarSize,
+        GuiStyleVar_ScrollbarMargin,
+        GuiStyleVar_ResizeGripSize,
+        GuiStyleVar_TabExtraWidth,
+        GuiStyleVar_ControlOffsetMin,
+        GuiStyleVar_ControlOffsetRatio,
+        GuiStyleVar_CPPadding,
+        GuiStyleVar_CPSVSize,
+        GuiStyleVar_CPHueWidth,
+        GuiStyleVar_CPAlphaWidth,
+        GuiStyleVar_CPSpacing,
+        GuiStyleVar_WindowMinSize,
+        GuiStyleVar_FontScaleDpi,
+
+        GuiStyleVar_COUNT
+    };
+    using GuiStyleVar = int;
+
+    struct GuiStyleMod {
+        int Idx;
+        union {
+            float BackupFloat;
+            Vec2 BackupVec2;
+        };
+        GuiStyleMod(int idx, float val) : Idx(idx), BackupFloat(val) {}
+        GuiStyleMod(int idx, Vec2 val) : Idx(idx), BackupVec2(val) {}
+    };
+
+    struct GuiColorMod {
+        int ColIdx;
+        Color BackupColor;
+    };
+
     enum ShadowChannel_ {
         Channel_Background = 0,
         Channel_Midground = 1,
@@ -885,6 +922,9 @@ namespace Shadow {
 
         std::vector<float> TextWrapPosStack;
         std::vector<bool> TextPixelSnapStack;
+
+        std::vector<GuiStyleMod> StyleVarStack;
+        std::vector<GuiColorMod> StyleColorStack;
 
         std::unordered_map<size_t, bool> TreeNodeOpenStates;
         float IndentX = 0.f;
@@ -2226,6 +2266,162 @@ namespace Shadow {
         }
     }
 
+    inline void PushStyleColor(int idx, Color val) {
+        if (idx >= 0 && idx < GuiCol_COUNT) {
+            g_Ctx.StyleColorStack.push_back({ idx, g_Ctx.Style.Colors[idx] });
+            g_Ctx.Style.Colors[idx] = val;
+        }
+    }
+
+    inline void PopStyleColor(int count = 1) {
+        while (count > 0 && !g_Ctx.StyleColorStack.empty()) {
+            const auto& mod = g_Ctx.StyleColorStack.back();
+            g_Ctx.Style.Colors[mod.ColIdx] = mod.BackupColor;
+            g_Ctx.StyleColorStack.pop_back();
+            count--;
+        }
+    }
+
+    inline void PushStyleVar(GuiStyleVar idx, float val) {
+        switch (idx) {
+        case GuiStyleVar_ScrollbarSize:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.ScrollbarSize);
+            g_Ctx.Style.ScrollbarSize = val;
+            break;
+        case GuiStyleVar_ScrollbarMargin:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.ScrollbarMargin);
+            g_Ctx.Style.ScrollbarMargin = val;
+            break;
+        case GuiStyleVar_ResizeGripSize:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.ResizeGripSize);
+            g_Ctx.Style.ResizeGripSize = val;
+            break;
+        case GuiStyleVar_TabExtraWidth:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.TabExtraWidth);
+            g_Ctx.Style.TabExtraWidth = val;
+            break;
+        case GuiStyleVar_ControlOffsetMin:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.ControlOffsetMin);
+            g_Ctx.Style.ControlOffsetMin = val;
+            break;
+        case GuiStyleVar_ControlOffsetRatio:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.ControlOffsetRatio);
+            g_Ctx.Style.ControlOffsetRatio = val;
+            break;
+        case GuiStyleVar_CPPadding:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.CPPadding);
+            g_Ctx.Style.CPPadding = val;
+            break;
+        case GuiStyleVar_CPSVSize:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.CPSVSize);
+            g_Ctx.Style.CPSVSize = val;
+            break;
+        case GuiStyleVar_CPHueWidth:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.CPHueWidth);
+            g_Ctx.Style.CPHueWidth = val;
+            break;
+        case GuiStyleVar_CPAlphaWidth:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.CPAlphaWidth);
+            g_Ctx.Style.CPAlphaWidth = val;
+            break;
+        case GuiStyleVar_CPSpacing:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.CPSpacing);
+            g_Ctx.Style.CPSpacing = val;
+            break;
+        case GuiStyleVar_FontScaleDpi:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.FontScaleDpi);
+            g_Ctx.Style.FontScaleDpi = val;
+            break;
+        default:
+            break;
+        }
+    }
+
+    inline void PushStyleVar(GuiStyleVar idx, Vec2 val) {
+        switch (idx) {
+        case GuiStyleVar_WindowPadding:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.WindowPadding);
+            g_Ctx.Style.WindowPadding = val;
+            break;
+        case GuiStyleVar_FramePadding:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.FramePadding);
+            g_Ctx.Style.FramePadding = val;
+            UpdateItemHeight();
+            break;
+        case GuiStyleVar_ItemSpacing:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.ItemSpacing);
+            g_Ctx.Style.ItemSpacing = val;
+            break;
+        case GuiStyleVar_WindowMinSize:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.WindowMinSize);
+            g_Ctx.Style.WindowMinSize = val;
+            break;
+        default:
+            break;
+        }
+    }
+
+    inline void PopStyleVar(int count = 1) {
+        while (count > 0 && !g_Ctx.StyleVarStack.empty()) {
+            const auto& mod = g_Ctx.StyleVarStack.back();
+            switch (mod.Idx) {
+            case GuiStyleVar_WindowPadding:
+                g_Ctx.Style.WindowPadding = mod.BackupVec2;
+                break;
+            case GuiStyleVar_FramePadding:
+                g_Ctx.Style.FramePadding = mod.BackupVec2;
+                UpdateItemHeight();
+                break;
+            case GuiStyleVar_ItemSpacing:
+                g_Ctx.Style.ItemSpacing = mod.BackupVec2;
+                break;
+            case GuiStyleVar_ScrollbarSize:
+                g_Ctx.Style.ScrollbarSize = mod.BackupFloat;
+                break;
+            case GuiStyleVar_ScrollbarMargin:
+                g_Ctx.Style.ScrollbarMargin = mod.BackupFloat;
+                break;
+            case GuiStyleVar_ResizeGripSize:
+                g_Ctx.Style.ResizeGripSize = mod.BackupFloat;
+                break;
+            case GuiStyleVar_TabExtraWidth:
+                g_Ctx.Style.TabExtraWidth = mod.BackupFloat;
+                break;
+            case GuiStyleVar_ControlOffsetMin:
+                g_Ctx.Style.ControlOffsetMin = mod.BackupFloat;
+                break;
+            case GuiStyleVar_ControlOffsetRatio:
+                g_Ctx.Style.ControlOffsetRatio = mod.BackupFloat;
+                break;
+            case GuiStyleVar_CPPadding:
+                g_Ctx.Style.CPPadding = mod.BackupFloat;
+                break;
+            case GuiStyleVar_CPSVSize:
+                g_Ctx.Style.CPSVSize = mod.BackupFloat;
+                break;
+            case GuiStyleVar_CPHueWidth:
+                g_Ctx.Style.CPHueWidth = mod.BackupFloat;
+                break;
+            case GuiStyleVar_CPAlphaWidth:
+                g_Ctx.Style.CPAlphaWidth = mod.BackupFloat;
+                break;
+            case GuiStyleVar_CPSpacing:
+                g_Ctx.Style.CPSpacing = mod.BackupFloat;
+                break;
+            case GuiStyleVar_WindowMinSize:
+                g_Ctx.Style.WindowMinSize = mod.BackupVec2;
+                break;
+            case GuiStyleVar_FontScaleDpi:
+                g_Ctx.Style.FontScaleDpi = mod.BackupFloat;
+                break;
+            default:
+                break;
+            }
+            g_Ctx.StyleVarStack.pop_back();
+            count--;
+        }
+    }
+
     inline std::string ClipTextString(std::string_view text, Vec2 pos, Vec2& outPos, bool& shouldDraw) {
         shouldDraw = true;
         outPos = pos;
@@ -3383,6 +3579,8 @@ namespace Shadow {
         else if (g_Ctx.ClipStack.size() > 0) errorMsg = std::format("ERROR: PushClipRect() called {} time(s) without matching PopClipRect()!", g_Ctx.ClipStack.size());
         else if (g_Ctx.DisabledStack.size() > 0) errorMsg = std::format("ERROR: BeginDisabled() called {} time(s) without matching EndDisabled()!", g_Ctx.DisabledStack.size());
         else if (g_Ctx.TextWrapPosStack.size() > 0) errorMsg = std::format("ERROR: PushTextWrapPos() called {} time(s) without matching PopTextWrapPos()!", g_Ctx.TextWrapPosStack.size());
+        else if (g_Ctx.StyleVarStack.size() > 0) errorMsg = std::format("ERROR: PushStyleVar() called {} time(s) without matching PopStyleVar()!", g_Ctx.StyleVarStack.size());
+        else if (g_Ctx.StyleColorStack.size() > 0) errorMsg = std::format("ERROR: PushStyleColor() called {} time(s) without matching PopStyleColor()!", g_Ctx.StyleColorStack.size());
         else if (g_Ctx.InTooltip) errorMsg = "ERROR: BeginTooltip() called without matching EndTooltip()!";
 
         if (!errorMsg.empty()) {
@@ -3731,6 +3929,14 @@ namespace Shadow {
         g_Ctx.TextureStack.clear();
         g_Ctx.TextOutlineStack.clear();
         g_Ctx.TextPixelSnapStack.clear();
+
+        while (!g_Ctx.StyleVarStack.empty()) {
+            PopStyleVar();
+        }
+        while (!g_Ctx.StyleColorStack.empty()) {
+            PopStyleColor();
+        }
+
         UpdateItemHeight();
 
         g_Ctx.InActiveTab = true;

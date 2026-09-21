@@ -165,7 +165,7 @@ namespace Hook {
 
             // Shadow::StyleColorsGrey();
             // Shadow::PushFont(Shadow::DefaultFont, G_SIZE);
-            Example_Nav::DrawGUI();
+            // Example_Nav::DrawGUI();
             // Shadow::PopFont();
 			// Shadow::PopTextPixelSnap();
 

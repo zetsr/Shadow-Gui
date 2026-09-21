@@ -350,6 +350,67 @@ namespace Shadow {
                     }
                     Shadow::TreePop();
 
+                    if (Shadow::TreeNode("Style Colors & Style Vars Stack")) {
+                        // --- 1. PushStyleColor / PopStyleColor 基本演示 ---
+                        if (Shadow::TreeNode("Style Colors (Basic & Nested)")) {
+                            Shadow::Text("Default colored text");
+
+                            // 单层 PushStyleColor
+                            Shadow::PushStyleColor(Shadow::GuiCol_Text, { 1.0f, 0.2f, 0.2f, 1.0f });
+                            Shadow::Text("Red text via PushStyleColor(GuiCol_Text)");
+
+                            Shadow::PushStyleColor(Shadow::GuiCol_Button, { 0.8f, 0.4f, 0.0f, 1.0f });
+                            Shadow::PushStyleColor(Shadow::GuiCol_ButtonHovered, { 1.0f, 0.6f, 0.1f, 1.0f });
+                            Shadow::Button("Orange Button");
+                            Shadow::PopStyleColor(2); // 批量弹出 2 个颜色
+                            Shadow::PopStyleColor();  // 弹出文字颜色
+
+                            Shadow::Text("Restored text color after PopStyleColor()");
+
+                            // 嵌套 PushStyleColor
+                            Shadow::PushStyleColor(Shadow::GuiCol_Text, { 0.2f, 0.8f, 1.0f, 1.0f });
+                            Shadow::Text("Outer Blue Text");
+                            {
+                                Shadow::PushStyleColor(Shadow::GuiCol_Text, { 0.2f, 1.0f, 0.4f, 1.0f });
+                                Shadow::Text("  -> Inner Green Text (Nested)");
+                                Shadow::PopStyleColor();
+                            }
+                            Shadow::Text("Back to Outer Blue Text");
+                            Shadow::PopStyleColor();
+
+                            Shadow::HelpMarker("PushStyleColor pushes a temporary color state onto stack.\nPopStyleColor() restores previous color. Supports nesting and batch pop.");
+                        }
+                        Shadow::TreePop();
+
+                        // --- 2. PushStyleVar / PopStyleVar (Float & Vec2 & Nested) ---
+                        if (Shadow::TreeNode("Style Vars (Float, Vec2 & Nested)")) {
+                            Shadow::Text("1. Vec2 StyleVar demo (FramePadding & ItemSpacing):");
+
+                            // 修改 FramePadding (Vec2)
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_FramePadding, { 16.f, 8.f });
+                            Shadow::Button("Large FramePadding Button");
+                            Shadow::PopStyleVar();
+
+                            // 嵌套修改 ItemSpacing (Vec2) 与 FramePadding (Vec2)
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_ItemSpacing, { 25.f, 20.f });
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_FramePadding, { 12.f, 6.f });
+                            Shadow::Button("Spaced Btn 1");
+                            Shadow::SameLine();
+                            Shadow::Button("Spaced Btn 2");
+                            Shadow::PopStyleVar(2); // 批量恢复 2 个变量
+
+                            Shadow::Text("2. Float StyleVar demo (ScrollbarSize & TabExtraWidth):");
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_ScrollbarSize, 20.f);
+                            Shadow::PushStyleVar(Shadow::GuiStyleVar_TabExtraWidth, 40.f);
+                            Shadow::Text("Modified ScrollbarSize (20px) and TabExtraWidth (40px)");
+                            Shadow::PopStyleVar(2);
+
+                            Shadow::HelpMarker("PushStyleVar supports both float (e.g. ScrollbarSize) and Vec2 (e.g. FramePadding, ItemSpacing).\nPopStyleVar() restores previous style metric unconditionally.");
+                        }
+                        Shadow::TreePop();
+                    }
+                    Shadow::TreePop();
+
                     if (Shadow::TreeNode("Disabled Status")) {
                         static bool disable_all = true;
                         Shadow::Checkbox("Disable the following group", &disable_all);

@@ -55,6 +55,131 @@
 
 ---
 
+#### 绑定热键 / Bind Hotkeys
+
+<details>
+<summary>Show code</summary>
+
+```cpp
+// 初始化 Shadow GUI 的时候需要先 RegisterHotkey，否则在上下文执行到 Shadow::HotKey 之前无法使用对应热键
+Shadow::RegisterHotkey(&g_Config::kTestKey, &g_Config::eTestKey, &g_Config::bTestKey);
+
+// 与 RegisterHotkey 保持一致，正常声明即可
+Shadow::HotKey("TestKey", &g_Config::kTestKey, &g_Config::bTestKey, &g_Config::eTestKey);
+```
+
+</details>
+
+---
+
+#### 输入处理 / Input Processing
+
+<details>
+<summary>Show code</summary>
+
+```cpp
+    LRESULT APIENTRY WndProcHook(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+        // 始终处理全局热键（菜单打开或关闭都需要）
+        Shadow::ProcessGlobalHotkeys(hwnd, uMsg, wParam, lParam);
+
+        // 菜单切换键处理（如果正在分配热键，则不切换菜单）
+        if (uMsg == WM_KEYDOWN && wParam == keyMenu && !Shadow::g_Ctx.AssigningHotkey) {
+            bool isFirstPress = ((lParam & (1 << 30)) == 0);
+            if (isFirstPress) {
+                bShowMenu = !bShowMenu;
+            }
+        }
+
+        if (bShowMenu || currentAlpha > 0.001f) {
+            // 键盘消息处理
+            if (uMsg == WM_KEYDOWN || uMsg == WM_KEYUP || uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP || uMsg == WM_CHAR) {
+                // 如果是切换键本身，放行给游戏（防止菜单无法关闭）
+                if (wParam == keyMenu) {
+                    return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
+                }
+
+                // 如果是已注册的全局热键，放行给游戏（热键状态已在 ProcessGlobalHotkeys 中更新）
+                if (Shadow::IsHotkeyRegistered(static_cast<int>(wParam))) {
+                    return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
+                }
+
+                // 先让框架处理按键（更新 KeyPressed, KeyStates 等）
+                Shadow::Input(hwnd, uMsg, wParam, lParam);
+
+                // 如果是允许放行的按键，再转发给游戏
+                if (Shadow::IsKeyAllowed(static_cast<int>(wParam))) {
+                    // 注意：这里不能再次调用 Shadow::Input，因为上面已经调用过了
+                    return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
+                }
+
+                // 非允许按键，被菜单吃掉
+                return 1;
+            }
+
+            // 如果是鼠标消息，且不在白名单里，直接阻塞
+            if (!Shadow::IsMouseMsgAllowed(uMsg)) {
+                Shadow::Input(hwnd, uMsg, wParam, lParam);
+                return 1;
+            }
+
+            // 鼠标消息在白名单里，也需要先处理，再放行
+            Shadow::Input(hwnd, uMsg, wParam, lParam);
+            return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
+        }
+
+        // 菜单关闭时，也要处理输入以更新全局鼠标状态
+        Shadow::Input(hwnd, uMsg, wParam, lParam);
+        return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
+    }
+```
+
+</details>
+
+---
+
+#### 创建菜单 / Creating Menu
+
+<details>
+<summary>Show code</summary>
+
+```cpp
+void __fastcall hkPostRender(SDK::UGameViewportClient* rcx, SDK::UCanvas* canvas) {
+
+    // 放行常用移动按键给游戏，避免菜单打开时玩家动不了
+    // Pass common movement keys through to the game to prevent players from getting stuck when the menu is open
+    Shadow::SetAllowedKeys({ 'W', 'A', 'S', 'D', VK_SPACE });
+
+    // 开始新的一帧
+    // Begin a new frame
+    Shadow::NewFrame(canvas);
+
+    // 如果使用 Hotkey，需要先注册热键，虽然缺少手动注册也能用
+    // Shadow::RegisterHotkey(&g_Config::kTestKey, &g_Config::eTestKey, &g_Config::bTestKey);
+
+    // 更新所有热键状态
+    // Update all hotkey states
+    Shadow::UpdateAllHotkeyStates();
+
+    if (Shadow::Begin("Main Menu##main_window", Shadow::ShadowWindowFlags_NoResize)) {
+        if (Shadow::BeginTabBar("MainTabs##tabs", Shadow::ShadowTabBarFlags_Reorderable)) {
+            if (Shadow::BeginTabItem("Misc##tab0")) {
+                Shadow::TextColored({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("你好！"));
+            }
+            Shadow::EndTabItem();
+        }
+        Shadow::EndTabBar();
+    }
+    Shadow::End();
+
+    Shadow::Render();
+}
+
+```
+
+---
+
+</details>
+
 ### 注意事项 / Notes
 
 > [!IMPORTANT]
@@ -310,126 +435,3 @@ if (verdana_bold)
 <img width="696" height="423" alt="image" src="https://github.com/user-attachments/assets/f209c716-07bf-4266-992d-0101b472b5d6" />
 
 ---
-
-#### 绑定热键 / Bind Hotkeys
-
-<details>
-<summary>Show code</summary>
-
-```cpp
-// 初始化 Shadow GUI 的时候需要先 RegisterHotkey，否则在上下文执行到 Shadow::HotKey 之前无法使用对应热键
-Shadow::RegisterHotkey(&g_Config::kTestKey, &g_Config::eTestKey, &g_Config::bTestKey);
-
-// 与 RegisterHotkey 保持一致，正常声明即可
-Shadow::HotKey("TestKey", &g_Config::kTestKey, &g_Config::bTestKey, &g_Config::eTestKey);
-```
-
-</details>
-
----
-
-#### 输入处理 / Input Processing
-
-<details>
-<summary>Show code</summary>
-
-```cpp
-    LRESULT APIENTRY WndProcHook(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-        // 始终处理全局热键（菜单打开或关闭都需要）
-        Shadow::ProcessGlobalHotkeys(hwnd, uMsg, wParam, lParam);
-
-        // 菜单切换键处理（如果正在分配热键，则不切换菜单）
-        if (uMsg == WM_KEYDOWN && wParam == keyMenu && !Shadow::g_Ctx.AssigningHotkey) {
-            bool isFirstPress = ((lParam & (1 << 30)) == 0);
-            if (isFirstPress) {
-                bShowMenu = !bShowMenu;
-            }
-        }
-
-        if (bShowMenu || currentAlpha > 0.001f) {
-            // 键盘消息处理
-            if (uMsg == WM_KEYDOWN || uMsg == WM_KEYUP || uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP || uMsg == WM_CHAR) {
-                // 如果是切换键本身，放行给游戏（防止菜单无法关闭）
-                if (wParam == keyMenu) {
-                    return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
-                }
-
-                // 如果是已注册的全局热键，放行给游戏（热键状态已在 ProcessGlobalHotkeys 中更新）
-                if (Shadow::IsHotkeyRegistered(static_cast<int>(wParam))) {
-                    return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
-                }
-
-                // 先让框架处理按键（更新 KeyPressed, KeyStates 等）
-                Shadow::Input(hwnd, uMsg, wParam, lParam);
-
-                // 如果是允许放行的按键，再转发给游戏
-                if (Shadow::IsKeyAllowed(static_cast<int>(wParam))) {
-                    // 注意：这里不能再次调用 Shadow::Input，因为上面已经调用过了
-                    return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
-                }
-
-                // 非允许按键，被菜单吃掉
-                return 1;
-            }
-
-            // 如果是鼠标消息，且不在白名单里，直接阻塞
-            if (!Shadow::IsMouseMsgAllowed(uMsg)) {
-                Shadow::Input(hwnd, uMsg, wParam, lParam);
-                return 1;
-            }
-
-            // 鼠标消息在白名单里，也需要先处理，再放行
-            Shadow::Input(hwnd, uMsg, wParam, lParam);
-            return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
-        }
-
-        // 菜单关闭时，也要处理输入以更新全局鼠标状态
-        Shadow::Input(hwnd, uMsg, wParam, lParam);
-        return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
-    }
-```
-
-</details>
-
----
-
-#### 创建菜单 / Creating Menu
-
-<details>
-<summary>Show code</summary>
-
-```cpp
-void __fastcall hkPostRender(SDK::UGameViewportClient* rcx, SDK::UCanvas* canvas) {
-
-    // 放行常用移动按键给游戏，避免菜单打开时玩家动不了
-    // Pass common movement keys through to the game to prevent players from getting stuck when the menu is open
-    Shadow::SetAllowedKeys({ 'W', 'A', 'S', 'D', VK_SPACE });
-
-    // 开始新的一帧
-    // Begin a new frame
-    Shadow::NewFrame(canvas);
-
-    // 如果使用 Hotkey，需要先注册热键，虽然缺少手动注册也能用
-    // Shadow::RegisterHotkey(&g_Config::kTestKey, &g_Config::eTestKey, &g_Config::bTestKey);
-
-    // 更新所有热键状态
-    // Update all hotkey states
-    Shadow::UpdateAllHotkeyStates();
-
-    if (Shadow::Begin("Main Menu##main_window", Shadow::ShadowWindowFlags_NoResize)) {
-        if (Shadow::BeginTabBar("MainTabs##tabs", Shadow::ShadowTabBarFlags_Reorderable)) {
-            if (Shadow::BeginTabItem("Misc##tab0")) {
-                Shadow::TextColored({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("你好！"));
-            }
-            Shadow::EndTabItem();
-        }
-        Shadow::EndTabBar();
-    }
-    Shadow::End();
-
-    Shadow::Render();
-}
-
-```
-
-</details>

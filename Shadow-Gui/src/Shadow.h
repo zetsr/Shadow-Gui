@@ -452,6 +452,7 @@ namespace Shadow {
         ShadowWindowFlags_NoScrollbar = 1 << 2,
         ShadowWindowFlags_NoTitleBar = 1 << 5,
         ShadowWindowFlags_NoMouseInputs = 1 << 6,
+        ShadowWindowFlags_MenuBar = 1 << 7,
 
         ShadowWindowFlags_TextAlignLeft = 0,
         ShadowWindowFlags_TextAlignCenter = 1 << 3,
@@ -703,6 +704,17 @@ namespace Shadow {
         uint64_t LastAccessedFrame = 0;
     };
 
+    enum class RightAlignCmdType {
+        RectBackground,
+        TriangleArrow,
+        TextShortcut
+    };
+
+    struct PopupRightAlignCmd {
+        size_t CmdIndex;
+        RightAlignCmdType CmdType;
+    };
+
     struct PopupBackupState {
         size_t Id;
         Vec2 WindowPos;
@@ -724,6 +736,17 @@ namespace Shadow {
         Vec2 DragOffset;
 
         bool Closed;
+
+        // 消除1帧闪烁：记录当前弹窗背景绘制指令的索引以及初始裁剪框
+        size_t BgBorderCmdIdx;
+        size_t BgFilledCmdIdx;
+        Vec2 PopupOldClipMax;
+        float PopupOldWidth;
+        std::vector<PopupRightAlignCmd> RightAlignCmds;
+    };
+
+    struct MenuState {
+        bool IsOpen;
     };
 
     struct GuiContext {
@@ -771,7 +794,6 @@ namespace Shadow {
 
         bool InPopup = false;
 
-        ShadowDrawList PopupDrawList;
         ShadowDrawList TooltipDrawList;
         ShadowDrawList BackgroundDrawList;
         ShadowDrawList ForegroundDrawList;
@@ -796,6 +818,17 @@ namespace Shadow {
         int TreeNodeStack = 0;
         std::vector<size_t> IDStack;
         std::string LastErrorMsg;
+
+        int MenuBarStack = 0;
+        int MenuStack = 0;
+        std::vector<MenuState> MenuStateStack;
+        bool MenuBarClickedThisFrame = false;
+
+        Vec2 BackupMenuBarCursor = { 0.f, 0.f };
+        float BackupMenuBarLastItemMaxX = 0.f;
+        Vec2 BackupMenuBarClipMin = { 0.f, 0.f };
+        Vec2 BackupMenuBarClipMax = { 0.f, 0.f };
+        bool BackupMenuBarClippingEnabled = false;
 
         bool IsResizing = false;
         Vec2 ResizeStartPos = { 0.f, 0.f };
@@ -1017,7 +1050,6 @@ namespace Shadow {
 
     inline ShadowDrawList* GetWindowDrawList() {
         if (g_Ctx.InTooltip) return &g_Ctx.TooltipDrawList;
-        if (g_Ctx.InPopup) return &g_Ctx.PopupDrawList;
         if (g_Ctx.CurrentWindow) return &g_Ctx.CurrentWindow->DrawList;
         return &g_Ctx.BackgroundDrawList;
     }
@@ -2802,19 +2834,26 @@ namespace Shadow {
         backup.IsDragging = g_Ctx.IsDragging;
         backup.DragOffset = g_Ctx.DragOffset;
         backup.Closed = false;
+        backup.BgBorderCmdIdx = 0;
+        backup.BgFilledCmdIdx = 0;
+        backup.PopupOldClipMax = { 0.f, 0.f };
+        backup.PopupOldWidth = 0.f;
+        backup.RightAlignCmds.clear();
 
         g_Ctx.PopupStack.push_back(backup);
 
         g_Ctx.InPopup = true;
-        g_Ctx.CurrentWindow = nullptr;
 
         auto& win = g_Ctx.Windows[id];
+        g_Ctx.CurrentWindow = &win;
+
         if (win.Id == 0) {
             win.Id = id;
             win.Name = std::string(display);
             win.Pos = g_Ctx.WindowPos;
-            win.Size = g_Ctx.WindowSize;
+            win.Size = { 100.f, 100.f };
         }
+
         win.LastAccessedFrame = g_Ctx.FrameCount;
 
         if (g_Ctx.HasNextWindowPos) {
@@ -2825,9 +2864,16 @@ namespace Shadow {
 
         if (g_Ctx.HasNextWindowSize) {
             win.Size = g_Ctx.NextWindowSize;
+            if (win.Size.x <= 0.f) {
+                win.Size.x = 100.f; // 初始安全宽度，防止裁剪区域过小导致后续控件无法显示
+            }
+            if (win.Size.y <= 0.f) {
+                win.Size.y = g_Ctx.ItemHeight;
+            }
             g_Ctx.HasNextWindowSize = false;
         }
         g_Ctx.WindowSize = win.Size;
+        g_Ctx.PopupStack.back().PopupOldWidth = win.Size.x;
 
         g_Ctx.IsDragging = win.IsDragging;
         g_Ctx.DragOffset = win.DragOffset;
@@ -2871,8 +2917,11 @@ namespace Shadow {
         g_Ctx.ClippingEnabled = false;
         g_Ctx.ClipStack.clear();
 
-        GetWindowDrawList()->AddRect(g_Ctx.WindowPos, g_Ctx.WindowSize, g_Ctx.Style.Colors[GuiCol_PopupBorder]);
-        GetWindowDrawList()->AddRectFilled({ g_Ctx.WindowPos.x + 1.f, g_Ctx.WindowPos.y + 1.f }, { g_Ctx.WindowSize.x - 2.f, g_Ctx.WindowSize.y - 2.f }, g_Ctx.Style.Colors[GuiCol_PopupBg]);
+        auto drawList = GetWindowDrawList();
+        g_Ctx.PopupStack.back().BgBorderCmdIdx = drawList->GetCmdBuffer().size();
+        drawList->AddRect(g_Ctx.WindowPos, g_Ctx.WindowSize, g_Ctx.Style.Colors[GuiCol_PopupBorder]);
+        g_Ctx.PopupStack.back().BgFilledCmdIdx = drawList->GetCmdBuffer().size();
+        drawList->AddRectFilled({ g_Ctx.WindowPos.x + 1.f, g_Ctx.WindowPos.y + 1.f }, { g_Ctx.WindowSize.x - 2.f, g_Ctx.WindowSize.y - 2.f }, g_Ctx.Style.Colors[GuiCol_PopupBg]);
 
         g_Ctx.IndentX = 0.f;
         g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x, g_Ctx.WindowPos.y + g_Ctx.Style.WindowPadding.y };
@@ -2880,7 +2929,8 @@ namespace Shadow {
         g_Ctx.ScrollY = 0.f;
         g_Ctx.IsScrollApplied = false;
 
-        PushClipRect(g_Ctx.WindowPos, { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y });
+        g_Ctx.PopupStack.back().PopupOldClipMax = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y };
+        PushClipRect(g_Ctx.WindowPos, g_Ctx.PopupStack.back().PopupOldClipMax);
 
         return true;
     }
@@ -2902,7 +2952,45 @@ namespace Shadow {
         if (!backup.Closed) {
             auto& win = g_Ctx.Windows[backup.Id];
             win.Size.y = g_Ctx.Cursor.y - g_Ctx.WindowPos.y + g_Ctx.Style.WindowPadding.y;
-            win.Size.x = std::max(win.Size.x, g_Ctx.LastItemMaxX - g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x);
+            // 完全跟随内容宽度，仅保留最小宽度限制
+            win.Size.x = std::max(10.f, g_Ctx.LastItemMaxX - g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x);
+
+            // 追溯修复首帧弹窗闪烁问题 (更新已发射的背景命令与子裁剪区域)
+            auto& cmds = win.DrawList.GetCmdBuffer();
+            if (backup.BgBorderCmdIdx < cmds.size()) {
+                cmds[backup.BgBorderCmdIdx].size = win.Size;
+            }
+            if (backup.BgFilledCmdIdx < cmds.size()) {
+                cmds[backup.BgFilledCmdIdx].size = { win.Size.x - 2.f, win.Size.y - 2.f };
+            }
+
+            Vec2 trueClipMax = { g_Ctx.WindowPos.x + win.Size.x, g_Ctx.WindowPos.y + win.Size.y };
+            for (size_t i = backup.BgBorderCmdIdx; i < cmds.size(); ++i) {
+                if (cmds[i].clippingEnabled &&
+                    std::abs(cmds[i].clipMax.x - backup.PopupOldClipMax.x) < 0.1f &&
+                    std::abs(cmds[i].clipMax.y - backup.PopupOldClipMax.y) < 0.1f) {
+                    cmds[i].clipMax = trueClipMax;
+                }
+            }
+
+            float dx = win.Size.x - backup.PopupOldWidth;
+            if (dx != 0.f) {
+                for (const auto& raCmd : backup.RightAlignCmds) {
+                    if (raCmd.CmdIndex < cmds.size()) {
+                        if (raCmd.CmdType == RightAlignCmdType::RectBackground) {
+                            cmds[raCmd.CmdIndex].size.x += dx;
+                        }
+                        else if (raCmd.CmdType == RightAlignCmdType::TriangleArrow) {
+                            cmds[raCmd.CmdIndex].p1.x += dx;
+                            cmds[raCmd.CmdIndex].p2.x += dx;
+                            cmds[raCmd.CmdIndex].p3.x += dx;
+                        }
+                        else if (raCmd.CmdType == RightAlignCmdType::TextShortcut) {
+                            cmds[raCmd.CmdIndex].pos.x += dx;
+                        }
+                    }
+                }
+            }
 
             win.IsDragging = g_Ctx.IsDragging;
             win.DragOffset = g_Ctx.DragOffset;
@@ -3559,6 +3647,260 @@ namespace Shadow {
         return valueChanged;
     }
 
+    inline bool BeginMenuBar() {
+        g_Ctx.MenuBarStack++;
+        if (!g_Ctx.CurrentWindow || !(g_Ctx.CurrentWindowFlags & ShadowWindowFlags_MenuBar)) {
+            g_Ctx.MenuStateStack.push_back({ false });
+            return false;
+        }
+
+        g_Ctx.BackupMenuBarCursor = g_Ctx.Cursor;
+        g_Ctx.BackupMenuBarLastItemMaxX = g_Ctx.LastItemMaxX;
+        g_Ctx.BackupMenuBarClipMin = g_Ctx.ClipMin;
+        g_Ctx.BackupMenuBarClipMax = g_Ctx.ClipMax;
+        g_Ctx.BackupMenuBarClippingEnabled = g_Ctx.ClippingEnabled;
+
+        float titleBarHeight = (g_Ctx.CurrentWindowFlags & ShadowWindowFlags_NoTitleBar) ? 0.f : std::max(30.f, g_Ctx.ItemHeight + 10.f);
+
+        // 与 Dear ImGui 一致：菜单栏高度等于 ItemHeight，菜单项本身占满菜单栏高度
+        float menuBarHeight = g_Ctx.ItemHeight;
+
+        g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x, g_Ctx.WindowPos.y + titleBarHeight };
+        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x;
+
+        PushClipRect({ g_Ctx.WindowPos.x, g_Ctx.WindowPos.y + titleBarHeight }, { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + titleBarHeight + menuBarHeight });
+
+        g_Ctx.MenuStateStack.push_back({ true });
+        return true;
+    }
+
+    inline void EndMenuBar() {
+        if (g_Ctx.MenuStateStack.empty()) return;
+        MenuState state = g_Ctx.MenuStateStack.back();
+        g_Ctx.MenuStateStack.pop_back();
+
+        if (state.IsOpen) {
+            PopClipRect();
+            g_Ctx.Cursor = g_Ctx.BackupMenuBarCursor;
+            g_Ctx.LastItemMaxX = g_Ctx.BackupMenuBarLastItemMaxX;
+        }
+        g_Ctx.MenuBarStack--;
+    }
+
+    inline bool BeginMenu(std::string_view name, bool enabled = true) {
+        g_Ctx.MenuStack++;
+        std::string_view display; size_t id; ParseLabel(name, display, id);
+
+        bool in_menubar = (g_Ctx.MenuBarStack > 0 && g_Ctx.MenuStack == 1);
+        float textWidth = MeasureTextSize(display).x;
+        float paddingX = g_Ctx.Style.FramePadding.x * 2.f;
+        float arrowSize = g_Ctx.ItemHeight * 0.55f;
+
+        float minWidth;
+        Vec2 itemSize;
+        if (in_menubar) {
+            minWidth = textWidth + paddingX;
+            itemSize = { minWidth, g_Ctx.ItemHeight };
+        }
+        else {
+            minWidth = textWidth + paddingX + arrowSize + 10.f;
+            float availableWidth = g_Ctx.WindowSize.x - g_Ctx.Style.WindowPadding.x * 2.f;
+            itemSize = { std::max(minWidth, availableWidth), g_Ctx.ItemHeight };
+        }
+
+        bool disabled = IsDisabled() || !enabled;
+
+        Vec2 pos;
+        if (in_menubar) {
+            pos = { g_Ctx.LastItemMaxX, g_Ctx.Cursor.y };
+            g_Ctx.Cursor.x = pos.x;
+            g_Ctx.Cursor.y = pos.y;
+        }
+        else {
+            pos = g_Ctx.Cursor;
+        }
+
+        bool hovered = !disabled && IsMouseHovering(pos, itemSize);
+        if (hovered && !in_menubar) {
+            while (g_Ctx.ActivePopups.size() > g_Ctx.PopupStack.size()) {
+                g_Ctx.ActivePopups.pop_back();
+            }
+        }
+        if (hovered && g_Ctx.MouseDown) g_Ctx.ActiveId = id;
+
+        bool clicked = hovered && g_Ctx.MouseClicked;
+        bool is_open = IsPopupOpen(id);
+
+        if (hovered && !is_open) {
+            if (clicked || (in_menubar && g_Ctx.MenuBarClickedThisFrame)) {
+                if (in_menubar) {
+                    g_Ctx.ActivePopups.clear();
+                    g_Ctx.MenuBarClickedThisFrame = true;
+                }
+                OpenPopup(id);
+                is_open = true;
+            }
+            else if (!in_menubar) {
+                OpenPopup(id);
+                is_open = true;
+            }
+        }
+
+        Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
+        Color bgColor = is_open ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : (hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : Color{ 0,0,0,0 });
+
+        if (bgColor.a > 0.0f) {
+            if (!in_menubar && g_Ctx.InPopup && !g_Ctx.PopupStack.empty()) {
+                g_Ctx.PopupStack.back().RightAlignCmds.push_back({ GetWindowDrawList()->GetCmdBuffer().size(), RightAlignCmdType::RectBackground });
+            }
+            GetWindowDrawList()->AddRectFilled(pos, itemSize, bgColor);
+        }
+
+        GetWindowDrawList()->AddText({ pos.x + g_Ctx.Style.FramePadding.x, pos.y + g_Ctx.Style.FramePadding.y }, textColor, display);
+
+        if (!in_menubar) {
+            float centerY = pos.y + itemSize.y * 0.5f;
+            float arrowX = pos.x + itemSize.x - arrowSize - g_Ctx.Style.FramePadding.x;
+            Vec2 p1 = { arrowX + arrowSize * 0.25f, centerY - arrowSize * 0.5f };
+            Vec2 p2 = { arrowX + arrowSize * 0.75f, centerY };
+            Vec2 p3 = { arrowX + arrowSize * 0.25f, centerY + arrowSize * 0.5f };
+            Color triCol = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
+            if (g_Ctx.InPopup && !g_Ctx.PopupStack.empty()) {
+                g_Ctx.PopupStack.back().RightAlignCmds.push_back({ GetWindowDrawList()->GetCmdBuffer().size(), RightAlignCmdType::TriangleArrow });
+            }
+            GetWindowDrawList()->AddTriangleFilled(p1, p2, p3, triCol);
+        }
+
+        if (in_menubar) {
+            g_Ctx.LastItemMaxX = pos.x + itemSize.x;
+            SetLastItemInfo(pos, { pos.x + itemSize.x, pos.y + itemSize.y }, id, disabled);
+        }
+        else {
+            SetLastItemInfo(pos, { pos.x + itemSize.x, pos.y + itemSize.y }, id, disabled);
+            g_Ctx.LastItemMaxX = std::max(g_Ctx.LastItemMaxX, pos.x + minWidth);
+            g_Ctx.Cursor.y += itemSize.y;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        }
+
+        bool popup_ret = false;
+        if (is_open) {
+            if (in_menubar) {
+                SetNextWindowPos({ pos.x, pos.y + itemSize.y });
+            }
+            else {
+                SetNextWindowPos({ pos.x + itemSize.x, pos.y });
+            }
+            PushStyleVar(GuiStyleVar_WindowPadding, { g_Ctx.Style.FramePadding.x, g_Ctx.Style.FramePadding.y });
+            popup_ret = BeginPopup(name, ShadowWindowFlags_NoMove | ShadowWindowFlags_NoTitleBar | ShadowWindowFlags_NoScrollbar | ShadowWindowFlags_NoResize);
+
+            if (!popup_ret) {
+                PopStyleVar();
+                is_open = false;
+            }
+        }
+
+        g_Ctx.MenuStateStack.push_back({ popup_ret });
+        return popup_ret;
+    }
+
+    inline void EndMenu() {
+        if (g_Ctx.MenuStateStack.empty()) return;
+        MenuState state = g_Ctx.MenuStateStack.back();
+        g_Ctx.MenuStateStack.pop_back();
+
+        if (state.IsOpen) {
+            EndPopup();
+            PopStyleVar();
+        }
+        g_Ctx.MenuStack--;
+    }
+
+    inline bool MenuItem(std::string_view name, std::string_view shortcut = "", bool* p_selected = nullptr, bool enabled = true) {
+        std::string_view display; size_t id; ParseLabel(name, display, id);
+
+        bool in_menubar = (g_Ctx.MenuBarStack > 0 && g_Ctx.MenuStack == 0);
+
+        float textWidth = MeasureTextSize(display).x;
+        float shortcutWidth = shortcut.empty() ? 0.f : MeasureTextSize(shortcut).x;
+        float paddingX = g_Ctx.Style.FramePadding.x * 2.f;
+
+        float minWidth;
+        Vec2 itemSize;
+        if (in_menubar) {
+            minWidth = textWidth + paddingX;
+            itemSize = { minWidth, g_Ctx.ItemHeight };
+        }
+        else {
+            minWidth = textWidth + (shortcutWidth > 0.f ? shortcutWidth + 20.f : 0.f) + paddingX;
+            float availableWidth = g_Ctx.WindowSize.x - g_Ctx.Style.WindowPadding.x * 2.f;
+            itemSize = { std::max(minWidth, availableWidth), g_Ctx.ItemHeight };
+        }
+
+        bool disabled = IsDisabled() || !enabled;
+
+        Vec2 pos;
+        if (in_menubar) {
+            pos = { g_Ctx.LastItemMaxX, g_Ctx.Cursor.y };
+            g_Ctx.Cursor.x = pos.x;
+            g_Ctx.Cursor.y = pos.y;
+        }
+        else {
+            pos = g_Ctx.Cursor;
+        }
+
+        bool hovered = !disabled && IsMouseHovering(pos, itemSize);
+        if (hovered && !in_menubar) {
+            while (g_Ctx.ActivePopups.size() > g_Ctx.PopupStack.size()) {
+                g_Ctx.ActivePopups.pop_back();
+            }
+        }
+        if (hovered && g_Ctx.MouseDown) g_Ctx.ActiveId = id;
+
+        bool clicked = hovered && g_Ctx.MouseClicked;
+        bool selected = p_selected ? *p_selected : false;
+
+        if (clicked) {
+            if (p_selected) *p_selected = !*p_selected;
+            g_Ctx.ActivePopups.clear();
+            g_Ctx.MenuBarClickedThisFrame = false;
+            g_Ctx.MouseClicked = false;
+        }
+
+        Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
+        Color bgColor = (hovered || selected) ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : Color{ 0,0,0,0 };
+
+        if (bgColor.a > 0.0f) {
+            if (!in_menubar && g_Ctx.InPopup && !g_Ctx.PopupStack.empty()) {
+                g_Ctx.PopupStack.back().RightAlignCmds.push_back({ GetWindowDrawList()->GetCmdBuffer().size(), RightAlignCmdType::RectBackground });
+            }
+            GetWindowDrawList()->AddRectFilled(pos, itemSize, bgColor);
+        }
+
+        GetWindowDrawList()->AddText({ pos.x + g_Ctx.Style.FramePadding.x, pos.y + g_Ctx.Style.FramePadding.y }, textColor, display);
+
+        if (!shortcut.empty() && !in_menubar) {
+            Color shortcutColor = g_Ctx.Style.Colors[GuiCol_TextDisabled];
+            if (disabled) shortcutColor.a *= 0.5f;
+            if (g_Ctx.InPopup && !g_Ctx.PopupStack.empty()) {
+                g_Ctx.PopupStack.back().RightAlignCmds.push_back({ GetWindowDrawList()->GetCmdBuffer().size(), RightAlignCmdType::TextShortcut });
+            }
+            GetWindowDrawList()->AddText({ pos.x + itemSize.x - shortcutWidth - g_Ctx.Style.FramePadding.x, pos.y + g_Ctx.Style.FramePadding.y }, shortcutColor, shortcut);
+        }
+
+        if (in_menubar) {
+            g_Ctx.LastItemMaxX = pos.x + itemSize.x;
+            SetLastItemInfo(pos, { pos.x + itemSize.x, pos.y + itemSize.y }, id, disabled);
+        }
+        else {
+            SetLastItemInfo(pos, { pos.x + itemSize.x, pos.y + itemSize.y }, id, disabled);
+            g_Ctx.LastItemMaxX = std::max(g_Ctx.LastItemMaxX, pos.x + minWidth);
+            g_Ctx.Cursor.y += itemSize.y;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        }
+
+        return clicked;
+    }
+
     inline void CheckAndDrawErrors() {
         std::string errorMsg;
         if (g_Ctx.BeginStack > 0) errorMsg = std::format("ERROR: Begin() called {} time(s) without matching End()!", g_Ctx.BeginStack);
@@ -3572,6 +3914,10 @@ namespace Shadow {
         else if (g_Ctx.TreeNodeStack < 0) errorMsg = std::format("ERROR: TreePop() called {} time(s) without matching TreeNode()!", -g_Ctx.TreeNodeStack);
         else if (g_Ctx.ListBoxStack > 0) errorMsg = std::format("ERROR: BeginListBox() called {} time(s) without matching EndListBox()!", g_Ctx.ListBoxStack);
         else if (g_Ctx.ListBoxStack < 0) errorMsg = std::format("ERROR: EndListBox() called {} time(s) without matching BeginListBox()!", -g_Ctx.ListBoxStack);
+        else if (g_Ctx.MenuBarStack > 0) errorMsg = std::format("ERROR: BeginMenuBar() called {} time(s) without matching EndMenuBar()!", g_Ctx.MenuBarStack);
+        else if (g_Ctx.MenuBarStack < 0) errorMsg = std::format("ERROR: EndMenuBar() called {} time(s) without matching BeginMenuBar()!", -g_Ctx.MenuBarStack);
+        else if (g_Ctx.MenuStack > 0) errorMsg = std::format("ERROR: BeginMenu() called {} time(s) without matching EndMenu()!", g_Ctx.MenuStack);
+        else if (g_Ctx.MenuStack < 0) errorMsg = std::format("ERROR: EndMenu() called {} time(s) without matching BeginMenu()!", -g_Ctx.MenuStack);
         else if (g_Ctx.FontStack.size() > 0) errorMsg = std::format("ERROR: PushFont() called {} time(s) without matching PopFont()!", g_Ctx.FontStack.size());
         else if (g_Ctx.TextureStack.size() > 0) errorMsg = std::format("ERROR: PushTexture() called {} time(s) without matching PopTexture()!", g_Ctx.TextureStack.size());
         else if (g_Ctx.TextOutlineStack.size() > 0) errorMsg = std::format("ERROR: PushTextOutline() called {} time(s) without matching PopTextOutline()!", g_Ctx.TextOutlineStack.size());
@@ -3778,7 +4124,10 @@ namespace Shadow {
 
         SetLastItemInfo({ x1, g_Ctx.Cursor.y }, { x2, g_Ctx.Cursor.y + itemHeight }, ++g_Ctx.WidgetCount, false);
 
-        g_Ctx.LastItemMaxX = x2;
+        if (size_arg.x > 0.f) {
+            g_Ctx.LastItemMaxX = std::max(g_Ctx.LastItemMaxX, x2);
+        }
+
         g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
@@ -3863,7 +4212,7 @@ namespace Shadow {
         }
 
         if (!g_Ctx.StyleInitialized) {
-            StyleColorsDark();
+            StyleColorsOcean();
             g_Ctx.StyleInitialized = true;
         }
 
@@ -3894,13 +4243,17 @@ namespace Shadow {
                 g_Ctx.ActivePopups.clear();
                 g_Ctx.ActiveInputId = 0;
                 g_Ctx.MouseClicked = false;
+                g_Ctx.MenuBarClickedThisFrame = false;
             }
+        }
+
+        if (g_Ctx.ActivePopups.empty()) {
+            g_Ctx.MenuBarClickedThisFrame = false;
         }
 
         for (auto& pair : g_Ctx.Windows) {
             pair.second.DrawList.CmdBuffer.clear();
         }
-        g_Ctx.PopupDrawList.CmdBuffer.clear();
         g_Ctx.TooltipDrawList.CmdBuffer.clear();
         g_Ctx.BackgroundDrawList.CmdBuffer.clear();
         g_Ctx.ForegroundDrawList.CmdBuffer.clear();
@@ -3946,6 +4299,9 @@ namespace Shadow {
         g_Ctx.TreeNodeStack = 0;
         g_Ctx.ListBoxStack = 0;
         g_Ctx.IDStack.clear();
+        g_Ctx.MenuBarStack = 0;
+        g_Ctx.MenuStack = 0;
+        g_Ctx.MenuStateStack.clear();
 
         g_Ctx.TabBarHoverRects = std::move(g_Ctx.TabBarHoverRectsPending);
         g_Ctx.TabBarHoverRectsPending.clear();
@@ -4072,6 +4428,7 @@ namespace Shadow {
         bool noMouseInputs = (flags & ShadowWindowFlags_NoMouseInputs) != 0;
 
         float titleBarHeight = noTitleBar ? 0.f : std::max(30.f, g_Ctx.ItemHeight + 10.f);
+        float menuBarHeight = (flags & ShadowWindowFlags_MenuBar) ? g_Ctx.ItemHeight : 0.f;
         Vec2 wholeWindowSize = g_Ctx.WindowSize;
 
         bool hoveringWholeWindow = noMouseInputs ? false : IsMouseHovering(g_Ctx.WindowPos, wholeWindowSize);
@@ -4211,8 +4568,13 @@ namespace Shadow {
             }
         }
 
+        if (flags & ShadowWindowFlags_MenuBar) {
+            GetWindowDrawList()->AddRectFilled({ g_Ctx.WindowPos.x, g_Ctx.WindowPos.y + titleBarHeight }, { g_Ctx.WindowSize.x, menuBarHeight }, g_Ctx.Style.Colors[GuiCol_FrameBg]);
+            GetWindowDrawList()->AddLine({ g_Ctx.WindowPos.x, g_Ctx.WindowPos.y + titleBarHeight + menuBarHeight }, { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + titleBarHeight + menuBarHeight }, g_Ctx.Style.Colors[GuiCol_Border], 1.f);
+        }
+
         g_Ctx.IndentX = 0.f;
-        g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, g_Ctx.WindowPos.y + titleBarHeight + g_Ctx.Style.WindowPadding.y };
+        g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, g_Ctx.WindowPos.y + titleBarHeight + menuBarHeight + g_Ctx.Style.WindowPadding.y };
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;
 
         return true;
@@ -4932,7 +5294,14 @@ namespace Shadow {
             }
         }
 
-        ExecCmds(g_Ctx.PopupDrawList.CmdBuffer);
+        // 依序迭代所有已被激活打开的弹窗，越深的层级越晚渲染，从而永远叠在最上层
+        for (size_t id : g_Ctx.ActivePopups) {
+            auto it = g_Ctx.Windows.find(id);
+            if (it != g_Ctx.Windows.end()) {
+                ExecCmds(it->second.DrawList.CmdBuffer);
+            }
+        }
+
         ExecCmds(g_Ctx.TooltipDrawList.CmdBuffer);
         ExecCmds(g_Ctx.ForegroundDrawList.CmdBuffer);
 
@@ -5245,6 +5614,9 @@ namespace Shadow {
         }
 
         if (bgColor.a > 0.0f) {
+            if (g_Ctx.InPopup && !g_Ctx.PopupStack.empty() && size_arg.x <= 0.f) {
+                g_Ctx.PopupStack.back().RightAlignCmds.push_back({ GetWindowDrawList()->GetCmdBuffer().size(), RightAlignCmdType::RectBackground });
+            }
             GetWindowDrawList()->AddRectFilled(g_Ctx.Cursor, size, bgColor);
         }
 

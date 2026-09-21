@@ -21,10 +21,66 @@ namespace Shadow {
         static bool show_demo = true;
         if (!show_demo) return;
 
-        static Shadow::ShadowWindowFlags win_flags = Shadow::ShadowWindowFlags_None;
+        static Shadow::ShadowWindowFlags win_flags = Shadow::ShadowWindowFlags_MenuBar;
         static Shadow::ShadowTabBarFlags tab_flags = Shadow::ShadowTabBarFlags_Reorderable | Shadow::ShadowTabBarFlags_FittingPolicyScroll;
 
         if (Shadow::Begin("Shadow Gui Demo##DemoWindow", win_flags)) {
+            if (Shadow::BeginMenuBar()) {
+                if (Shadow::BeginMenu("File")) {
+
+                    if (Shadow::MenuItem("New", "Ctrl+N")) {}
+                    if (Shadow::MenuItem("Open", "Ctrl+O")) {}
+
+                    if (Shadow::BeginMenu("Open Recent 1")) {
+                        Shadow::MenuItem("File 1.txt");
+                        Shadow::MenuItem("File 2.txt");
+
+                        if (Shadow::BeginMenu("Open Recent 2")) {
+                            Shadow::MenuItem("File 3.txt");
+                            Shadow::MenuItem("File 4.txt");
+
+                            if (Shadow::BeginMenu("Open Recent 3")) {
+                                Shadow::MenuItem("File 5.txt");
+                                Shadow::MenuItem("File 6.txt");
+                            }
+                            Shadow::EndMenu();
+                        }
+                        Shadow::EndMenu();
+                    }
+                    Shadow::EndMenu();
+
+                    Shadow::Separator();
+                    static bool save_as_checked = false;
+                    Shadow::MenuItem("Save As...", "", &save_as_checked);
+                    Shadow::MenuItem("Exit", "Alt+F4");
+                }
+                Shadow::EndMenu();
+
+                if (Shadow::BeginMenu("Edit")) {
+                    Shadow::MenuItem("Undo", "Ctrl+Z");
+                    Shadow::MenuItem("Redo", "Ctrl+Y", nullptr, false); // Disabled
+                    Shadow::Separator();
+                    Shadow::MenuItem("Cut", "Ctrl+X");
+                    Shadow::MenuItem("Copy", "Ctrl+C");
+                    Shadow::MenuItem("Paste", "Ctrl+V");
+                }
+                Shadow::EndMenu();
+
+                if (Shadow::BeginMenu("View")) {
+                    Shadow::MenuItem("Show Toolbar");
+                    Shadow::MenuItem("Show Sidebar");
+
+                    if (Shadow::BeginMenu("Theme")) {
+                        Shadow::MenuItem("Dark");
+                        Shadow::MenuItem("Light");
+                    }
+                    Shadow::EndMenu();
+                }
+                Shadow::EndMenu();
+                Shadow::MenuItem("Direct Item");
+            }
+            Shadow::EndMenuBar();
+
             if (Shadow::BeginTabBar("DemoTabBar", tab_flags)) {
 
                 // Page 1: All standard controls and full flag tests (with combined flag demos)
@@ -616,8 +672,9 @@ namespace Shadow {
                     Shadow::TreePop();
 
                     if (Shadow::TreeNode("Window Flags Editor")) {
-                        static bool f_NoResize = false, f_NoMove = false, f_NoScrollbar = false, f_NoTitleBar = false, f_NoMouseInputs = false;
+                        static bool f_NoResize = false, f_NoMove = false, f_NoScrollbar = false, f_NoTitleBar = false, f_NoMouseInputs = false, f_MenuBar = true;
 
+                        if (Shadow::Selectable("MenuBar", &f_MenuBar)) { if (f_MenuBar) win_flags |= Shadow::ShadowWindowFlags_MenuBar; else win_flags &= ~Shadow::ShadowWindowFlags_MenuBar; }
                         if (Shadow::Selectable("NoResize", &f_NoResize)) { if (f_NoResize) win_flags |= Shadow::ShadowWindowFlags_NoResize; else win_flags &= ~Shadow::ShadowWindowFlags_NoResize; }
                         if (Shadow::Selectable("NoMove", &f_NoMove)) { if (f_NoMove) win_flags |= Shadow::ShadowWindowFlags_NoMove; else win_flags &= ~Shadow::ShadowWindowFlags_NoMove; }
                         if (Shadow::Selectable("NoScrollbar", &f_NoScrollbar)) { if (f_NoScrollbar) win_flags |= Shadow::ShadowWindowFlags_NoScrollbar; else win_flags &= ~Shadow::ShadowWindowFlags_NoScrollbar; }
@@ -691,7 +748,7 @@ namespace Shadow {
                     Shadow::TreePop();
 
                     if (Shadow::TreeNode("Style Metrics & Themes")) {
-                        static int theme_idx = 0;
+                        static int theme_idx = 1;
                         std::vector<std::string> themes = { "Dark", "Ocean", "Amethyst", "Grey" };
                         if (Shadow::Combo("Theme", &theme_idx, themes)) {
                             switch (theme_idx) {

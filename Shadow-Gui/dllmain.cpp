@@ -160,7 +160,11 @@ namespace Hook {
             // Shadow::StyleColorsOcean();
             // Shadow::PushFont(font, G_SIZE);
 			Shadow::DefaultFont = font;
+
+            Shadow::PushTextPixelSnap();
             Shadow::ShowDemoWindow();
+            Shadow::PopTextPixelSnap();
+
             // Shadow::PopFont();
 
             // Shadow::StyleColorsGrey();

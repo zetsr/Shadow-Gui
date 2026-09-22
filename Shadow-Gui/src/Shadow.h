@@ -3816,6 +3816,9 @@ namespace Shadow {
             return false;
         }
 
+        // 【新增】暂时弹出 Begin 压入的内容区专属剪裁区域，回到受主窗口保护的层级，防止菜单栏被误切
+        PopClipRect();
+
         g_Ctx.BackupMenuBarCursor = g_Ctx.Cursor;
         g_Ctx.BackupMenuBarLastItemMaxX = g_Ctx.LastItemMaxX;
         g_Ctx.BackupMenuBarClipMin = g_Ctx.ClipMin;
@@ -3845,6 +3848,12 @@ namespace Shadow {
             PopClipRect();
             g_Ctx.Cursor = g_Ctx.BackupMenuBarCursor;
             g_Ctx.LastItemMaxX = g_Ctx.BackupMenuBarLastItemMaxX;
+
+            // 【新增】菜单栏绘制完毕，重新压入内容区专属剪裁区域，继续保护下方滚动内容
+            PushClipRect(
+                { g_Ctx.WindowPos.x, g_Ctx.ContentStartY },
+                { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y }
+            );
         }
         g_Ctx.MenuBarStack--;
     }
@@ -4565,7 +4574,7 @@ namespace Shadow {
         g_Ctx.LastItemDisabled = false;
 
         g_Ctx.BeginStack++;
-        g_Ctx.IsScrollApplied = false;
+        g_Ctx.IsScrollApplied = true;
 
         float min_x = g_Ctx.Style.WindowMinSize.x;
         float min_y = g_Ctx.Style.WindowMinSize.y;
@@ -4707,7 +4716,7 @@ namespace Shadow {
 
         GetWindowDrawList()->AddRectFilled(g_Ctx.WindowPos, g_Ctx.WindowSize, g_Ctx.Style.Colors[GuiCol_WindowBg]);
 
-        // 提前压入窗口物理剪裁区域，使后续绘制的标题文本能正确受剪裁约束
+        // 压入主窗口外框物理剪裁区域
         PushClipRect(
             g_Ctx.WindowPos,
             { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y }
@@ -4738,6 +4747,14 @@ namespace Shadow {
         g_Ctx.IndentX = 0.f;
         g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, g_Ctx.WindowPos.y + titleBarHeight + menuBarHeight + g_Ctx.Style.WindowPadding.y };
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;
+
+        // 压入内容区专属剪裁区域，阻断控件滚动到标题栏上方
+        PushClipRect(
+            { g_Ctx.WindowPos.x, g_Ctx.ContentStartY },
+            { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y }
+        );
+
+        g_Ctx.Cursor.y -= g_Ctx.ScrollY;
 
         return true;
     }
@@ -4815,6 +4832,8 @@ namespace Shadow {
         float actualCursorY = g_Ctx.Cursor.y + (g_Ctx.IsScrollApplied ? g_Ctx.ScrollY : 0.f);
         g_Ctx.ContentHeight = actualCursorY - g_Ctx.ContentStartY;
 
+        // 弹出内容区专用剪裁框，接着再弹出整个主窗口剪裁框
+        PopClipRect();
         PopClipRect();
 
         bool noResize = (g_Ctx.CurrentWindowFlags & ShadowWindowFlags_NoResize) != 0;
@@ -4898,6 +4917,9 @@ namespace Shadow {
             g_Ctx.DraggingTabBarId = 0;
         }
 
+        // 暂时撤销滚动：TabBar 作为固定在顶部的头组件，不应当跟随页面内容滚动
+        g_Ctx.Cursor.y += g_Ctx.ScrollY;
+
         g_Ctx.TabCursor = g_Ctx.Cursor;
         g_Ctx.TabBarOrigin = g_Ctx.Cursor;
 
@@ -4938,6 +4960,14 @@ namespace Shadow {
         g_Ctx.Cursor.y += g_Ctx.Style.TabBarSeparatorHeight + g_Ctx.Style.WindowPadding.y;
 
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;
+
+        // 【新增】压入 TabBar 专属的内容剪裁框，阻断内部控件越界
+        PushClipRect(
+            { g_Ctx.WindowPos.x, g_Ctx.ContentStartY },
+            { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y }
+        );
+
+        // 重新应用滚动，使 TabBar 内部的子控件开始滚动
         g_Ctx.Cursor.y -= g_Ctx.ScrollY;
         g_Ctx.IsScrollApplied = true;
 
@@ -4949,6 +4979,9 @@ namespace Shadow {
         bool fittingScroll = (g_Ctx.CurrentTabBarFlags & ShadowTabBarFlags_FittingPolicyScroll) != 0;
         bool reorderable = (g_Ctx.CurrentTabBarFlags & ShadowTabBarFlags_Reorderable) != 0;
         bool noScrollbar = (g_Ctx.CurrentTabBarFlags & ShadowTabBarFlags_NoScrollbar) != 0;
+
+        // 【新增】在绘制 TabBar 自身的水平滚动条和拖拽头部前，先弹出它专属的内容剪裁框
+        PopClipRect();
 
         g_Ctx.TabBarContentWidth = g_Ctx.TabBarContentWidthAccum;
 
@@ -5166,6 +5199,9 @@ namespace Shadow {
             tabPos = { g_Ctx.TabBarOrigin.x + offsetX - scrollX, g_Ctx.TabBarOrigin.y };
         }
 
+        // 【新增】暂时弹出 BeginTabBar 压入的专属内容剪裁框，回到不受限的层级以便绘制 Header
+        PopClipRect();
+
         SDK::UFont* currentFont = g_Ctx.DefaultFont;
         float currentScale = 1.0f;
         bool currentNoSDF = false;
@@ -5221,6 +5257,12 @@ namespace Shadow {
                 PopClipRect();
             }
         }
+
+        // 【新增】Header 画完了，恢复压入 BeginTabBar 的内容剪裁框
+        PushClipRect(
+            { g_Ctx.WindowPos.x, g_Ctx.ContentStartY },
+            { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y }
+        );
 
         if (isActive) {
             float activeScrollbarWidth = g_Ctx.CurrentScrollbarWidth;

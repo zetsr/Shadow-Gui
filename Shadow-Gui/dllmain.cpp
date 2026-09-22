@@ -162,6 +162,52 @@ namespace Hook {
 			Shadow::DefaultFont = font;
 
             Shadow::PushTextPixelSnap();
+
+            if (Shadow::Begin("Begin 1")) {
+                if (Shadow::BeginTabBar("BeginTabBar 1")) {
+                    if (Shadow::BeginTabItem("BeginTabItem 1")) {
+                        for (int i = 1; i < 100; i++) {
+                            Shadow::PushID(i);
+                            Shadow::Button("test" + std::to_string(i));
+                            Shadow::PopID();
+                        }
+                    }
+                    Shadow::EndTabItem();
+                }
+                Shadow::EndTabBar();
+            }
+            Shadow::End();
+
+            if (Shadow::Begin("Begin 2")) {
+                if (Shadow::BeginTabBar("BeginTabBar 2")) {
+                    // if (Shadow::BeginTabItem("BeginTabItem 2")) {
+                        for (int i = 1; i < 100; i++) {
+                            Shadow::PushID(i);
+                            Shadow::Button("test" + std::to_string(i));
+                            Shadow::PopID();
+                        }
+                    // }
+                    // Shadow::EndTabItem();
+                }
+                Shadow::EndTabBar();
+            }
+            Shadow::End();
+
+            if (Shadow::Begin("Begin 3")) {
+                // if (Shadow::BeginTabBar("BeginTabBar 3")) {
+                    // if (Shadow::BeginTabItem("BeginTabItem 3")) {
+                    for (int i = 1; i < 100; i++) {
+                        Shadow::PushID(i);
+                        Shadow::Button("test" + std::to_string(i));
+                        Shadow::PopID();
+                    }
+                    // }
+                    // Shadow::EndTabItem();
+                // }
+                // Shadow::EndTabBar();
+            }
+            Shadow::End();
+
             Shadow::ShowDemoWindow();
             Shadow::PopTextPixelSnap();
 

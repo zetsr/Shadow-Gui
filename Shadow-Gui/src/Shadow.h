@@ -754,6 +754,17 @@ namespace Shadow {
         ShadowDrawList() {
             // sizeof(ShadowDrawCmd) 大约为 160 字节，此处预分配将会直接在堆上开辟 1MB 左右的空间
             CmdBuffer.reserve(PreallocMemorySize / sizeof(ShadowDrawCmd));
+            // 预分配通道数组，避免首次 ChannelsSplit 时重新分配导致闪烁
+            _Channels.resize(8);
+        }
+
+        void Clear() {
+            CmdBuffer.clear();
+            _ChannelsCount = 1;
+            _ChannelsCurrent = 0;
+            for (auto& ch : _Channels) {
+                ch.clear();
+            }
         }
 
         void ChannelsSplit(int count);
@@ -2809,9 +2820,11 @@ namespace Shadow {
 
         _ChannelsCount = count;
         _ChannelsCurrent = 0;
-        _Channels.resize(count);
-        for (auto& ch : _Channels) {
-            ch.clear();
+        if (_Channels.size() < static_cast<size_t>(count)) {
+            _Channels.resize(count);
+        }
+        for (int i = 0; i < count; ++i) {
+            _Channels[i].clear();
         }
     }
 
@@ -2826,7 +2839,8 @@ namespace Shadow {
             return;
         }
 
-        for (auto& ch : _Channels) {
+        for (int i = 0; i < _ChannelsCount; ++i) {
+            auto& ch = _Channels[i];
             if (!ch.empty()) {
                 CmdBuffer.insert(
                     CmdBuffer.end(),
@@ -4423,11 +4437,11 @@ namespace Shadow {
         }
 
         for (auto& pair : g_Ctx.Windows) {
-            pair.second.DrawList.CmdBuffer.clear();
+            pair.second.DrawList.Clear();
         }
-        g_Ctx.TooltipDrawList.CmdBuffer.clear();
-        g_Ctx.BackgroundDrawList.CmdBuffer.clear();
-        g_Ctx.ForegroundDrawList.CmdBuffer.clear();
+        g_Ctx.TooltipDrawList.Clear();
+        g_Ctx.BackgroundDrawList.Clear();
+        g_Ctx.ForegroundDrawList.Clear();
 
         g_Ctx.HoveredWindowId = 0;
         g_Ctx.PopupStack.clear();

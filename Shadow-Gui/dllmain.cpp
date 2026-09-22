@@ -211,6 +211,24 @@ namespace Hook {
             Shadow::ShowDemoWindow();
             Shadow::PopTextPixelSnap();
 
+            Shadow::ShadowDrawList* drawlist = Shadow::GetBackgroundDrawList();
+
+            drawlist->ChannelsSplit(4);
+
+            drawlist->SetChannel(Shadow::Channel_Midground); // 1
+            drawlist->AddRectFilled({ 10.f, 0.f }, { 50.f, 50.f }, { 0.1f, 0.1f, 0.1f, 1.f });
+
+            drawlist->SetChannel(3);                        // 3
+            drawlist->AddRectFilled({ 30.f, 0.f }, { 50.f, 50.f }, { 0.3f, 0.3f, 0.3f, 1.f });
+
+            drawlist->SetChannel(Shadow::Channel_Foreground); // 2
+            drawlist->AddRectFilled({ 20.f, 0.f }, { 50.f, 50.f }, { 0.2f, 0.2f, 0.2f, 1.f });
+
+            drawlist->SetChannel(Shadow::Channel_Background); // 0
+            drawlist->AddRectFilled({ 0.f, 0.f }, { 50.f, 50.f }, { 0.f, 0.f, 0.f, 1.f });
+
+            drawlist->ChannelsMerge();
+
             // Shadow::PopFont();
 
             // Shadow::StyleColorsGrey();

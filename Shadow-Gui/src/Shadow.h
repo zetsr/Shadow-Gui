@@ -3197,10 +3197,22 @@ namespace Shadow {
     }
 
     inline bool TreeNode(std::string_view name, ShadowTreeNodeFlags flags = ShadowTreeNodeFlags_None, Vec2 size_arg = { 0.f, 0.f }) {
-        if (!g_Ctx.InActiveTab) return false;
+        // 无条件压栈：与其他 Begin 函数一致，用户必须在 if 作用域外调用 TreePop()
+        g_Ctx.TreeNodeStack++;
+
         std::string_view display; size_t id; ParseLabel(name, display, id);
         g_Ctx.WidgetCount++;
-        g_Ctx.TreeNodeStack++;
+
+        bool noIndent = (flags & ShadowTreeNodeFlags_NoIndent) != 0;
+        g_Ctx.TreeNodeNoIndentStack.push_back(noIndent);
+
+        if (!g_Ctx.InActiveTab) {
+            if (!noIndent) {
+                g_Ctx.IndentX += g_Ctx.Style.TreeNodeIndent;
+            }
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            return false;
+        }
 
         if (g_Ctx.TreeNodeOpenStates.find(id) == g_Ctx.TreeNodeOpenStates.end()) {
             g_Ctx.TreeNodeOpenStates[id] = (flags & ShadowTreeNodeFlags_DefaultOpen) != 0;
@@ -3209,7 +3221,6 @@ namespace Shadow {
         bool isOpen = g_Ctx.TreeNodeOpenStates[id];
         bool isFramed = (flags & ShadowTreeNodeFlags_Framed) != 0;
         bool isFitText = (flags & ShadowTreeNodeFlags_FitText) != 0;
-        bool noIndent = (flags & ShadowTreeNodeFlags_NoIndent) != 0;
 
         float itemHeight = size_arg.y > 0.f ? size_arg.y : g_Ctx.ItemHeight;
         float arrowSize = itemHeight * g_Ctx.Style.TreeNodeArrowSizeRatio;
@@ -3234,8 +3245,9 @@ namespace Shadow {
             SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
             g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
             g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-            if (!noIndent) g_Ctx.IndentX += g_Ctx.Style.TreeNodeIndent;
-            g_Ctx.TreeNodeNoIndentStack.push_back(noIndent);
+            if (!noIndent) {
+                g_Ctx.IndentX += g_Ctx.Style.TreeNodeIndent;
+            }
             g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
             return isOpen;
         }
@@ -3286,15 +3298,16 @@ namespace Shadow {
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
 
         g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-        if (!noIndent) g_Ctx.IndentX += 20.f;
-        g_Ctx.TreeNodeNoIndentStack.push_back(noIndent);
+        if (!noIndent) {
+            g_Ctx.IndentX += g_Ctx.Style.TreeNodeIndent;
+        }
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
 
         return isOpen;
     }
 
     inline void TreePop() {
-        if (!g_Ctx.InActiveTab) return;
+        // 无条件弹出：与 TreeNode 头部无条件压栈对应，用户必须在 if 作用域外调用
         g_Ctx.TreeNodeStack--;
 
         bool noIndent = false;

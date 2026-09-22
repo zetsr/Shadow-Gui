@@ -164,11 +164,56 @@ namespace Hook {
             Shadow::PushTextPixelSnap();
 
             if (Shadow::Begin("Begin 1")) {
-                if (Shadow::BeginTabBar("BeginTabBar 1")) {
+                if (Shadow::BeginTabBar("BeginTabBar 1", Shadow::ShadowTabBarFlags_Reorderable | Shadow::ShadowTabBarFlags_FittingPolicyScroll)) {
                     if (Shadow::BeginTabItem("BeginTabItem 1")) {
                         for (int i = 1; i < 100; i++) {
                             Shadow::PushID(i);
-                            Shadow::Button("test" + std::to_string(i));
+                            Shadow::Button("test1" + std::to_string(i));
+                            Shadow::PopID();
+                        }
+                    }
+                    Shadow::EndTabItem();
+
+                    if (Shadow::BeginTabItem("BeginTabItem 2")) {
+                        for (int i = 1; i < 100; i++) {
+                            Shadow::PushID(i);
+                            Shadow::Button("test2" + std::to_string(i));
+                            Shadow::PopID();
+                        }
+                    }
+                    Shadow::EndTabItem();
+
+                    if (Shadow::BeginTabItem("BeginTabItem 3")) {
+                        for (int i = 1; i < 100; i++) {
+                            Shadow::PushID(i);
+                            Shadow::Button("test3" + std::to_string(i));
+                            Shadow::PopID();
+                        }
+                    }
+                    Shadow::EndTabItem();
+
+                    if (Shadow::BeginTabItem("BeginTabItem 4")) {
+                        for (int i = 1; i < 100; i++) {
+                            Shadow::PushID(i);
+                            Shadow::Button("test4" + std::to_string(i));
+                            Shadow::PopID();
+                        }
+                    }
+                    Shadow::EndTabItem();
+
+                    if (Shadow::BeginTabItem("BeginTabItem 5")) {
+                        for (int i = 1; i < 100; i++) {
+                            Shadow::PushID(i);
+                            Shadow::Button("test5" + std::to_string(i));
+                            Shadow::PopID();
+                        }
+                    }
+                    Shadow::EndTabItem();
+
+                    if (Shadow::BeginTabItem("BeginTabItem 6")) {
+                        for (int i = 1; i < 100; i++) {
+                            Shadow::PushID(i);
+                            Shadow::Button("test6" + std::to_string(i));
                             Shadow::PopID();
                         }
                     }

@@ -2205,42 +2205,17 @@ namespace Shadow {
 
         float halfThick = thickness * 0.5f;
 
-        // 辅助 Lambda：在启用裁剪时限制坐标在 [clipMin, clipMax] 范围内
-        auto ClampVec = [clipEnabled, clipMin, clipMax](Vec2 p) -> Vec2 {
-            if (!clipEnabled) return p;
-            return {
-                std::clamp(p.x, clipMin.x, clipMax.x),
-                std::clamp(p.y, clipMin.y, clipMax.y)
-            };
-            };
-
         // 1. 上边 (水平线)
-        Vec2 topL = ClampVec({ pos.x - halfThick, pos.y });
-        Vec2 topR = ClampVec({ pos.x + size.x + halfThick, pos.y });
-        if (topL.x < topR.x) {
-            InternalDrawLine(topL, topR, color, thickness, clipEnabled, clipMin, clipMax, texture);
-        }
+        InternalDrawLine({ pos.x - halfThick, pos.y }, { pos.x + size.x + halfThick, pos.y }, color, thickness, clipEnabled, clipMin, clipMax, texture);
 
         // 2. 下边 (水平线)
-        Vec2 botL = ClampVec({ pos.x - halfThick, pos.y + size.y });
-        Vec2 botR = ClampVec({ pos.x + size.x + halfThick, pos.y + size.y });
-        if (botL.x < botR.x) {
-            InternalDrawLine(botL, botR, color, thickness, clipEnabled, clipMin, clipMax, texture);
-        }
+        InternalDrawLine({ pos.x - halfThick, pos.y + size.y }, { pos.x + size.x + halfThick, pos.y + size.y }, color, thickness, clipEnabled, clipMin, clipMax, texture);
 
         // 3. 左边 (垂直线)
-        Vec2 leftT = ClampVec({ pos.x, pos.y + halfThick });
-        Vec2 leftB = ClampVec({ pos.x, pos.y + size.y - halfThick });
-        if (leftT.y < leftB.y) {
-            InternalDrawLine(leftT, leftB, color, thickness, clipEnabled, clipMin, clipMax, texture);
-        }
+        InternalDrawLine({ pos.x, pos.y + halfThick }, { pos.x, pos.y + size.y - halfThick }, color, thickness, clipEnabled, clipMin, clipMax, texture);
 
         // 4. 右边 (垂直线)
-        Vec2 rightT = ClampVec({ pos.x + size.x, pos.y + halfThick });
-        Vec2 rightB = ClampVec({ pos.x + size.x, pos.y + size.y - halfThick });
-        if (rightT.y < rightB.y) {
-            InternalDrawLine(rightT, rightB, color, thickness, clipEnabled, clipMin, clipMax, texture);
-        }
+        InternalDrawLine({ pos.x + size.x, pos.y + halfThick }, { pos.x + size.x, pos.y + size.y - halfThick }, color, thickness, clipEnabled, clipMin, clipMax, texture);
     }
 
     inline void InternalDrawRectFilled(Vec2 pos, Vec2 size, Color color, bool clipEnabled, Vec2 clipMin, Vec2 clipMax, SDK::UTexture* texture = nullptr) {
@@ -5132,8 +5107,8 @@ namespace Shadow {
         if (reorderable && g_Ctx.DraggingTabId != 0 && g_Ctx.DraggingTabBarId == tabBarId) {
             for (const auto& tabInfo : g_Ctx.TabBarDisplayCache[tabBarId]) {
                 if (tabInfo.id == g_Ctx.DraggingTabId) {
-                    Vec2 clipMin = g_Ctx.TabBarOrigin;
-                    Vec2 clipMax = { g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth, g_Ctx.TabBarOrigin.y + tabInfo.size.y };
+                    Vec2 clipMin = { g_Ctx.TabBarOrigin.x - 1.f, g_Ctx.TabBarOrigin.y - 1.f };
+                    Vec2 clipMax = { g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth + 1.f, g_Ctx.TabBarOrigin.y + tabInfo.size.y + 1.f };
 
                     Color bgColor = g_Ctx.Style.Colors[GuiCol_TabActive];
                     Color textColor = g_Ctx.Style.Colors[GuiCol_TextHighlight];
@@ -5143,7 +5118,7 @@ namespace Shadow {
                         else PushFont(tabInfo.font, tabInfo.fontScale);
                     }
 
-                    PushClipRect(clipMin, { g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth, clipMax.y });
+                    PushClipRect(clipMin, clipMax);
                     GetWindowDrawList()->AddRect(tabInfo.pos, tabInfo.size, bgColor);
                     GetWindowDrawList()->AddText({ tabInfo.pos.x + g_Ctx.Style.TabExtraWidth / 2.f, tabInfo.pos.y + g_Ctx.Style.FramePadding.y }, textColor, tabInfo.display);
                     PopClipRect();
@@ -5294,9 +5269,9 @@ namespace Shadow {
 
         g_Ctx.TabBarContentWidthAccum += tabSize.x + g_Ctx.Style.TabBarTabSpacing;
 
-        Vec2 clipMin = g_Ctx.TabBarOrigin;
-        Vec2 clipMax = { g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth, g_Ctx.TabBarOrigin.y + tabSize.y };
-        bool tabVisible = !(tabPos.x + tabSize.x < clipMin.x || tabPos.x > clipMax.x);
+        Vec2 clipMin = { g_Ctx.TabBarOrigin.x - 1.f, g_Ctx.TabBarOrigin.y - 1.f };
+        Vec2 clipMax = { g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth + 1.f, g_Ctx.TabBarOrigin.y + tabSize.y + 1.f };
+        bool tabVisible = !(tabPos.x + tabSize.x < g_Ctx.TabBarOrigin.x || tabPos.x > g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth);
 
         bool hovered = tabVisible && IsMouseHovering(tabPos, tabSize) && IsRectVisible(tabPos, tabSize);
 
@@ -5330,7 +5305,7 @@ namespace Shadow {
             Color textColor = isActive ? g_Ctx.Style.Colors[GuiCol_TextHighlight] : g_Ctx.Style.Colors[GuiCol_TextDisabled];
 
             if (tabVisible) {
-                PushClipRect(clipMin, { g_Ctx.TabBarOrigin.x + g_Ctx.TabBarViewWidth, clipMax.y });
+                PushClipRect(clipMin, clipMax);
                 GetWindowDrawList()->AddRect(tabPos, tabSize, bgColor);
                 GetWindowDrawList()->AddText({ tabPos.x + g_Ctx.Style.TabExtraWidth / 2.f, tabPos.y + g_Ctx.Style.FramePadding.y }, textColor, display);
                 PopClipRect();

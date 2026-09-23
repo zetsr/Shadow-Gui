@@ -1012,15 +1012,15 @@ namespace Shadow {
                     Shadow::TreePop();
 
                     if (Shadow::TreeNode("DrawList Texture & PushTexture")) {
-                        SDK::UTexture2D* circleTex = Shadow::LoadTextureFromBuffer(Shadow_Titlebar::Logo, sizeof(Shadow_Titlebar::Logo));
+                        SDK::UTexture2D* TitlebarTex = Shadow::LoadTextureFromBuffer(Shadow_Titlebar::Logo, sizeof(Shadow_Titlebar::Logo));
 
                         Vec2 p = Shadow::g_Ctx.Cursor;
                         Shadow::Dummy({ 200.f, 80.f });
 
                         ShadowDrawList* dl = Shadow::GetWindowDrawList();
-                        if (circleTex) {
-                            dl->AddTexture(p, { 64.f, 64.f }, { 1.f, 1.f, 1.f, 1.f }, circleTex);
-                            Shadow::PushTexture(circleTex);
+                        if (TitlebarTex) {
+                            dl->AddTexture(p, { 64.f, 64.f }, { 1.f, 1.f, 1.f, 1.f }, TitlebarTex);
+                            Shadow::PushTexture(TitlebarTex);
                             dl->AddTexture({ p.x + 80.f, p.y }, { 64.f, 64.f }, { 1.f, 0.5f, 0.5f, 1.f });
                             Shadow::PopTexture();
                         }

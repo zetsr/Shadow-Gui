@@ -5312,6 +5312,8 @@ namespace Shadow {
     }
 
     inline void Render() {
+        CheckAndDrawErrors();
+
         auto ExecCmds = [](const std::vector<ShadowDrawCmd>& cmds) {
             if (cmds.empty()) return;
 
@@ -5535,8 +5537,6 @@ namespace Shadow {
 
         ExecCmds(g_Ctx.TooltipDrawList.CmdBuffer);
         ExecCmds(g_Ctx.ForegroundDrawList.CmdBuffer);
-
-        CheckAndDrawErrors();
 
         g_Ctx.MouseClicked = false;
         g_Ctx.RightMouseClicked = false;

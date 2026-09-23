@@ -166,6 +166,9 @@ namespace Hook {
             if (Shadow::Begin("Begin 1")) {
                 if (Shadow::BeginTabBar("BeginTabBar 1", Shadow::ShadowTabBarFlags_Reorderable | Shadow::ShadowTabBarFlags_FittingPolicyScroll)) {
                     if (Shadow::BeginTabItem("BeginTabItem 1")) {
+                        if (Shadow::TreeNode("123")) {
+                        }
+                        Shadow::TreePop();
                         for (int i = 1; i < 100; i++) {
                             Shadow::PushID(i);
                             Shadow::Button("test1" + std::to_string(i));

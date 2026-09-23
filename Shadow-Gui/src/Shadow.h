@@ -6257,10 +6257,7 @@ namespace Shadow {
 
         if (g_Ctx.FocusedSliderId == id) {
             Color border = g_Ctx.Style.Colors[GuiCol_Border];
-            GetWindowDrawList()->AddRectFilled({ sliderPos.x - g_Ctx.Style.SliderFocusBorderThickness, sliderPos.y - g_Ctx.Style.SliderFocusBorderThickness }, { size.x + g_Ctx.Style.SliderFocusBorderThickness * 2.f, g_Ctx.Style.SliderFocusBorderThickness }, border);
-            GetWindowDrawList()->AddRectFilled({ sliderPos.x - g_Ctx.Style.SliderFocusBorderThickness, sliderPos.y + size.y }, { size.x + g_Ctx.Style.SliderFocusBorderThickness * 2.f, g_Ctx.Style.SliderFocusBorderThickness }, border);
-            GetWindowDrawList()->AddRectFilled({ sliderPos.x - g_Ctx.Style.SliderFocusBorderThickness, sliderPos.y }, { g_Ctx.Style.SliderFocusBorderThickness, size.y }, border);
-            GetWindowDrawList()->AddRectFilled({ sliderPos.x + size.x, sliderPos.y }, { g_Ctx.Style.SliderFocusBorderThickness, size.y }, border);
+            GetWindowDrawList()->AddRect(sliderPos, size, border, g_Ctx.Style.SliderFocusBorderThickness);
         }
 
         bool changed = InputTextEx(sliderInputId, valBoxPos, valBoxSize, g_Ctx.InputBuffers[sliderInputId], ShadowInputTextFlags_CharsDecimal | ShadowInputTextFlags_AlignCenter);
@@ -6392,10 +6389,7 @@ namespace Shadow {
 
         if (hovered || IsPopupOpen("##ColorPickerPopup")) {
             Color border = g_Ctx.Style.Colors[GuiCol_Border];
-            GetWindowDrawList()->AddLine({ boxPos.x, boxPos.y }, { boxPos.x + boxSize.x, boxPos.y }, border);
-            GetWindowDrawList()->AddLine({ boxPos.x + boxSize.x, boxPos.y }, { boxPos.x + boxSize.x, boxPos.y + boxSize.y }, border);
-            GetWindowDrawList()->AddLine({ boxPos.x + boxSize.x, boxPos.y + boxSize.y }, { boxPos.x, boxPos.y + boxSize.y }, border);
-            GetWindowDrawList()->AddLine({ boxPos.x, boxPos.y + boxSize.y }, { boxPos.x, boxPos.y }, border);
+            GetWindowDrawList()->AddRect(boxPos, boxSize, border);
         }
 
         Vec2 backupPad = g_Ctx.Style.WindowPadding;

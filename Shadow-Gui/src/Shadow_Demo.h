@@ -396,6 +396,40 @@ namespace Shadow {
                         Shadow::Separator();
                         Shadow::HelpMarker("Separator() line above.");
 
+                        // Indent & Unindent 完整功能演示
+                        Shadow::Text("--- Indent & Unindent Demo ---");
+
+                        // 1. 默认参数缩进与恢复
+                        Shadow::Text("Unindented text");
+                        Shadow::Indent();
+                        Shadow::Text("Indented text (Default Style IndentSpacing)");
+                        Shadow::Button("Indented Button##DefIndent");
+                        Shadow::Unindent();
+                        Shadow::Text("Unindented text restored");
+
+                        // 2. 自定义绝对像素宽度缩进与恢复
+                        Shadow::Indent(40.0f);
+                        Shadow::Text("Indented text (+40px custom width)");
+                        Shadow::Button("Indented Button (+40px)##CustomIndent");
+                        Shadow::Unindent(40.0f);
+                        Shadow::Text("Restored after -40px unindent");
+
+                        // 3. 多层嵌套缩进与逐级回退
+                        Shadow::Indent();
+                        Shadow::Text("Level 1 Indent");
+                        Shadow::Indent();
+                        Shadow::Text("Level 2 Indent (Nested)");
+                        Shadow::Indent(50.0f);
+                        Shadow::Text("Level 3 Indent (+50px Custom Nested)");
+                        Shadow::Unindent(50.0f);
+                        Shadow::Text("Back to Level 2");
+                        Shadow::Unindent();
+                        Shadow::Text("Back to Level 1");
+                        Shadow::Unindent();
+                        Shadow::Text("Back to Root Level");
+
+                        Shadow::Separator();
+
                         Shadow::Text("Below is a 50x30 Dummy");
                         Shadow::Dummy({ 50.f, 30.f });
                         Shadow::Text("After Dummy");

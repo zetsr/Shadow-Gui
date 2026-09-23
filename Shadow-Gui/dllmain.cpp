@@ -159,123 +159,13 @@ namespace Hook {
 
             // Shadow::StyleColorsOcean();
             // Shadow::PushFont(font, G_SIZE);
-			Shadow::DefaultFont = font;
+			// Shadow::DefaultFont = font;
 
+            Shadow::PushFont(font, 1.5f);
             Shadow::PushTextPixelSnap();
-
-            if (Shadow::Begin("Begin 1")) {
-                if (Shadow::BeginTabBar("BeginTabBar 1", Shadow::ShadowTabBarFlags_Reorderable | Shadow::ShadowTabBarFlags_FittingPolicyScroll)) {
-                    if (Shadow::BeginTabItem("BeginTabItem 1")) {
-                        if (Shadow::TreeNode("123")) {
-                        }
-                        Shadow::TreePop();
-                        for (int i = 1; i < 100; i++) {
-                            Shadow::PushID(i);
-                            Shadow::Button("test1" + std::to_string(i));
-                            Shadow::PopID();
-                        }
-                    }
-                    Shadow::EndTabItem();
-
-                    if (Shadow::BeginTabItem("BeginTabItem 2")) {
-                        for (int i = 1; i < 100; i++) {
-                            Shadow::PushID(i);
-                            Shadow::Button("test2" + std::to_string(i));
-                            Shadow::PopID();
-                        }
-                    }
-                    Shadow::EndTabItem();
-
-                    if (Shadow::BeginTabItem("BeginTabItem 3")) {
-                        for (int i = 1; i < 100; i++) {
-                            Shadow::PushID(i);
-                            Shadow::Button("test3" + std::to_string(i));
-                            Shadow::PopID();
-                        }
-                    }
-                    Shadow::EndTabItem();
-
-                    if (Shadow::BeginTabItem("BeginTabItem 4")) {
-                        for (int i = 1; i < 100; i++) {
-                            Shadow::PushID(i);
-                            Shadow::Button("test4" + std::to_string(i));
-                            Shadow::PopID();
-                        }
-                    }
-                    Shadow::EndTabItem();
-
-                    if (Shadow::BeginTabItem("BeginTabItem 5")) {
-                        for (int i = 1; i < 100; i++) {
-                            Shadow::PushID(i);
-                            Shadow::Button("test5" + std::to_string(i));
-                            Shadow::PopID();
-                        }
-                    }
-                    Shadow::EndTabItem();
-
-                    if (Shadow::BeginTabItem("BeginTabItem 6")) {
-                        for (int i = 1; i < 100; i++) {
-                            Shadow::PushID(i);
-                            Shadow::Button("test6" + std::to_string(i));
-                            Shadow::PopID();
-                        }
-                    }
-                    Shadow::EndTabItem();
-                }
-                Shadow::EndTabBar();
-            }
-            Shadow::End();
-
-            if (Shadow::Begin("Begin 2")) {
-                if (Shadow::BeginTabBar("BeginTabBar 2")) {
-                    // if (Shadow::BeginTabItem("BeginTabItem 2")) {
-                        for (int i = 1; i < 100; i++) {
-                            Shadow::PushID(i);
-                            Shadow::Button("test" + std::to_string(i));
-                            Shadow::PopID();
-                        }
-                    // }
-                    // Shadow::EndTabItem();
-                }
-                Shadow::EndTabBar();
-            }
-            Shadow::End();
-
-            if (Shadow::Begin("Begin 3")) {
-                // if (Shadow::BeginTabBar("BeginTabBar 3")) {
-                    // if (Shadow::BeginTabItem("BeginTabItem 3")) {
-                    for (int i = 1; i < 100; i++) {
-                        Shadow::PushID(i);
-                        Shadow::Button("test" + std::to_string(i));
-                        Shadow::PopID();
-                    }
-                    // }
-                    // Shadow::EndTabItem();
-                // }
-                // Shadow::EndTabBar();
-            }
-            Shadow::End();
-
             Shadow::ShowDemoWindow();
             Shadow::PopTextPixelSnap();
-
-            Shadow::ShadowDrawList* drawlist = Shadow::GetBackgroundDrawList();
-
-            drawlist->ChannelsSplit(4);
-
-            drawlist->SetChannel(Shadow::Channel_Midground); // 1
-            drawlist->AddRectFilled({ 10.f, 0.f }, { 50.f, 50.f }, { 0.1f, 0.1f, 0.1f, 1.f });
-
-            drawlist->SetChannel(3);                        // 3
-            drawlist->AddRectFilled({ 30.f, 0.f }, { 50.f, 50.f }, { 0.3f, 0.3f, 0.3f, 1.f });
-
-            drawlist->SetChannel(Shadow::Channel_Foreground); // 2
-            drawlist->AddRectFilled({ 20.f, 0.f }, { 50.f, 50.f }, { 0.2f, 0.2f, 0.2f, 1.f });
-
-            drawlist->SetChannel(Shadow::Channel_Background); // 0
-            drawlist->AddRectFilled({ 0.f, 0.f }, { 50.f, 50.f }, { 0.f, 0.f, 0.f, 1.f });
-
-            drawlist->ChannelsMerge();
+            Shadow::PopFont();
 
             // Shadow::PopFont();
 

@@ -419,6 +419,7 @@ namespace Shadow {
         GuiStyleVar_CPSpacing,
         GuiStyleVar_WindowMinSize,
         GuiStyleVar_FontScaleDpi,
+        GuiStyleVar_IndentSpacing,
 
         GuiStyleVar_COUNT
     };
@@ -581,6 +582,9 @@ namespace Shadow {
         float WindowScrollBottomPadding = 4.f;      // 窗口滚动区域底部额外留白
         float WindowScrollMinViewHeight = 10.f;     // 窗口滚动区域最小可视高度
         float DefaultItemHeight = 20.f;             // 未测量到字体时的默认控件高度
+
+        // Indent
+        float IndentSpacing = 20.f;                 // 默认缩进间距
 
         // TreeNode
         float TreeNodeArrowSizeRatio = 0.55f;
@@ -2540,6 +2544,10 @@ namespace Shadow {
             g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.FontScaleDpi);
             g_Ctx.Style.FontScaleDpi = val;
             break;
+        case GuiStyleVar_IndentSpacing:
+            g_Ctx.StyleVarStack.emplace_back(idx, g_Ctx.Style.IndentSpacing);
+            g_Ctx.Style.IndentSpacing = val;
+            break;
         default:
             break;
         }
@@ -2621,6 +2629,9 @@ namespace Shadow {
                 break;
             case GuiStyleVar_FontScaleDpi:
                 g_Ctx.Style.FontScaleDpi = mod.BackupFloat;
+                break;
+            case GuiStyleVar_IndentSpacing:
+                g_Ctx.Style.IndentSpacing = mod.BackupFloat;
                 break;
             default:
                 break;
@@ -3323,6 +3334,20 @@ namespace Shadow {
             g_Ctx.IndentX = std::max(0.f, g_Ctx.IndentX - g_Ctx.Style.TreeNodeIndent);
         }
 
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+    }
+
+    inline void Indent(float indent_w = 0.0f) {
+        if (!g_Ctx.InActiveTab) return;
+        float actual_indent = (indent_w > 0.0f) ? indent_w : g_Ctx.Style.IndentSpacing;
+        g_Ctx.IndentX += actual_indent;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+    }
+
+    inline void Unindent(float indent_w = 0.0f) {
+        if (!g_Ctx.InActiveTab) return;
+        float actual_indent = (indent_w > 0.0f) ? indent_w : g_Ctx.Style.IndentSpacing;
+        g_Ctx.IndentX = std::max(0.f, g_Ctx.IndentX - actual_indent);
         g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
     }
 

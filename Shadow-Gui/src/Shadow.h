@@ -2248,7 +2248,7 @@ namespace Shadow {
         }
     }
 
-    inline Vec2 MeasureTextSize(std::string_view text) {
+    inline Vec2 MeasureTextSize(std::wstring_view text) {
         SDK::UFont* font = g_Ctx.DefaultFont;
         float scaleVal = 1.0f;
         bool noSDF = false;
@@ -2263,33 +2263,22 @@ namespace Shadow {
 
         SDK::FVector2D scale{ fontGuard.CalculatedScale, fontGuard.CalculatedScale };
 
-        std::wstring wstr = ToWString(text);
+        std::wstring wstr(text);
         SDK::FVector2D size = g_Ctx.Canvas->K2_TextSize(font, SDK::FString(wstr.c_str()), scale);
         return { static_cast<float>(size.X), static_cast<float>(size.Y) };
     }
 
+    inline Vec2 MeasureTextSize(std::string_view text) {
+        return MeasureTextSize(ToWString(text));
+    }
+
     inline float MeasureCharWidth(wchar_t ch) {
-        SDK::UFont* font = g_Ctx.DefaultFont;
-        float scaleVal = 1.0f;
-        bool noSDF = false;
-        if (!g_Ctx.FontStack.empty()) {
-            font = g_Ctx.FontStack.back().Font;
-            scaleVal = g_Ctx.FontStack.back().Scale;
-            noSDF = g_Ctx.FontStack.back().NoSDF;
-        }
-        if (!g_Ctx.Canvas || !font) return 0.f;
-
-        ScopedFontScale fontGuard(font, scaleVal, noSDF);
-
-        SDK::FVector2D scale{ fontGuard.CalculatedScale, fontGuard.CalculatedScale };
-
-        std::wstring single(1, ch);
-        SDK::FVector2D size = g_Ctx.Canvas->K2_TextSize(font, SDK::FString(single.c_str()), scale);
-        return static_cast<float>(size.X);
+        return MeasureTextSize(std::wstring_view(&ch, 1)).x;
     }
 
     inline float MeasureTextHeight(std::string_view text) {
-        if (!g_Ctx.Canvas || !g_Ctx.DefaultFont || text.empty()) return 0.f;
+        if (text.empty()) return 0.f;
+
         Vec2 size = MeasureTextSize(text);
         return size.y;
     }

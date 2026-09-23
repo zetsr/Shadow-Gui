@@ -5010,7 +5010,7 @@ namespace Shadow {
         float scrollbarReserve = needsScrollbar ? (g_Ctx.Style.ScrollbarSize + g_Ctx.Style.TabBarScrollbarReserve) : 0.f;
         g_Ctx.Cursor.y += scrollbarReserve;
 
-        GetWindowDrawList()->AddRect({ g_Ctx.WindowPos.x, g_Ctx.Cursor.y }, { g_Ctx.WindowSize.x, g_Ctx.Style.TabBarSeparatorHeight }, g_Ctx.Style.Colors[GuiCol_Separator]);
+        GetWindowDrawList()->AddLine({ g_Ctx.WindowPos.x, g_Ctx.Cursor.y }, { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.Cursor.y }, g_Ctx.Style.Colors[GuiCol_Separator], g_Ctx.Style.TabBarSeparatorHeight);
         g_Ctx.Cursor.y += g_Ctx.Style.TabBarSeparatorHeight + g_Ctx.Style.WindowPadding.y;
 
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;

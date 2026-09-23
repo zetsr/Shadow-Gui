@@ -972,7 +972,7 @@ namespace Shadow {
 
                 bool hexChanged = InputTextEx(hexId, hexPos, hexSize, g_Ctx.InputBuffers[hexId], ShadowInputTextFlags_CharsHexadecimal | ShadowInputTextFlags_CharsUppercase, true);
                 if (hexChanged) {
-                    ApplyHexInput(GetID("##HexInput"));
+                    ApplyHexInput(hexId);
                 }
 
                 // 指示器光标

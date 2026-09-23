@@ -2326,28 +2326,23 @@ namespace Shadow {
         }
     }
 
-    inline size_t GetID(std::string_view str_id) {
-        size_t id = HashString(str_id);
+    inline size_t MixID(size_t id) {
         if (!g_Ctx.IDStack.empty()) {
             id ^= g_Ctx.IDStack.back() + 0x9e3779b9 + (id << 6) + (id >> 2);
         }
         return id;
+    }
+
+    inline size_t GetID(std::string_view str_id) {
+        return MixID(HashString(str_id));
     }
 
     inline size_t GetID(int int_id) {
-        size_t id = std::hash<int>()(int_id);
-        if (!g_Ctx.IDStack.empty()) {
-            id ^= g_Ctx.IDStack.back() + 0x9e3779b9 + (id << 6) + (id >> 2);
-        }
-        return id;
+        return MixID(std::hash<int>()(int_id));
     }
 
     inline size_t GetID(const void* ptr_id) {
-        size_t id = std::hash<const void*>()(ptr_id);
-        if (!g_Ctx.IDStack.empty()) {
-            id ^= g_Ctx.IDStack.back() + 0x9e3779b9 + (id << 6) + (id >> 2);
-        }
-        return id;
+        return MixID(std::hash<const void*>()(ptr_id));
     }
 
     inline void PushID(int int_id) {

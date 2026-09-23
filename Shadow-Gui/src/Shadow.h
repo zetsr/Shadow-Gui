@@ -1773,50 +1773,28 @@ namespace Shadow {
         g_Ctx.KeyPressTime[vk] = 0.0;
     }
 
-    inline constexpr std::array<int, 256> HEX_TABLE = []() constexpr {
-        std::array<int, 256> table{};
-        table.fill(-1);
-        for (int i = 0; i < 10; ++i) {
-            table['0' + i] = i;
-        }
-        for (int i = 0; i < 6; ++i) {
-            table['A' + i] = 10 + i;
-            table['a' + i] = 10 + i;
-        }
-        return table;
-        }();
-
     inline void ApplyHexInput(size_t hexId) {
         auto it = g_Ctx.InputBuffers.find(hexId);
         if (it == g_Ctx.InputBuffers.end()) return;
-        std::string_view hex = it->second;
+        const std::string& hex = it->second;
 
         if (hex.size() < 6) return;
-        hex = hex.substr(0, std::min(hex.size(), size_t(8)));
 
-        auto hexDigits = hex | std::views::transform([](char c) {
-            return HEX_TABLE[static_cast<unsigned char>(c)];
-            });
-
-        if (std::ranges::any_of(hexDigits, [](int v) { return v < 0; })) {
-            return;
+        uint8_t rgba[4] = { 0, 0, 0, 255 };
+        size_t count = std::min(hex.size() / 2, size_t(4));
+        for (size_t i = 0; i < count; ++i) {
+            uint8_t val = 0;
+            auto [ptr, ec] = std::from_chars(hex.data() + i * 2, hex.data() + i * 2 + 2, val, 16);
+            if (ec != std::errc() || ptr != hex.data() + i * 2 + 2) {
+                return;
+            }
+            rgba[i] = val;
         }
 
-        std::array<int, 4> rgba{};
-        for (size_t i = 0; i < 4 && i * 2 + 1 < hex.size(); ++i) {
-            int high = HEX_TABLE[static_cast<unsigned char>(hex[i * 2])];
-            int low = HEX_TABLE[static_cast<unsigned char>(hex[i * 2 + 1])];
-            rgba[i] = (high << 4) | low;
-        }
-
-        if (hex.size() < 8) rgba[3] = 255;
-
-        auto [r, g, b, a] = rgba;
-
-        *g_Ctx.ColorPickerR = r / 255.f;
-        *g_Ctx.ColorPickerG = g / 255.f;
-        *g_Ctx.ColorPickerB = b / 255.f;
-        if (g_Ctx.ColorPickerA) *g_Ctx.ColorPickerA = a / 255.f;
+        *g_Ctx.ColorPickerR = rgba[0] / 255.f;
+        *g_Ctx.ColorPickerG = rgba[1] / 255.f;
+        *g_Ctx.ColorPickerB = rgba[2] / 255.f;
+        if (g_Ctx.ColorPickerA) *g_Ctx.ColorPickerA = rgba[3] / 255.f;
 
         RGBtoHSV(*g_Ctx.ColorPickerR, *g_Ctx.ColorPickerG, *g_Ctx.ColorPickerB,
             g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV);

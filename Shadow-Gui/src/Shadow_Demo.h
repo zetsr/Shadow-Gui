@@ -119,6 +119,63 @@ namespace Shadow {
                     }
                     Shadow::TreePop();
 
+                    if (Shadow::TreeNode("Images & Image Buttons")) {
+                        SDK::UTexture2D* demoTex = Shadow::LoadTextureFromBuffer(Shadow_Titlebar::Logo, sizeof(Shadow_Titlebar::Logo));
+
+                        // 1. Shadow::Image 基础与不同参数用法演示
+                        Shadow::Text("Shadow::Image");
+
+                        // 基础默认颜色与尺寸
+                        Shadow::Image(demoTex, { 48.f, 48.f });
+                        Shadow::HelpMarker("Shadow::Image rendered with default full-white tint color.");
+
+                        // 自定义着色 / 滤镜
+                        Shadow::SameLine();
+                        Shadow::Image(demoTex, { 48.f, 48.f }, { 1.f, 0.4f, 0.4f, 1.f });
+                        Shadow::HelpMarker("Shadow::Image rendered with custom red color tint.");
+
+                        Shadow::SameLine();
+                        Shadow::Image(demoTex, { 48.f, 48.f }, { 0.4f, 0.8f, 1.f, 0.6f });
+                        Shadow::HelpMarker("Shadow::Image rendered with semi-transparent cyan tint.");
+
+                        // 禁用状态下的 Image
+                        Shadow::BeginDisabled(true);
+                        Shadow::SameLine();
+                        Shadow::Image(demoTex, { 48.f, 48.f });
+                        Shadow::EndDisabled();
+                        Shadow::HelpMarker("Shadow::Image rendered inside BeginDisabled() block (auto opacity scaled).");
+
+                        Shadow::Separator();
+
+                        // 2. Shadow::ImageButton 各种交互与排布演示
+                        Shadow::Text("Shadow::ImageButton Demos");
+
+                        static int img_btn_click_count = 0;
+                        if (Shadow::ImageButton("BasicImageBtn##1", demoTex, { 32.f, 32.f })) {
+                            img_btn_click_count++;
+                        }
+                        Shadow::HelpMarker("Standard ImageButton. Click to increment counter.");
+                        Shadow::SameLine();
+                        Shadow::Text(std::format("Clicked: {} times", img_btn_click_count));
+
+                        // 横向排布与不同尺寸的 ImageButton
+                        Shadow::Text("Horizontal Toolbar of ImageButtons:");
+                        for (int i = 0; i < 3; ++i) {
+                            if (Shadow::ImageButton(std::format("ToolbarBtn_{}##Tool", i), demoTex, { 28.f, 28.f })) {
+                                // Toolbar button click action
+                            }
+                            if (i < 2) Shadow::SameLine();
+                        }
+                        Shadow::HelpMarker("Multiple ImageButtons packed horizontally using SameLine().");
+
+                        // 禁用状态下的 ImageButton
+                        Shadow::BeginDisabled(true);
+                        Shadow::ImageButton("DisabledImageBtn##Dis", demoTex, { 32.f, 32.f });
+                        Shadow::EndDisabled();
+                        Shadow::HelpMarker("Shadow::ImageButton rendered inside BeginDisabled() block.");
+                    }
+                    Shadow::TreePop();
+
                     if (Shadow::TreeNode("Selectables & Combos")) {
                         static bool sel1 = false, sel2 = true;
                         Shadow::Selectable("Selectable 1", &sel1);
@@ -397,7 +454,7 @@ namespace Shadow {
                         Shadow::HelpMarker("Separator() line above.");
 
                         // NewLine 完整功能演示
-                        Shadow::Text("--- NewLine() Demos ---");
+                        Shadow::Text("NewLine()");
 
                         // 1. 物理空行（模拟按 Enter 键留出完整单行文本高度）
                         Shadow::Text("Line 1: Normal paragraph line.");
@@ -436,7 +493,7 @@ namespace Shadow {
                         Shadow::Separator();
 
                         // Indent & Unindent 完整功能演示
-                        Shadow::Text("--- Indent & Unindent Demo ---");
+                        Shadow::Text("Indent & Unindent");
 
                         // 1. 默认参数缩进与恢复
                         Shadow::Text("Unindented text");

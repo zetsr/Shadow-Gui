@@ -6099,6 +6099,70 @@ namespace Shadow {
         return clicked;
     }
 
+    inline void Image(SDK::UTexture* texture, Vec2 size, Color color = { 1.f, 1.f, 1.f, 1.f }) {
+        if (!g_Ctx.InActiveTab) return;
+        g_Ctx.WidgetCount++;
+
+        bool disabled = IsDisabled();
+
+        if (!IsRectVisible(g_Ctx.Cursor, size)) {
+            SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, ++g_Ctx.WidgetCount, disabled);
+            g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
+            g_Ctx.Cursor.y += size.y + g_Ctx.Style.ItemSpacing.y;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            return;
+        }
+
+        Color drawColor = color;
+        if (disabled) {
+            drawColor.a *= g_Ctx.Style.DisabledAlpha;
+        }
+
+        GetWindowDrawList()->AddTexture(g_Ctx.Cursor, size, drawColor, texture);
+
+        SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, ++g_Ctx.WidgetCount, disabled);
+        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
+        g_Ctx.Cursor.y += size.y + g_Ctx.Style.ItemSpacing.y;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+    }
+
+    inline bool ImageButton(std::string_view name, SDK::UTexture* texture, Vec2 size) {
+        if (!g_Ctx.InActiveTab) return false;
+        std::string_view display; size_t id; ParseLabel(name, display, id);
+        g_Ctx.WidgetCount++;
+
+        Vec2 btnSize = { size.x > 0.f ? size.x : g_Ctx.ItemHeight, size.y > 0.f ? size.y : g_Ctx.ItemHeight };
+        bool disabled = IsDisabled();
+
+        if (!IsRectVisible(g_Ctx.Cursor, btnSize)) {
+            SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + btnSize.x, g_Ctx.Cursor.y + btnSize.y }, id, disabled);
+            g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + btnSize.x;
+            g_Ctx.Cursor.y += btnSize.y + g_Ctx.Style.ItemSpacing.y;
+            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            return false;
+        }
+
+        bool hovered = !disabled && IsMouseHovering(g_Ctx.Cursor, btnSize);
+        bool clicked = hovered && g_Ctx.MouseClicked;
+
+        if (hovered && g_Ctx.MouseDown) {
+            g_Ctx.ActiveId = id;
+        }
+
+        Color bgColor = disabled ? g_Ctx.Style.Colors[GuiCol_ControlDisabled] : (hovered ? g_Ctx.Style.Colors[GuiCol_ButtonHovered] : g_Ctx.Style.Colors[GuiCol_Button]);
+        Color tintColor = { 1.f, 1.f, 1.f, disabled ? g_Ctx.Style.DisabledAlpha : 1.f };
+
+        GetWindowDrawList()->AddRectFilled(g_Ctx.Cursor, btnSize, bgColor);
+        GetWindowDrawList()->AddTexture(g_Ctx.Cursor, btnSize, tintColor, texture);
+
+        SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + btnSize.x, g_Ctx.Cursor.y + btnSize.y }, id, disabled);
+        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + btnSize.x;
+        g_Ctx.Cursor.y += btnSize.y + g_Ctx.Style.ItemSpacing.y;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+
+        return clicked;
+    }
+
     inline void Slider(std::string_view name, float* value, float min_val, float max_val, float step = 0.f, ShadowSliderFlags flags = ShadowSliderFlags_None, Vec2 size_arg = { 0.f, 0.f }) {
         if (!g_Ctx.InActiveTab) return;
         std::string_view display; size_t id; ParseLabel(name, display, id);

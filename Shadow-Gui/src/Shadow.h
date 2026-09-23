@@ -2898,6 +2898,25 @@ namespace Shadow {
         }
     }
 
+    inline void ItemSize(Vec2 min, Vec2 max) {
+        g_Ctx.LastItemMaxX = max.x;
+        SetCursorPosY(GetCursorPosY() + (max.y - min.y) + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
+    }
+
+    inline void ItemSize(Vec2 size) {
+        ItemSize(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y });
+    }
+
+    inline bool ItemAdd(Vec2 min, Vec2 max, size_t id, bool disabled = false) {
+        SetLastItemInfo(min, max, id, disabled);
+        return IsRectVisible(min, { max.x - min.x, max.y - min.y });
+    }
+
+    inline bool ItemAdd(Vec2 size, size_t id, bool disabled = false) {
+        return ItemAdd(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, id, disabled);
+    }
+
     inline bool IsItemActive() {
         if (g_Ctx.LastItemId == 0) return false;
         return g_Ctx.ActiveId == g_Ctx.LastItemId;
@@ -3214,19 +3233,21 @@ namespace Shadow {
         if (size_arg.x > 0.f) interactSize.x = size_arg.x;
 
         bool disabled = IsDisabled();
+        Vec2 pos = g_Ctx.Cursor;
+        Vec2 min = pos;
+        Vec2 max = { pos.x + interactSize.x, pos.y + itemHeight };
 
-        if (!IsRectVisible(g_Ctx.Cursor, interactSize)) {
-            SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-            g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
-            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-            if (!noIndent) {
-                g_Ctx.IndentX += g_Ctx.Style.TreeNodeIndent;
-            }
+        ItemSize(min, max);
+        if (!noIndent) {
+            g_Ctx.IndentX += g_Ctx.Style.TreeNodeIndent;
             SetCursorPosX(g_Ctx.IndentX);
+        }
+
+        if (!ItemAdd(min, max, id, disabled)) {
             return isOpen;
         }
 
-        bool hovered = !disabled && IsMouseHovering(g_Ctx.Cursor, interactSize);
+        bool hovered = !disabled && IsMouseHovering(pos, interactSize);
         if (hovered && g_Ctx.MouseDown) {
             g_Ctx.ActiveId = id;
         }
@@ -3246,11 +3267,11 @@ namespace Shadow {
 
         if (isFramed) {
             Color bgColor = disabled ? g_Ctx.Style.Colors[GuiCol_ControlDisabled] : (hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
-            GetWindowDrawList()->AddRectFilled(g_Ctx.Cursor, interactSize, bgColor);
+            GetWindowDrawList()->AddRectFilled(pos, interactSize, bgColor);
         }
 
-        float centerY = g_Ctx.Cursor.y + itemHeight * 0.5f;
-        float arrowX = g_Ctx.Cursor.x + (isFramed ? g_Ctx.Style.FramePadding.x : 0.f);
+        float centerY = pos.y + itemHeight * 0.5f;
+        float arrowX = pos.x + (isFramed ? g_Ctx.Style.FramePadding.x : 0.f);
 
         if (isOpen) {
             Vec2 p1 = { arrowX, centerY - arrowSize * 0.25f };
@@ -3266,16 +3287,7 @@ namespace Shadow {
         }
 
         float textStartX = std::round(arrowX + arrowSize + g_Ctx.Style.TreeNodeTextSpacing);
-        GetWindowDrawList()->AddText({ textStartX, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
-
-        SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
-
-        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-        if (!noIndent) {
-            g_Ctx.IndentX += g_Ctx.Style.TreeNodeIndent;
-        }
-        SetCursorPosX(g_Ctx.IndentX);
+        GetWindowDrawList()->AddText({ textStartX, pos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
 
         return isOpen;
     }
@@ -4136,17 +4148,16 @@ namespace Shadow {
         float itemHeight = size_arg.y > 0.f ? size_arg.y : g_Ctx.ItemHeight;
 
         bool disabled = IsDisabled();
+        Vec2 pos = g_Ctx.Cursor;
+        Vec2 min = pos;
+        Vec2 max = { pos.x + itemWidth, pos.y + itemHeight };
 
-        if (!IsRectVisible(g_Ctx.Cursor, { itemWidth, itemHeight })) {
-            SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + itemWidth, g_Ctx.Cursor.y + itemHeight }, ++g_Ctx.WidgetCount, disabled);
-            g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + itemWidth;
-            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-            SetCursorPosX(g_Ctx.IndentX);
+        ItemSize(min, max);
+        if (!ItemAdd(min, max, ++g_Ctx.WidgetCount, disabled)) {
             return;
         }
 
         Color drawColor;
-
         if (disabled) {
             Color disabledColor = g_Ctx.Style.Colors[GuiCol_TextDisabled];
             drawColor = { disabledColor.r, disabledColor.g, disabledColor.b, disabledColor.a * color.a };
@@ -4156,12 +4167,7 @@ namespace Shadow {
             drawColor = { color.r, color.g, color.b, color.a * textColor.a };
         }
 
-        GetWindowDrawList()->AddText({ g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, drawColor, text);
-
-        SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + itemWidth, g_Ctx.Cursor.y + itemHeight }, ++g_Ctx.WidgetCount, disabled);
-        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + itemWidth;
-        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
+        GetWindowDrawList()->AddText({ pos.x, pos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, drawColor, text);
     }
 
     inline void TextWrapped(Color color, std::string_view text, Vec2 size_arg = { 0.f, 0.f }) {
@@ -4312,28 +4318,27 @@ namespace Shadow {
         float y = g_Ctx.Cursor.y + itemHeight * 0.5f;
         float x2 = size_arg.x > 0.f ? (g_Ctx.Cursor.x + size_arg.x) : (g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - GetRightMargin());
 
-        if (IsRectVisible({ x1, g_Ctx.Cursor.y }, { x2 - x1, itemHeight })) {
-            GetWindowDrawList()->AddLine({ x1, y }, { x2, y }, g_Ctx.Style.Colors[GuiCol_Separator], g_Ctx.Style.SeparatorThickness);
-        }
+        Vec2 min = { x1, g_Ctx.Cursor.y };
+        Vec2 max = { x2, g_Ctx.Cursor.y + itemHeight };
 
-        SetLastItemInfo({ x1, g_Ctx.Cursor.y }, { x2, g_Ctx.Cursor.y + itemHeight }, ++g_Ctx.WidgetCount, false);
-
+        ItemSize(min, max);
         if (size_arg.x > 0.f) {
             g_Ctx.LastItemMaxX = std::max(g_Ctx.LastItemMaxX, x2);
         }
 
-        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
+        if (ItemAdd(min, max, ++g_Ctx.WidgetCount, false)) {
+            GetWindowDrawList()->AddLine({ x1, y }, { x2, y }, g_Ctx.Style.Colors[GuiCol_Separator], g_Ctx.Style.SeparatorThickness);
+        }
     }
 
     inline void Dummy(Vec2 size) {
         if (!g_Ctx.InActiveTab) return;
 
-        SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, ++g_Ctx.WidgetCount, false);
-        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
+        Vec2 min = g_Ctx.Cursor;
+        Vec2 max = { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y };
 
-        SetCursorPosY(GetCursorPosY() + size.y + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
+        ItemSize(min, max);
+        ItemAdd(min, max, ++g_Ctx.WidgetCount, false);
     }
 
     inline void Text(std::string_view text, Vec2 size_arg = { 0.f, 0.f }) {
@@ -4344,23 +4349,18 @@ namespace Shadow {
         float itemHeight = size_arg.y > 0.f ? size_arg.y : g_Ctx.ItemHeight;
 
         bool disabled = IsDisabled();
+        Vec2 pos = g_Ctx.Cursor;
+        Vec2 min = pos;
+        Vec2 max = { pos.x + itemWidth, pos.y + itemHeight };
 
-        if (!IsRectVisible(g_Ctx.Cursor, { itemWidth, itemHeight })) {
-            SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + itemWidth, g_Ctx.Cursor.y + itemHeight }, ++g_Ctx.WidgetCount, disabled);
-            g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + itemWidth;
-            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-            SetCursorPosX(g_Ctx.IndentX);
+        ItemSize(min, max);
+        if (!ItemAdd(min, max, ++g_Ctx.WidgetCount, disabled)) {
             return;
         }
 
         Color drawColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
 
-        GetWindowDrawList()->AddText({ g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, drawColor, text);
-
-        SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + itemWidth, g_Ctx.Cursor.y + itemHeight }, ++g_Ctx.WidgetCount, disabled);
-        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + itemWidth;
-        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
+        GetWindowDrawList()->AddText({ pos.x, pos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, drawColor, text);
     }
 
     inline void TextDisabled(std::string_view text, Vec2 size_arg = { 0.f, 0.f }) {
@@ -4370,21 +4370,17 @@ namespace Shadow {
         float itemWidth = size_arg.x > 0.f ? size_arg.x : size.x;
         float itemHeight = size_arg.y > 0.f ? size_arg.y : g_Ctx.ItemHeight;
 
-        if (!IsRectVisible(g_Ctx.Cursor, { itemWidth, itemHeight })) {
-            SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + itemWidth, g_Ctx.Cursor.y + itemHeight }, ++g_Ctx.WidgetCount, true);
-            g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + itemWidth;
-            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-            SetCursorPosX(g_Ctx.IndentX);
+        Vec2 pos = g_Ctx.Cursor;
+        Vec2 min = pos;
+        Vec2 max = { pos.x + itemWidth, pos.y + itemHeight };
+
+        ItemSize(min, max);
+        if (!ItemAdd(min, max, ++g_Ctx.WidgetCount, true)) {
             return;
         }
 
         Color drawColor = g_Ctx.Style.Colors[GuiCol_TextDisabled];
-        GetWindowDrawList()->AddText({ g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, drawColor, text);
-
-        SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + itemWidth, g_Ctx.Cursor.y + itemHeight }, ++g_Ctx.WidgetCount, true);
-        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + itemWidth;
-        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
+        GetWindowDrawList()->AddText({ pos.x, pos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, drawColor, text);
     }
 
     inline void NewFrame(SDK::UCanvas* Canvas) {
@@ -5602,26 +5598,26 @@ namespace Shadow {
             }
         }
 
+        Vec2 pos = g_Ctx.Cursor;
         Vec2 boxPos;
         if (noRightAlign) {
-            boxPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + g_Ctx.Style.LabelSpacing), g_Ctx.Cursor.y };
+            boxPos = { pos.x + (noText ? 0.f : textWidth + g_Ctx.Style.LabelSpacing), pos.y };
         }
         else {
             if (fitText) {
-                boxPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - boxWidth, g_Ctx.Cursor.y };
+                boxPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - boxWidth, pos.y };
             }
             else {
-                boxPos = { g_Ctx.WindowPos.x + controlOffsetX, g_Ctx.Cursor.y };
+                boxPos = { g_Ctx.WindowPos.x + controlOffsetX, pos.y };
             }
         }
 
         Vec2 boxSize = { boxWidth, itemHeight };
+        Vec2 min = { std::min(pos.x, boxPos.x), pos.y };
+        Vec2 max = { boxPos.x + boxSize.x, pos.y + itemHeight };
 
-        if (!IsRectVisible(g_Ctx.Cursor, { boxPos.x + boxSize.x - g_Ctx.Cursor.x, itemHeight })) {
-            SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-            g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
-            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-            SetCursorPosX(g_Ctx.IndentX);
+        ItemSize(min, max);
+        if (!ItemAdd(min, max, id, disabled)) {
             PopID();
             return false;
         }
@@ -5629,7 +5625,7 @@ namespace Shadow {
         Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
 
         if (!noText) {
-            GetWindowDrawList()->AddText({ g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
+            GetWindowDrawList()->AddText({ pos.x, pos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
         }
 
         bool hovered = !disabled && IsMouseHovering(boxPos, boxSize);
@@ -5698,12 +5694,6 @@ namespace Shadow {
         PopStyleVar();
 
         PopID();
-
-        SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-        g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
-        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
-
         return toggled;
     }
 
@@ -5718,16 +5708,16 @@ namespace Shadow {
         Vec2 interactSize = { boxSize.x + g_Ctx.Style.LabelSpacing + textWidth, itemHeight };
 
         bool disabled = IsDisabled();
+        Vec2 pos = g_Ctx.Cursor;
+        Vec2 min = pos;
+        Vec2 max = { pos.x + interactSize.x, pos.y + itemHeight };
 
-        if (!IsRectVisible(g_Ctx.Cursor, interactSize)) {
-            SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-            g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
-            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-            SetCursorPosX(g_Ctx.IndentX);
+        ItemSize(min, max);
+        if (!ItemAdd(min, max, id, disabled)) {
             return false;
         }
 
-        bool hovered = !disabled && IsMouseHovering(g_Ctx.Cursor, interactSize);
+        bool hovered = !disabled && IsMouseHovering(pos, interactSize);
 
         if (hovered && g_Ctx.MouseDown) {
             g_Ctx.ActiveId = id;
@@ -5738,22 +5728,17 @@ namespace Shadow {
         }
 
         Color bgColor = disabled ? g_Ctx.Style.Colors[GuiCol_ControlDisabled] : (hovered ? g_Ctx.Style.Colors[GuiCol_FrameBgHovered] : g_Ctx.Style.Colors[GuiCol_FrameBg]);
-        GetWindowDrawList()->AddRectFilled(g_Ctx.Cursor, boxSize, bgColor);
+        GetWindowDrawList()->AddRectFilled(pos, boxSize, bgColor);
 
         if (*value) {
             float checkPad = boxSize.x * g_Ctx.Style.CheckboxCheckPaddingRatio;
             Color checkCol = g_Ctx.Style.Colors[GuiCol_CheckMark];
             if (disabled) checkCol.a *= 0.5f;
-            GetWindowDrawList()->AddRectFilled({ g_Ctx.Cursor.x + checkPad, g_Ctx.Cursor.y + checkPad }, { boxSize.x - checkPad * 2.f, boxSize.y - checkPad * 2.f }, checkCol);
+            GetWindowDrawList()->AddRectFilled({ pos.x + checkPad, pos.y + checkPad }, { boxSize.x - checkPad * 2.f, boxSize.y - checkPad * 2.f }, checkCol);
         }
 
         Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
-        GetWindowDrawList()->AddText({ g_Ctx.Cursor.x + boxSize.x + g_Ctx.Style.LabelSpacing, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
-
-        SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
-        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
+        GetWindowDrawList()->AddText({ pos.x + boxSize.x + g_Ctx.Style.LabelSpacing, pos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
 
         return *value;
     }
@@ -5772,23 +5757,23 @@ namespace Shadow {
         Vec2 interactSize = { textWidth + g_Ctx.Style.LabelSpacing + boxSize.x, itemHeight };
 
         bool disabled = IsDisabled();
+        Vec2 pos = g_Ctx.Cursor;
+        Vec2 min = pos;
+        Vec2 max = { pos.x + interactSize.x, pos.y + itemHeight };
 
-        if (!IsRectVisible(g_Ctx.Cursor, interactSize)) {
-            SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-            g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
-            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-            SetCursorPosX(g_Ctx.IndentX);
+        ItemSize(min, max);
+        if (!ItemAdd(min, max, id, disabled)) {
             return false;
         }
 
-        bool hovered = !disabled && IsMouseHovering(g_Ctx.Cursor, interactSize);
+        bool hovered = !disabled && IsMouseHovering(pos, interactSize);
         if (hovered && g_Ctx.MouseDown) { g_Ctx.ActiveId = id; }
         if (hovered && g_Ctx.MouseClicked) { *value = !(*value); }
 
         Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
-        GetWindowDrawList()->AddText({ g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
+        GetWindowDrawList()->AddText({ pos.x, pos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
 
-        Vec2 boxPos = { g_Ctx.Cursor.x + textWidth + g_Ctx.Style.LabelSpacing, g_Ctx.Cursor.y };
+        Vec2 boxPos = { pos.x + textWidth + g_Ctx.Style.LabelSpacing, pos.y };
 
         Color bgColor;
         if (disabled) {
@@ -5811,11 +5796,6 @@ namespace Shadow {
         float knobX = *value ? (boxPos.x + width - padding - knobSize) : (boxPos.x + padding);
         GetWindowDrawList()->AddRectFilled({ knobX, boxPos.y + padding }, { knobSize, knobSize }, knobColor);
 
-        SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
-        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
-
         return *value;
     }
 
@@ -5830,16 +5810,16 @@ namespace Shadow {
         Vec2 size = { width, itemHeight };
 
         bool disabled = IsDisabled();
+        Vec2 pos = g_Ctx.Cursor;
+        Vec2 min = pos;
+        Vec2 max = { pos.x + size.x, pos.y + size.y };
 
-        if (!IsRectVisible(g_Ctx.Cursor, size)) {
-            SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, id, disabled);
-            g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
-            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-            SetCursorPosX(g_Ctx.IndentX);
+        ItemSize(min, max);
+        if (!ItemAdd(min, max, id, disabled)) {
             return false;
         }
 
-        bool hovered = !disabled && IsMouseHovering(g_Ctx.Cursor, size);
+        bool hovered = !disabled && IsMouseHovering(pos, size);
         if (hovered && g_Ctx.MouseDown) { g_Ctx.ActiveId = id; }
         bool clicked = hovered && g_Ctx.MouseClicked;
 
@@ -5863,16 +5843,11 @@ namespace Shadow {
             if (g_Ctx.InPopup && !g_Ctx.PopupStack.empty() && size_arg.x <= 0.f) {
                 g_Ctx.PopupStack.back().RightAlignCmds.push_back({ GetWindowDrawList()->GetCmdBuffer().size(), RightAlignCmdType::RectBackground });
             }
-            GetWindowDrawList()->AddRectFilled(g_Ctx.Cursor, size, bgColor);
+            GetWindowDrawList()->AddRectFilled(pos, size, bgColor);
         }
 
         Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
-        GetWindowDrawList()->AddText({ g_Ctx.Cursor.x + g_Ctx.Style.FramePadding.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
-
-        SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, id, disabled);
-        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
-        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
+        GetWindowDrawList()->AddText({ pos.x + g_Ctx.Style.FramePadding.x, pos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
 
         return clicked;
     }
@@ -5894,41 +5869,35 @@ namespace Shadow {
         float controlOffsetX = GetControlOffsetX();
         float rightMargin = GetRightMargin();
 
+        Vec2 pos = g_Ctx.Cursor;
         Vec2 boxPos;
         float boxWidth;
 
         if (noName) {
-            boxPos = { g_Ctx.Cursor.x, g_Ctx.Cursor.y };
+            boxPos = pos;
             boxWidth = std::max(g_Ctx.Style.InputTextMinWidth, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - boxPos.x);
         }
         else {
-            boxPos = { g_Ctx.WindowPos.x + controlOffsetX, g_Ctx.Cursor.y };
+            boxPos = { g_Ctx.WindowPos.x + controlOffsetX, pos.y };
             boxWidth = std::max(g_Ctx.Style.InputTextMinWidth, g_Ctx.WindowSize.x - controlOffsetX - rightMargin);
         }
 
         if (size_arg.x > 0.f) boxWidth = size_arg.x;
         Vec2 boxSize = { boxWidth, itemHeight };
+        Vec2 min = { std::min(pos.x, boxPos.x), pos.y };
+        Vec2 max = { boxPos.x + boxSize.x, pos.y + itemHeight };
 
-        if (!IsRectVisible(g_Ctx.Cursor, { boxPos.x + boxWidth - g_Ctx.Cursor.x, itemHeight })) {
-            SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-            g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
-            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-            SetCursorPosX(g_Ctx.IndentX);
+        ItemSize(min, max);
+        if (!ItemAdd(min, max, id, disabled)) {
             return false;
         }
 
         if (!noName) {
             Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
-            GetWindowDrawList()->AddText({ g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
+            GetWindowDrawList()->AddText({ pos.x, pos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
         }
 
         bool changed = InputTextEx(id, boxPos, boxSize, text, flags, false, hint);
-
-        SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-        g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
-        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
-
         return changed;
     }
 
@@ -5949,33 +5918,33 @@ namespace Shadow {
         float controlOffsetX = GetControlOffsetX();
         float rightMargin = GetRightMargin();
 
+        Vec2 pos = g_Ctx.Cursor;
         Vec2 boxPos;
         float boxWidth;
 
         if (noName) {
-            boxPos = { g_Ctx.Cursor.x, g_Ctx.Cursor.y };
+            boxPos = pos;
             boxWidth = std::max(g_Ctx.Style.InputTextMinWidth, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - boxPos.x);
         }
         else {
-            boxPos = { g_Ctx.WindowPos.x + controlOffsetX, g_Ctx.Cursor.y };
+            boxPos = { g_Ctx.WindowPos.x + controlOffsetX, pos.y };
             boxWidth = std::max(g_Ctx.Style.InputTextMinWidth, g_Ctx.WindowSize.x - controlOffsetX - rightMargin);
         }
 
         if (size_arg.x > 0.f) boxWidth = size_arg.x;
         Vec2 boxSize = { boxWidth, itemHeight };
+        Vec2 min = { std::min(pos.x, boxPos.x), pos.y };
+        Vec2 max = { boxPos.x + boxSize.x, pos.y + itemHeight };
 
-        if (!IsRectVisible(g_Ctx.Cursor, { boxPos.x + boxWidth - g_Ctx.Cursor.x, itemHeight })) {
-            SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-            g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
-            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-            SetCursorPosX(g_Ctx.IndentX);
+        ItemSize(min, max);
+        if (!ItemAdd(min, max, id, disabled)) {
             PopID();
             return false;
         }
 
         if (!noName) {
             Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
-            GetWindowDrawList()->AddText({ g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
+            GetWindowDrawList()->AddText({ pos.x, pos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
         }
 
         size_t inputId = GetID("##InputFloatText");
@@ -6015,12 +5984,6 @@ namespace Shadow {
         }
 
         PopID();
-
-        SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-        g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
-        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
-
         return valueChanged;
     }
 
@@ -6037,16 +6000,16 @@ namespace Shadow {
         if (size_arg.y > 0.f) size.y = size_arg.y;
 
         bool disabled = IsDisabled();
+        Vec2 pos = g_Ctx.Cursor;
+        Vec2 min = pos;
+        Vec2 max = { pos.x + size.x, pos.y + size.y };
 
-        if (!IsRectVisible(g_Ctx.Cursor, size)) {
-            SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, id, disabled);
-            g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
-            SetCursorPosY(GetCursorPosY() + size.y + g_Ctx.Style.ItemSpacing.y);
-            SetCursorPosX(g_Ctx.IndentX);
+        ItemSize(min, max);
+        if (!ItemAdd(min, max, id, disabled)) {
             return false;
         }
 
-        bool hovered = !disabled && IsMouseHovering(g_Ctx.Cursor, size);
+        bool hovered = !disabled && IsMouseHovering(pos, size);
         bool clicked = hovered && g_Ctx.MouseClicked;
 
         if (hovered && g_Ctx.MouseDown) {
@@ -6056,13 +6019,9 @@ namespace Shadow {
         Color bgColor = disabled ? g_Ctx.Style.Colors[GuiCol_ControlDisabled] : (hovered ? g_Ctx.Style.Colors[GuiCol_ButtonHovered] : g_Ctx.Style.Colors[GuiCol_Button]);
         Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
 
-        GetWindowDrawList()->AddRectFilled(g_Ctx.Cursor, size, bgColor);
-        GetWindowDrawList()->AddText({ g_Ctx.Cursor.x + g_Ctx.Style.FramePadding.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (size.y - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
+        GetWindowDrawList()->AddRectFilled(pos, size, bgColor);
+        GetWindowDrawList()->AddText({ pos.x + g_Ctx.Style.FramePadding.x, pos.y + g_Ctx.Style.FramePadding.y + (size.y - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
 
-        SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, id, disabled);
-        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
-        SetCursorPosY(GetCursorPosY() + size.y + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
         return clicked;
     }
 
@@ -6071,12 +6030,12 @@ namespace Shadow {
         g_Ctx.WidgetCount++;
 
         bool disabled = IsDisabled();
+        Vec2 pos = g_Ctx.Cursor;
+        Vec2 min = pos;
+        Vec2 max = { pos.x + size.x, pos.y + size.y };
 
-        if (!IsRectVisible(g_Ctx.Cursor, size)) {
-            SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, ++g_Ctx.WidgetCount, disabled);
-            g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
-            SetCursorPosY(GetCursorPosY() + size.y + g_Ctx.Style.ItemSpacing.y);
-            SetCursorPosX(g_Ctx.IndentX);
+        ItemSize(min, max);
+        if (!ItemAdd(min, max, ++g_Ctx.WidgetCount, disabled)) {
             return;
         }
 
@@ -6085,12 +6044,7 @@ namespace Shadow {
             drawColor.a *= g_Ctx.Style.DisabledAlpha;
         }
 
-        GetWindowDrawList()->AddTexture(g_Ctx.Cursor, size, drawColor, texture);
-
-        SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, ++g_Ctx.WidgetCount, disabled);
-        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
-        SetCursorPosY(GetCursorPosY() + size.y + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
+        GetWindowDrawList()->AddTexture(pos, size, drawColor, texture);
     }
 
     inline bool ImageButton(std::string_view name, SDK::UTexture* texture, Vec2 size) {
@@ -6100,16 +6054,16 @@ namespace Shadow {
 
         Vec2 btnSize = { size.x > 0.f ? size.x : g_Ctx.ItemHeight, size.y > 0.f ? size.y : g_Ctx.ItemHeight };
         bool disabled = IsDisabled();
+        Vec2 pos = g_Ctx.Cursor;
+        Vec2 min = pos;
+        Vec2 max = { pos.x + btnSize.x, pos.y + btnSize.y };
 
-        if (!IsRectVisible(g_Ctx.Cursor, btnSize)) {
-            SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + btnSize.x, g_Ctx.Cursor.y + btnSize.y }, id, disabled);
-            g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + btnSize.x;
-            SetCursorPosY(GetCursorPosY() + btnSize.y + g_Ctx.Style.ItemSpacing.y);
-            SetCursorPosX(g_Ctx.IndentX);
+        ItemSize(min, max);
+        if (!ItemAdd(min, max, id, disabled)) {
             return false;
         }
 
-        bool hovered = !disabled && IsMouseHovering(g_Ctx.Cursor, btnSize);
+        bool hovered = !disabled && IsMouseHovering(pos, btnSize);
         bool clicked = hovered && g_Ctx.MouseClicked;
 
         if (hovered && g_Ctx.MouseDown) {
@@ -6119,13 +6073,8 @@ namespace Shadow {
         Color bgColor = disabled ? g_Ctx.Style.Colors[GuiCol_ControlDisabled] : (hovered ? g_Ctx.Style.Colors[GuiCol_ButtonHovered] : g_Ctx.Style.Colors[GuiCol_Button]);
         Color tintColor = { 1.f, 1.f, 1.f, disabled ? g_Ctx.Style.DisabledAlpha : 1.f };
 
-        GetWindowDrawList()->AddRectFilled(g_Ctx.Cursor, btnSize, bgColor);
-        GetWindowDrawList()->AddTexture(g_Ctx.Cursor, btnSize, tintColor, texture);
-
-        SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + btnSize.x, g_Ctx.Cursor.y + btnSize.y }, id, disabled);
-        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + btnSize.x;
-        SetCursorPosY(GetCursorPosY() + btnSize.y + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
+        GetWindowDrawList()->AddRectFilled(pos, btnSize, bgColor);
+        GetWindowDrawList()->AddTexture(pos, btnSize, tintColor, texture);
 
         return clicked;
     }
@@ -6175,15 +6124,16 @@ namespace Shadow {
         float controlOffsetX = GetControlOffsetX();
         float rightMargin = GetRightMargin();
 
+        Vec2 pos = g_Ctx.Cursor;
         Vec2 sliderPos;
         float sliderWidth;
 
         if (noRightAlign) {
-            sliderPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + 10.f), g_Ctx.Cursor.y };
+            sliderPos = { pos.x + (noText ? 0.f : textWidth + 10.f), pos.y };
             sliderWidth = std::max(g_Ctx.Style.SliderMinWidth, g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - sliderPos.x - valBoxWidth - g_Ctx.Style.ItemSpacing.x);
         }
         else {
-            sliderPos = { g_Ctx.WindowPos.x + controlOffsetX, g_Ctx.Cursor.y };
+            sliderPos = { g_Ctx.WindowPos.x + controlOffsetX, pos.y };
             sliderWidth = std::max(g_Ctx.Style.SliderMinWidth, g_Ctx.WindowSize.x - controlOffsetX - valBoxWidth - g_Ctx.Style.ItemSpacing.x - rightMargin);
         }
 
@@ -6192,19 +6142,18 @@ namespace Shadow {
         Vec2 size = { sliderWidth, itemHeight };
         Vec2 valBoxPos = { sliderPos.x + sliderWidth + g_Ctx.Style.ItemSpacing.x, sliderPos.y };
         Vec2 valBoxSize = { valBoxWidth, itemHeight };
+        Vec2 min = { std::min(pos.x, sliderPos.x), pos.y };
+        Vec2 max = { valBoxPos.x + valBoxSize.x, pos.y + itemHeight };
 
-        if (!IsRectVisible(g_Ctx.Cursor, { valBoxPos.x + valBoxSize.x - g_Ctx.Cursor.x, itemHeight })) {
-            SetLastItemInfo({ std::min(g_Ctx.Cursor.x, sliderPos.x), g_Ctx.Cursor.y }, { valBoxPos.x + valBoxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-            g_Ctx.LastItemMaxX = valBoxPos.x + valBoxSize.x;
-            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-            SetCursorPosX(g_Ctx.IndentX);
+        ItemSize(min, max);
+        if (!ItemAdd(min, max, id, disabled)) {
             PopID();
             return;
         }
 
         Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
         if (!noText) {
-            GetWindowDrawList()->AddText({ g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
+            GetWindowDrawList()->AddText({ pos.x, pos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
         }
 
         bool hovered = !disabled && IsMouseHovering(sliderPos, size);
@@ -6276,11 +6225,6 @@ namespace Shadow {
         }
 
         PopID();
-
-        SetLastItemInfo({ std::min(g_Ctx.Cursor.x, sliderPos.x), g_Ctx.Cursor.y }, { valBoxPos.x + valBoxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-        g_Ctx.LastItemMaxX = valBoxPos.x + valBoxSize.x;
-        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
     }
 
     inline void ColorPicker(std::string_view name, float* r, float* g, float* b, float* a, ShadowColorPickerFlags flags = ShadowColorPickerFlags_None, Vec2 size_arg = { 0.f, 0.f }) {
@@ -6299,29 +6243,30 @@ namespace Shadow {
             textWidth = MeasureTextSize(display).x;
         }
 
+        Vec2 pos = g_Ctx.Cursor;
         Vec2 boxSize = { size_arg.x > 0.f ? size_arg.x : itemHeight, itemHeight };
         Vec2 boxPos;
 
         if (noRightAlign) {
-            boxPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + 10.f), g_Ctx.Cursor.y };
+            boxPos = { pos.x + (noText ? 0.f : textWidth + 10.f), pos.y };
         }
         else {
             float rightMargin = GetRightMargin();
-            boxPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - boxSize.x, g_Ctx.Cursor.y };
+            boxPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - boxSize.x, pos.y };
         }
 
-        if (!IsRectVisible(g_Ctx.Cursor, { boxPos.x + boxSize.x - g_Ctx.Cursor.x, itemHeight })) {
-            SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-            g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
-            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-            SetCursorPosX(g_Ctx.IndentX);
+        Vec2 min = { std::min(pos.x, boxPos.x), pos.y };
+        Vec2 max = { boxPos.x + boxSize.x, pos.y + itemHeight };
+
+        ItemSize(min, max);
+        if (!ItemAdd(min, max, id, disabled)) {
             PopID();
             return;
         }
 
         if (!noText) {
             Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
-            GetWindowDrawList()->AddText({ g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
+            GetWindowDrawList()->AddText({ pos.x, pos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
         }
 
         bool hovered = !disabled && IsMouseHovering(boxPos, boxSize);
@@ -6534,11 +6479,6 @@ namespace Shadow {
         PopStyleVar();
 
         PopID();
-
-        SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-        g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
-        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
     }
 
     inline void ColorPicker(std::string_view name, Color* color, ShadowColorPickerFlags flags = ShadowColorPickerFlags_None, Vec2 size_arg = { 0.f, 0.f }) {
@@ -6567,30 +6507,31 @@ namespace Shadow {
         bool isAssigning = (g_Ctx.AssigningHotkey == hotkey);
         std::string keyName = isAssigning ? "[Press Key]" : std::format("[{}]", GetKeyName(*hotkey));
 
+        Vec2 pos = g_Ctx.Cursor;
         Vec2 btnSize = { MeasureTextSize(keyName).x + g_Ctx.Style.FramePadding.x * 2.f, itemHeight };
         if (size_arg.x > 0.f) btnSize.x = size_arg.x;
         Vec2 btnPos;
 
         if (noRightAlign) {
-            btnPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + g_Ctx.Style.LabelSpacing), g_Ctx.Cursor.y };
+            btnPos = { pos.x + (noText ? 0.f : textWidth + g_Ctx.Style.LabelSpacing), pos.y };
         }
         else {
             float rightMargin = GetRightMargin();
-            btnPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - btnSize.x, g_Ctx.Cursor.y };
+            btnPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - btnSize.x, pos.y };
         }
 
-        if (!IsRectVisible(g_Ctx.Cursor, { btnPos.x + btnSize.x - g_Ctx.Cursor.x, itemHeight })) {
-            SetLastItemInfo({ std::min(g_Ctx.Cursor.x, btnPos.x), g_Ctx.Cursor.y }, { btnPos.x + btnSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-            g_Ctx.LastItemMaxX = btnPos.x + btnSize.x;
-            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-            SetCursorPosX(g_Ctx.IndentX);
+        Vec2 min = { std::min(pos.x, btnPos.x), pos.y };
+        Vec2 max = { btnPos.x + btnSize.x, pos.y + itemHeight };
+
+        ItemSize(min, max);
+        if (!ItemAdd(min, max, id, disabled)) {
             return false;
         }
 
         Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
 
         if (!noText) {
-            GetWindowDrawList()->AddText({ g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
+            GetWindowDrawList()->AddText({ pos.x, pos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
         }
 
         bool btnHovered = !disabled && IsMouseHovering(btnPos, btnSize);
@@ -6607,10 +6548,6 @@ namespace Shadow {
         GetWindowDrawList()->AddRectFilled(btnPos, btnSize, bgColor);
         GetWindowDrawList()->AddText({ btnPos.x + g_Ctx.Style.FramePadding.x, btnPos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, keyName);
 
-        SetLastItemInfo({ std::min(g_Ctx.Cursor.x, btnPos.x), g_Ctx.Cursor.y }, { btnPos.x + btnSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-        g_Ctx.LastItemMaxX = btnPos.x + btnSize.x;
-        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
         return *hotkey != 0 && g_Ctx.KeyStates[*hotkey];
     }
 
@@ -6643,27 +6580,27 @@ namespace Shadow {
         float dotSize = std::max(g_Ctx.Style.HotkeyDotSizeMin, itemHeight * g_Ctx.Style.HotkeyDotSizeRatio);
         float dotOffset = (itemHeight - dotSize) / 2.f;
 
+        Vec2 pos = g_Ctx.Cursor;
         Vec2 btnPos;
         if (noRightAlign) {
-            btnPos = { g_Ctx.Cursor.x + (noText ? 0.f : textWidth + g_Ctx.Style.LabelSpacing), g_Ctx.Cursor.y };
+            btnPos = { pos.x + (noText ? 0.f : textWidth + g_Ctx.Style.LabelSpacing), pos.y };
         }
         else {
             float rightMargin = GetRightMargin();
             if (noStateDisplay) {
-                btnPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - btnSize.x, g_Ctx.Cursor.y };
+                btnPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - btnSize.x, pos.y };
             }
             else {
-                btnPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - dotSize - g_Ctx.Style.ItemSpacing.x - btnSize.x, g_Ctx.Cursor.y };
+                btnPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - rightMargin - dotSize - g_Ctx.Style.ItemSpacing.x - btnSize.x, pos.y };
             }
         }
 
         float maxX = noStateDisplay ? (btnPos.x + btnSize.x) : (btnPos.x + btnSize.x + g_Ctx.Style.ItemSpacing.x + dotSize);
+        Vec2 min = { std::min(pos.x, btnPos.x), pos.y };
+        Vec2 max = { maxX, pos.y + itemHeight };
 
-        if (!IsRectVisible(g_Ctx.Cursor, { maxX - g_Ctx.Cursor.x, itemHeight })) {
-            SetLastItemInfo({ std::min(g_Ctx.Cursor.x, btnPos.x), g_Ctx.Cursor.y }, { maxX, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-            g_Ctx.LastItemMaxX = maxX;
-            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-            SetCursorPosX(g_Ctx.IndentX);
+        ItemSize(min, max);
+        if (!ItemAdd(min, max, id, disabled)) {
             PopID();
             return;
         }
@@ -6671,7 +6608,7 @@ namespace Shadow {
         Color textColor = disabled ? g_Ctx.Style.Colors[GuiCol_TextDisabled] : g_Ctx.Style.Colors[GuiCol_Text];
 
         if (!noText) {
-            GetWindowDrawList()->AddText({ g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
+            GetWindowDrawList()->AddText({ pos.x, pos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
         }
 
         bool btnHovered = !disabled && IsMouseHovering(btnPos, btnSize);
@@ -6746,15 +6683,9 @@ namespace Shadow {
         if (!noStateDisplay) {
             Color indicatorColor = *is_active ? g_Ctx.Style.Colors[GuiCol_ActiveIndicator] : g_Ctx.Style.Colors[GuiCol_InactiveIndicator];
             if (disabled) indicatorColor.a *= g_Ctx.Style.DisabledAlpha;
-            GetWindowDrawList()->AddRectFilled({ btnPos.x + btnSize.x + g_Ctx.Style.ItemSpacing.x, g_Ctx.Cursor.y + dotOffset }, { dotSize, dotSize }, indicatorColor);
+            GetWindowDrawList()->AddRectFilled({ btnPos.x + btnSize.x + g_Ctx.Style.ItemSpacing.x, pos.y + dotOffset }, { dotSize, dotSize }, indicatorColor);
         }
 
         PopID();
-
-        SetLastItemInfo({ std::min(g_Ctx.Cursor.x, btnPos.x), g_Ctx.Cursor.y }, { maxX, g_Ctx.Cursor.y + itemHeight }, id, disabled);
-
-        g_Ctx.LastItemMaxX = maxX;
-        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
-        SetCursorPosX(g_Ctx.IndentX);
     }
 }

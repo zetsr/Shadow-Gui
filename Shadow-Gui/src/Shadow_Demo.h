@@ -184,32 +184,39 @@ namespace Shadow {
                         Shadow::Selectable("Selectable 2 (No Pointer)", sel2);
                         Shadow::HelpMarker("Selectable taking a simple boolean (trigger mode).");
 
-                        static int combo_idx = 0;
+                        static int combo_standard_idx = 0;
+                        static int combo_notext_idx = 0;
+                        static int combo_noright_idx = 0;
+                        static int combo_fittext_idx = 0;
+                        static int combo_notext_noright_idx = 0;
+                        static int combo_fittext_noright_idx = 0;
+                        static int combo_notext_fittext_idx = 0;
+                        static int combo_notext_noright_fittext_idx = 0;
                         std::vector<std::string> combo_items = { "Item A", "Item B", "Item C" };
 
-                        Shadow::Combo("Standard Combo", &combo_idx, combo_items);
+                        Shadow::Combo("Standard Combo", &combo_standard_idx, combo_items);
                         Shadow::HelpMarker("Standard combo box (ShadowComboFlags_None).");
 
-                        Shadow::Combo("Combo NoText", &combo_idx, combo_items, Shadow::ShadowComboFlags_NoText);
+                        Shadow::Combo("Combo NoText", &combo_notext_idx, combo_items, Shadow::ShadowComboFlags_NoText);
                         Shadow::HelpMarker("Combo without left label (ShadowComboFlags_NoText).");
 
-                        Shadow::Combo("Combo NoRightAlign", &combo_idx, combo_items, Shadow::ShadowComboFlags_NoRightAlign);
+                        Shadow::Combo("Combo NoRightAlign", &combo_noright_idx, combo_items, Shadow::ShadowComboFlags_NoRightAlign);
                         Shadow::HelpMarker("Combo tightly packed next to text (ShadowComboFlags_NoRightAlign).");
 
-                        Shadow::Combo("Combo FitText", &combo_idx, combo_items, Shadow::ShadowComboFlags_FitText);
+                        Shadow::Combo("Combo FitText", &combo_fittext_idx, combo_items, Shadow::ShadowComboFlags_FitText);
                         Shadow::HelpMarker("Combo width adapts to selected text length (ShadowComboFlags_FitText).");
 
                         // Combo Flags combined demos
-                        Shadow::Combo("Combo NoText+NoRightAlign", &combo_idx, combo_items, Shadow::ShadowComboFlags_NoText | Shadow::ShadowComboFlags_NoRightAlign);
+                        Shadow::Combo("Combo NoText+NoRightAlign", &combo_notext_noright_idx, combo_items, Shadow::ShadowComboFlags_NoText | Shadow::ShadowComboFlags_NoRightAlign);
                         Shadow::HelpMarker("Combines NoText and NoRightAlign.");
 
-                        Shadow::Combo("Combo FitText+NoRightAlign", &combo_idx, combo_items, Shadow::ShadowComboFlags_FitText | Shadow::ShadowComboFlags_NoRightAlign);
+                        Shadow::Combo("Combo FitText+NoRightAlign", &combo_fittext_noright_idx, combo_items, Shadow::ShadowComboFlags_FitText | Shadow::ShadowComboFlags_NoRightAlign);
                         Shadow::HelpMarker("Combines FitText and NoRightAlign.");
 
-                        Shadow::Combo("Combo NoText+FitText", &combo_idx, combo_items, Shadow::ShadowComboFlags_NoText | Shadow::ShadowComboFlags_FitText);
+                        Shadow::Combo("Combo NoText+FitText", &combo_notext_fittext_idx, combo_items, Shadow::ShadowComboFlags_NoText | Shadow::ShadowComboFlags_FitText);
                         Shadow::HelpMarker("Combines NoText and FitText.");
 
-                        Shadow::Combo("Combo NoText+NoRightAlign+FitText", &combo_idx, combo_items, Shadow::ShadowComboFlags_NoText | Shadow::ShadowComboFlags_NoRightAlign | Shadow::ShadowComboFlags_FitText);
+                        Shadow::Combo("Combo NoText+NoRightAlign+FitText", &combo_notext_noright_fittext_idx, combo_items, Shadow::ShadowComboFlags_NoText | Shadow::ShadowComboFlags_NoRightAlign | Shadow::ShadowComboFlags_FitText);
                         Shadow::HelpMarker("Combines NoText, NoRightAlign, and FitText.");
                     }
                     Shadow::TreePop();
@@ -232,39 +239,49 @@ namespace Shadow {
                     Shadow::TreePop();
 
                     if (Shadow::TreeNode("Inputs (Text & Float)")) {
-                        static std::string txt1 = "", txt2 = "123", txt3 = "secret";
+                        static std::string txt_standard = "";
+                        static std::string txt_hint = "";
+                        static std::string txt_decimal = "123";
+                        static std::string txt_hexadecimal = "123";
+                        static std::string txt_scientific = "123";
+                        static std::string txt_uppercase = "123";
+                        static std::string txt_noblank = "123";
+                        static std::string txt_password = "secret";
+                        static std::string txt_readonly = "secret";
+                        static std::string txt_escape = "123";
+                        static std::string txt_autoselect = "123";
 
-                        Shadow::InputText("Standard Input", txt1);
+                        Shadow::InputText("Standard Input", txt_standard);
                         Shadow::HelpMarker("Standard text input (ShadowInputTextFlags_None).");
 
-                        Shadow::InputTextWithHint("Hint Input", "Enter your name...", txt1);
+                        Shadow::InputTextWithHint("Hint Input", "Enter your name...", txt_hint);
                         Shadow::HelpMarker("Input with background hint text.");
 
-                        Shadow::InputText("Decimal Only", txt2, Shadow::ShadowInputTextFlags_CharsDecimal);
+                        Shadow::InputText("Decimal Only", txt_decimal, Shadow::ShadowInputTextFlags_CharsDecimal);
                         Shadow::HelpMarker("Only numbers allowed (ShadowInputTextFlags_CharsDecimal).");
 
-                        Shadow::InputText("Hexadecimal Only", txt2, Shadow::ShadowInputTextFlags_CharsHexadecimal);
+                        Shadow::InputText("Hexadecimal Only", txt_hexadecimal, Shadow::ShadowInputTextFlags_CharsHexadecimal);
                         Shadow::HelpMarker("Only hex allowed (ShadowInputTextFlags_CharsHexadecimal).");
 
-                        Shadow::InputText("Scientific Only", txt2, Shadow::ShadowInputTextFlags_CharsScientific);
+                        Shadow::InputText("Scientific Only", txt_scientific, Shadow::ShadowInputTextFlags_CharsScientific);
                         Shadow::HelpMarker("Scientific numbers (ShadowInputTextFlags_CharsScientific).");
 
-                        Shadow::InputText("Uppercase Only", txt2, Shadow::ShadowInputTextFlags_CharsUppercase);
+                        Shadow::InputText("Uppercase Only", txt_uppercase, Shadow::ShadowInputTextFlags_CharsUppercase);
                         Shadow::HelpMarker("Auto converts to uppercase (ShadowInputTextFlags_CharsUppercase).");
 
-                        Shadow::InputText("No Blanks", txt2, Shadow::ShadowInputTextFlags_CharsNoBlank);
+                        Shadow::InputText("No Blanks", txt_noblank, Shadow::ShadowInputTextFlags_CharsNoBlank);
                         Shadow::HelpMarker("Spaces restricted (ShadowInputTextFlags_CharsNoBlank).");
 
-                        Shadow::InputText("Password", txt3, Shadow::ShadowInputTextFlags_Password);
+                        Shadow::InputText("Password", txt_password, Shadow::ShadowInputTextFlags_Password);
                         Shadow::HelpMarker("Text obfuscated with * (ShadowInputTextFlags_Password).");
 
-                        Shadow::InputText("Read Only", txt3, Shadow::ShadowInputTextFlags_ReadOnly);
+                        Shadow::InputText("Read Only", txt_readonly, Shadow::ShadowInputTextFlags_ReadOnly);
                         Shadow::HelpMarker("Cannot be modified (ShadowInputTextFlags_ReadOnly).");
 
-                        Shadow::InputText("Escape Clears", txt2, Shadow::ShadowInputTextFlags_EscapeClearsAll);
+                        Shadow::InputText("Escape Clears", txt_escape, Shadow::ShadowInputTextFlags_EscapeClearsAll);
                         Shadow::HelpMarker("Press Esc to clear text (ShadowInputTextFlags_EscapeClearsAll).");
 
-                        Shadow::InputText("Auto Select All", txt2, Shadow::ShadowInputTextFlags_AutoSelectAll);
+                        Shadow::InputText("Auto Select All", txt_autoselect, Shadow::ShadowInputTextFlags_AutoSelectAll);
                         Shadow::HelpMarker("Highlights all text on click (ShadowInputTextFlags_AutoSelectAll).");
 
                         static std::string txt_noname = "NoName";
@@ -292,64 +309,98 @@ namespace Shadow {
                         Shadow::InputText("Upper+NoBlank", txt_combo4, Shadow::ShadowInputTextFlags_CharsUppercase | Shadow::ShadowInputTextFlags_CharsNoBlank);
                         Shadow::HelpMarker("Combines CharsUppercase and CharsNoBlank.");
 
-                        static float f1 = 3.14f;
-                        Shadow::InputFloat("Float Input", &f1);
+                        static float f_input = 3.14f;
+                        Shadow::InputFloat("Float Input", &f_input);
                         Shadow::HelpMarker("Standard float input.");
 
-                        Shadow::InputFloat("Float EmptyRef", &f1, 0.1f, 1.0f, "{:.2f}", Shadow::ShadowInputTextFlags_ParseEmptyRefVal | Shadow::ShadowInputTextFlags_DisplayEmptyRefVal);
+                        static float f_emptyref = 3.14f;
+                        Shadow::InputFloat("Float EmptyRef", &f_emptyref, 0.1f, 1.0f, "{:.2f}", Shadow::ShadowInputTextFlags_ParseEmptyRefVal | Shadow::ShadowInputTextFlags_DisplayEmptyRefVal);
                         Shadow::HelpMarker("Handles empty value parsing and display.");
                     }
                     Shadow::TreePop();
 
                     if (Shadow::TreeNode("Color Pickers")) {
-                        static float r = 1.f, g = 0.f, b = 0.f, a = 1.f;
-                        Shadow::ColorPicker("Standard Picker", &r, &g, &b, &a);
+                        static float cp_standard_r = 1.f, cp_standard_g = 0.f, cp_standard_b = 0.f, cp_standard_a = 1.f;
+                        static float cp_notext_r = 1.f, cp_notext_g = 0.f, cp_notext_b = 0.f, cp_notext_a = 1.f;
+                        static float cp_noright_r = 1.f, cp_noright_g = 0.f, cp_noright_b = 0.f, cp_noright_a = 1.f;
+                        static float cp_combo_r = 1.f, cp_combo_g = 0.f, cp_combo_b = 0.f, cp_combo_a = 1.f;
+
+                        Shadow::ColorPicker("Standard Picker", &cp_standard_r, &cp_standard_g, &cp_standard_b, &cp_standard_a);
                         Shadow::HelpMarker("Standard RGBA Picker (ShadowColorPickerFlags_None).");
 
-                        Shadow::ColorPicker("Picker NoText", &r, &g, &b, &a, Shadow::ShadowColorPickerFlags_NoText);
+                        Shadow::ColorPicker("Picker NoText", &cp_notext_r, &cp_notext_g, &cp_notext_b, &cp_notext_a, Shadow::ShadowColorPickerFlags_NoText);
                         Shadow::HelpMarker("Picker without left label (ShadowColorPickerFlags_NoText).");
 
-                        Shadow::ColorPicker("Picker NoRightAlign", &r, &g, &b, &a, Shadow::ShadowColorPickerFlags_NoRightAlign);
+                        Shadow::ColorPicker("Picker NoRightAlign", &cp_noright_r, &cp_noright_g, &cp_noright_b, &cp_noright_a, Shadow::ShadowColorPickerFlags_NoRightAlign);
                         Shadow::HelpMarker("Picker packed tightly (ShadowColorPickerFlags_NoRightAlign).");
 
                         // ColorPicker Flags combined demos
-                        Shadow::ColorPicker("Picker NoText+NoRightAlign", &r, &g, &b, &a, Shadow::ShadowColorPickerFlags_NoText | Shadow::ShadowColorPickerFlags_NoRightAlign);
+                        Shadow::ColorPicker("Picker NoText+NoRightAlign", &cp_combo_r, &cp_combo_g, &cp_combo_b, &cp_combo_a, Shadow::ShadowColorPickerFlags_NoText | Shadow::ShadowColorPickerFlags_NoRightAlign);
                         Shadow::HelpMarker("Combines NoText and NoRightAlign.");
                     }
                     Shadow::TreePop();
 
                     if (Shadow::TreeNode("Hotkeys")) {
-                        static int hk1 = 0;
-                        static int hk2 = 0x41; // 'A'
-                        static bool hk2_active = false;
-                        static Shadow::HotkeyMode hk2_mode = Shadow::HotkeyMode::ToggleOn;
+                        static int hk_simple = 0;
 
-                        Shadow::HotKey("Simple Hotkey", &hk1);
+                        static int hk_advanced = 0x41; // 'A'
+                        static bool hk_advanced_active = false;
+                        static Shadow::HotkeyMode hk_advanced_mode = Shadow::HotkeyMode::ToggleOn;
+
+                        static int hk_notext = 0x41; // 'A'
+                        static bool hk_notext_active = false;
+                        static Shadow::HotkeyMode hk_notext_mode = Shadow::HotkeyMode::ToggleOn;
+
+                        static int hk_noright = 0x41; // 'A'
+                        static bool hk_noright_active = false;
+                        static Shadow::HotkeyMode hk_noright_mode = Shadow::HotkeyMode::ToggleOn;
+
+                        static int hk_nostate = 0x41; // 'A'
+                        static bool hk_nostate_active = false;
+                        static Shadow::HotkeyMode hk_nostate_mode = Shadow::HotkeyMode::ToggleOn;
+
+                        static int hk_notext_noright = 0x41; // 'A'
+                        static bool hk_notext_noright_active = false;
+                        static Shadow::HotkeyMode hk_notext_noright_mode = Shadow::HotkeyMode::ToggleOn;
+
+                        static int hk_notext_nostate = 0x41; // 'A'
+                        static bool hk_notext_nostate_active = false;
+                        static Shadow::HotkeyMode hk_notext_nostate_mode = Shadow::HotkeyMode::ToggleOn;
+
+                        static int hk_noright_nostate = 0x41; // 'A'
+                        static bool hk_noright_nostate_active = false;
+                        static Shadow::HotkeyMode hk_noright_nostate_mode = Shadow::HotkeyMode::ToggleOn;
+
+                        static int hk_all = 0x41; // 'A'
+                        static bool hk_all_active = false;
+                        static Shadow::HotkeyMode hk_all_mode = Shadow::HotkeyMode::ToggleOn;
+
+                        Shadow::HotKey("Simple Hotkey", &hk_simple);
                         Shadow::HelpMarker("Registers simple hotkey taking int* only.");
 
-                        Shadow::HotKey("Advanced Hotkey", &hk2, &hk2_active, &hk2_mode);
+                        Shadow::HotKey("Advanced Hotkey", &hk_advanced, &hk_advanced_active, &hk_advanced_mode);
                         Shadow::HelpMarker("Hotkey with mode selection. Right-click to configure mode.");
 
-                        Shadow::HotKey("Hotkey NoText", &hk2, &hk2_active, &hk2_mode, Shadow::ShadowHotkeyFlags_NoText);
+                        Shadow::HotKey("Hotkey NoText", &hk_notext, &hk_notext_active, &hk_notext_mode, Shadow::ShadowHotkeyFlags_NoText);
                         Shadow::HelpMarker("Hotkey without label (ShadowHotkeyFlags_NoText).");
 
-                        Shadow::HotKey("Hotkey NoRightAlign", &hk2, &hk2_active, &hk2_mode, Shadow::ShadowHotkeyFlags_NoRightAlign);
+                        Shadow::HotKey("Hotkey NoRightAlign", &hk_noright, &hk_noright_active, &hk_noright_mode, Shadow::ShadowHotkeyFlags_NoRightAlign);
                         Shadow::HelpMarker("Hotkey tightly packed (ShadowHotkeyFlags_NoRightAlign).");
 
-                        Shadow::HotKey("Hotkey NoStateDisplay", &hk2, &hk2_active, &hk2_mode, Shadow::ShadowHotkeyFlags_NoStateDisplay);
+                        Shadow::HotKey("Hotkey NoStateDisplay", &hk_nostate, &hk_nostate_active, &hk_nostate_mode, Shadow::ShadowHotkeyFlags_NoStateDisplay);
                         Shadow::HelpMarker("Hotkey without status indicator dot (ShadowHotkeyFlags_NoStateDisplay).");
 
                         // Hotkeys Flags combined demos
-                        Shadow::HotKey("HK NoText+NoRightAlign", &hk2, &hk2_active, &hk2_mode, Shadow::ShadowHotkeyFlags_NoText | Shadow::ShadowHotkeyFlags_NoRightAlign);
+                        Shadow::HotKey("HK NoText+NoRightAlign", &hk_notext_noright, &hk_notext_noright_active, &hk_notext_noright_mode, Shadow::ShadowHotkeyFlags_NoText | Shadow::ShadowHotkeyFlags_NoRightAlign);
                         Shadow::HelpMarker("Combines NoText and NoRightAlign.");
 
-                        Shadow::HotKey("HK NoText+NoStateDisp", &hk2, &hk2_active, &hk2_mode, Shadow::ShadowHotkeyFlags_NoText | Shadow::ShadowHotkeyFlags_NoStateDisplay);
+                        Shadow::HotKey("HK NoText+NoStateDisp", &hk_notext_nostate, &hk_notext_nostate_active, &hk_notext_nostate_mode, Shadow::ShadowHotkeyFlags_NoText | Shadow::ShadowHotkeyFlags_NoStateDisplay);
                         Shadow::HelpMarker("Combines NoText and NoStateDisplay.");
 
-                        Shadow::HotKey("HK NoRightAlign+NoStateDisp", &hk2, &hk2_active, &hk2_mode, Shadow::ShadowHotkeyFlags_NoRightAlign | Shadow::ShadowHotkeyFlags_NoStateDisplay);
+                        Shadow::HotKey("HK NoRightAlign+NoStateDisp", &hk_noright_nostate, &hk_noright_nostate_active, &hk_noright_nostate_mode, Shadow::ShadowHotkeyFlags_NoRightAlign | Shadow::ShadowHotkeyFlags_NoStateDisplay);
                         Shadow::HelpMarker("Combines NoRightAlign and NoStateDisplay.");
 
-                        Shadow::HotKey("HK All Flags Combo", &hk2, &hk2_active, &hk2_mode, Shadow::ShadowHotkeyFlags_NoText | Shadow::ShadowHotkeyFlags_NoRightAlign | Shadow::ShadowHotkeyFlags_NoStateDisplay);
+                        Shadow::HotKey("HK All Flags Combo", &hk_all, &hk_all_active, &hk_all_mode, Shadow::ShadowHotkeyFlags_NoText | Shadow::ShadowHotkeyFlags_NoRightAlign | Shadow::ShadowHotkeyFlags_NoStateDisplay);
                         Shadow::HelpMarker("Combines NoText, NoRightAlign, and NoStateDisplay.");
                     }
                     Shadow::TreePop();

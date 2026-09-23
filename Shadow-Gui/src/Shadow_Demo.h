@@ -396,6 +396,45 @@ namespace Shadow {
                         Shadow::Separator();
                         Shadow::HelpMarker("Separator() line above.");
 
+                        // NewLine 完整功能演示
+                        Shadow::Text("--- NewLine() Demos ---");
+
+                        // 1. 物理空行（模拟按 Enter 键留出完整单行文本高度）
+                        Shadow::Text("Line 1: Normal paragraph line.");
+                        Shadow::NewLine();
+                        Shadow::Text("Line 2: Appears after a full empty line created by NewLine().");
+                        Shadow::HelpMarker("NewLine() allocates a full font line height, simulating pressing Enter.");
+
+                        // 2. 对比 Spacing() 与 NewLine() 的留白高度差异
+                        Shadow::Text("Compare: Text before Spacing()");
+                        Shadow::Spacing();
+                        Shadow::Text("Compare: Text after Spacing() (Small gap)");
+                        Shadow::NewLine();
+                        Shadow::Text("Compare: Text after NewLine() (Full text row gap)");
+                        Shadow::HelpMarker("Spacing() only adds ItemSpacing.y gap, whereas NewLine() adds full line height.");
+
+                        // 3. 显式打断 SameLine() 状态
+                        Shadow::Button("Btn A##SameBreak");
+                        Shadow::SameLine();
+                        Shadow::Button("Btn B##SameBreak");
+                        Shadow::SameLine();
+                        Shadow::NewLine(); // 强行中断横向流并换行
+                        Shadow::Button("Btn C (Broken to Next Line)##SameBreak");
+                        Shadow::HelpMarker("Calling NewLine() explicitly breaks and commits pending SameLine() horizontal chaining.");
+
+                        // 4. 动态循环网格排版末尾安全收尾
+                        Shadow::Text("Loop with conditional SameLine() and NewLine() cleanup:");
+                        for (int i = 0; i < 3; ++i) {
+                            Shadow::Button(std::format("Grid Item {}##GridDemo", i + 1));
+                            if (i < 2) {
+                                Shadow::SameLine();
+                            }
+                        }
+                        Shadow::NewLine(); // 收尾换行，防止后续控件被挤入网格末尾
+                        Shadow::Text("Text safely placed below the 3-button row.");
+
+                        Shadow::Separator();
+
                         // Indent & Unindent 完整功能演示
                         Shadow::Text("--- Indent & Unindent Demo ---");
 

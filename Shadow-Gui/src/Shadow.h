@@ -3371,6 +3371,13 @@ namespace Shadow {
         }
     }
 
+    inline void NewLine() {
+        if (!g_Ctx.InActiveTab) return;
+        g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        g_Ctx.LastItemMaxX = g_Ctx.Cursor.x;
+    }
+
     inline bool IsItemHovered(ShadowHoveredFlags flags = ShadowHoveredFlags_None) {
         if (!g_Ctx.InActiveTab) return false;
 

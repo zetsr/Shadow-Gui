@@ -798,7 +798,6 @@ namespace Shadow {
         bool ParentIsScrollApplied;
         ShadowWindowFlags ParentWindowFlags;
         float ParentCurrentScrollbarWidth;
-        Vec2 ParentWindowPadding;
         float ParentIndentX;
 
         size_t Id;
@@ -3471,7 +3470,6 @@ namespace Shadow {
         backup.ParentIsScrollApplied = g_Ctx.IsScrollApplied;
         backup.ParentWindowFlags = g_Ctx.CurrentWindowFlags;
         backup.ParentCurrentScrollbarWidth = g_Ctx.CurrentScrollbarWidth;
-        backup.ParentWindowPadding = g_Ctx.Style.WindowPadding;
         backup.ParentIndentX = g_Ctx.IndentX;
         backup.Id = id;
         backup.Pos = boxPos;
@@ -3486,7 +3484,7 @@ namespace Shadow {
         g_Ctx.WindowPos = boxPos;
         g_Ctx.WindowSize = { boxWidth, boxHeight };
         g_Ctx.CurrentWindowFlags = ShadowWindowFlags_NoResize | ShadowWindowFlags_NoMove | ShadowWindowFlags_NoTitleBar;
-        g_Ctx.Style.WindowPadding = { g_Ctx.Style.FramePadding.x, g_Ctx.Style.FramePadding.y };
+        PushStyleVar(GuiStyleVar_WindowPadding, { g_Ctx.Style.FramePadding.x, g_Ctx.Style.FramePadding.y });
 
         SetCursorScreenPos({ boxPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, boxPos.y + g_Ctx.Style.WindowPadding.y });
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;
@@ -3603,7 +3601,7 @@ namespace Shadow {
         g_Ctx.IsScrollApplied = backup.ParentIsScrollApplied;
         g_Ctx.CurrentWindowFlags = backup.ParentWindowFlags;
         g_Ctx.CurrentScrollbarWidth = backup.ParentCurrentScrollbarWidth;
-        g_Ctx.Style.WindowPadding = backup.ParentWindowPadding;
+        PopStyleVar();
         g_Ctx.IndentX = backup.ParentIndentX;
 
         SetLastItemInfo(backup.Pos, { backup.Pos.x + backup.Size.x, backup.Pos.y + backup.Size.y }, backup.Id, false);
@@ -5668,8 +5666,7 @@ namespace Shadow {
             GetWindowDrawList()->AddTriangleFilled(p1, p2, p3, triCol);
         }
 
-        Vec2 backupPad = g_Ctx.Style.WindowPadding;
-        g_Ctx.Style.WindowPadding = { 0.f, 0.f };
+        PushStyleVar(GuiStyleVar_WindowPadding, { 0.f, 0.f });
 
         if (BeginPopup("##ComboPopup", ShadowWindowFlags_NoMove)) {
             for (size_t i = 0; i < items.size(); ++i) {
@@ -5698,7 +5695,7 @@ namespace Shadow {
             g_Ctx.LastItemMaxX = g_Ctx.WindowPos.x + boxWidth;
         }
         EndPopup();
-        g_Ctx.Style.WindowPadding = backupPad;
+        PopStyleVar();
 
         PopID();
 
@@ -6393,8 +6390,7 @@ namespace Shadow {
             GetWindowDrawList()->AddRect(boxPos, boxSize, border);
         }
 
-        Vec2 backupPad = g_Ctx.Style.WindowPadding;
-        g_Ctx.Style.WindowPadding = { 0.f, 0.f };
+        PushStyleVar(GuiStyleVar_WindowPadding, { 0.f, 0.f });
 
         if (BeginPopup("##ColorPickerPopup")) {
             float padding = g_Ctx.Style.CPPadding;
@@ -6535,7 +6531,7 @@ namespace Shadow {
             g_Ctx.LastItemMaxX = g_Ctx.WindowPos.x + popupWidth;
         }
         EndPopup();
-        g_Ctx.Style.WindowPadding = backupPad;
+        PopStyleVar();
 
         PopID();
 
@@ -6708,8 +6704,7 @@ namespace Shadow {
         GetWindowDrawList()->AddRectFilled(btnPos, btnSize, bgColor);
         GetWindowDrawList()->AddText({ btnPos.x + g_Ctx.Style.FramePadding.x, btnPos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, keyName);
 
-        Vec2 backupPad = g_Ctx.Style.WindowPadding;
-        g_Ctx.Style.WindowPadding = { 0.f, 0.f };
+        PushStyleVar(GuiStyleVar_WindowPadding, { 0.f, 0.f });
 
         // 限制其拖拽
         if (BeginPopup("##HotkeyModePopup", ShadowWindowFlags_NoMove)) {
@@ -6738,7 +6733,7 @@ namespace Shadow {
             g_Ctx.LastItemMaxX = g_Ctx.WindowPos.x + g_Ctx.Style.HotkeyModePopupWidth;
         }
         EndPopup();
-        g_Ctx.Style.WindowPadding = backupPad;
+        PopStyleVar();
 
         switch (*hotkey_mode) {
         case HotkeyMode::None:      *is_active = false; break;

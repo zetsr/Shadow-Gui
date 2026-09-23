@@ -10,8 +10,10 @@
 #include "misc/fonts/CangErShuYuanTi_W03.h"
 
 namespace Hook {
-    bool bShowMenu = false;
+    bool bShowMenu = true;
     int keyMenu = VK_F1;
+    float currentAlpha = 0.f;
+    float fadeSpeed = 5.0f;
 
     HWND g_hwnd = NULL;
     WNDPROC oWndProc = NULL;
@@ -64,7 +66,7 @@ namespace Hook {
             }
         }
 
-        if (bShowMenu) {
+        if (bShowMenu || currentAlpha > 0.001f) {
             // 键盘消息处理
             if (uMsg == WM_KEYDOWN || uMsg == WM_KEYUP || uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP || uMsg == WM_CHAR) {
                 // 如果是切换键本身，放行给游戏（防止菜单无法关闭）
@@ -114,9 +116,9 @@ namespace Hook {
 
         Shadow::SetAllowedKeys({ 'W', 'A', 'S', 'D', VK_SPACE }); // 放行常用移动按键
 
+        /*
         static bool bWasAnimating = false;
         static bool gameOriginalCursorState = false;
-        static bool bInit = false;
 
         bool isAnimating = (bShowMenu);
 
@@ -132,11 +134,27 @@ namespace Hook {
             // SetMouseCursorVisible(gameOriginalCursorState);
             bWasAnimating = false;
         }
+        */
 
         Shadow::NewFrame(canvas);
         Shadow::UpdateAllHotkeyStates();
 
+        float dt = Shadow::GetIO().DeltaTime;
+
         if (bShowMenu) {
+            currentAlpha += fadeSpeed * dt;
+            if (currentAlpha > 1.0f) currentAlpha = 1.0f;
+        }
+        else {
+            currentAlpha -= fadeSpeed * dt;
+            if (currentAlpha < 0.0f) currentAlpha = 0.0f;
+        }
+
+        Shadow::PushStyleVar(Shadow::GuiStyleVar_Alpha, currentAlpha);
+
+        if (currentAlpha > 0.001f) {
+            static bool bInit = false;
+
             /*
             if (!bInit) {
                 Shadow::SetNextWindowPos({ 100.f, 100.f });
@@ -177,6 +195,8 @@ namespace Hook {
 
             // bInit = true;
         }
+
+        Shadow::PopStyleVar();
 
         Shadow::Render();
     }

@@ -923,7 +923,7 @@ namespace Shadow {
                             Shadow::GetWindowDrawList()->AddRect(
                                 { rect_min.x - 2.f, rect_min.y - 2.f },
                                 { rect_sz.x + 4.f, rect_sz.y + 4.f },
-                                { 0.f, 1.f, 0.f, 0.8f },
+                                Shadow::GetColor({ 0.f, 1.f, 0.f, 0.8f }),
                                 1.5f
                             );
 
@@ -1096,9 +1096,9 @@ namespace Shadow {
                         ShadowDrawList* dl = Shadow::GetWindowDrawList();
                         dl->ChannelsSplit(2);
                         dl->SetChannel(0);
-                        dl->AddRectFilled(p, { 120.f, 80.f }, { 1.f, 0.f, 0.f, 0.8f });
+                        dl->AddRectFilled(p, { 120.f, 80.f }, Shadow::GetColor({ 1.f, 0.f, 0.f, 0.8f }));
                         dl->SetChannel(1);
-                        dl->AddRectFilled({ p.x + 60.f, p.y + 20.f }, { 120.f, 80.f }, { 0.f, 0.f, 1.f, 0.8f });
+                        dl->AddRectFilled({ p.x + 60.f, p.y + 20.f }, { 120.f, 80.f }, Shadow::GetColor({ 0.f, 0.f, 1.f, 0.8f }));
                         dl->ChannelsMerge();
 
                         Shadow::HelpMarker("ChannelsSplit / SetChannel / ChannelsMerge demo.");
@@ -1109,13 +1109,13 @@ namespace Shadow {
                         Shadow::Vec2 p = Shadow::g_Ctx.Cursor;
                         Shadow::Dummy({ 300.f, 200.f });
                         ShadowDrawList* dl = Shadow::GetWindowDrawList();
-                        dl->AddLine({ p.x, p.y }, { p.x + 100.f, p.y + 50.f }, { 1.f, 0.f, 0.f, 1.f }, 2.f);
-                        dl->AddRect({ p.x + 120.f, p.y }, { 80.f, 60.f }, { 0.f, 1.f, 0.f, 1.f }, 2.f);
-                        dl->AddRectFilled({ p.x + 220.f, p.y }, { 60.f, 40.f }, { 0.f, 0.f, 1.f, 1.f });
-                        dl->AddCircleFilled({ p.x + 50.f, p.y + 120.f }, 30.f, { 1.f, 1.f, 0.f, 1.f });
-                        dl->AddTriangle({ p.x + 120.f, p.y + 100.f }, { p.x + 180.f, p.y + 100.f }, { p.x + 150.f, p.y + 150.f }, { 1.f, 0.f, 1.f, 1.f }, 2.f);
-                        dl->AddTriangleFilled({ p.x + 200.f, p.y + 100.f }, { p.x + 260.f, p.y + 100.f }, { p.x + 230.f, p.y + 150.f }, { 0.f, 1.f, 1.f, 1.f });
-                        dl->AddText({ p.x + 10.f, p.y + 180.f }, { 1.f, 1.f, 1.f, 1.f }, "DrawList Text");
+                        dl->AddLine({ p.x, p.y }, { p.x + 100.f, p.y + 50.f }, Shadow::GetColor({ 1.f, 0.f, 0.f, 1.f }), 2.f);
+                        dl->AddRect({ p.x + 120.f, p.y }, { 80.f, 60.f }, Shadow::GetColor({ 0.f, 1.f, 0.f, 1.f }), 2.f);
+                        dl->AddRectFilled({ p.x + 220.f, p.y }, { 60.f, 40.f }, Shadow::GetColor({ 0.f, 0.f, 1.f, 1.f }));
+                        dl->AddCircleFilled({ p.x + 50.f, p.y + 120.f }, 30.f, Shadow::GetColor({ 1.f, 1.f, 0.f, 1.f }));
+                        dl->AddTriangle({ p.x + 120.f, p.y + 100.f }, { p.x + 180.f, p.y + 100.f }, { p.x + 150.f, p.y + 150.f }, Shadow::GetColor({ 1.f, 0.f, 1.f, 1.f }), 2.f);
+                        dl->AddTriangleFilled({ p.x + 200.f, p.y + 100.f }, { p.x + 260.f, p.y + 100.f }, { p.x + 230.f, p.y + 150.f }, Shadow::GetColor({ 0.f, 1.f, 1.f, 1.f }));
+                        dl->AddText({ p.x + 10.f, p.y + 180.f }, Shadow::GetColor({ 1.f, 1.f, 1.f, 1.f }), "DrawList Text");
                     }
                     Shadow::TreePop();
 
@@ -1127,9 +1127,9 @@ namespace Shadow {
 
                         ShadowDrawList* dl = Shadow::GetWindowDrawList();
                         if (TitlebarTex) {
-                            dl->AddTexture(p, { 64.f, 64.f }, { 1.f, 1.f, 1.f, 1.f }, TitlebarTex);
+                            dl->AddTexture(p, { 64.f, 64.f }, Shadow::GetColor({ 1.f, 1.f, 1.f, 1.f }), TitlebarTex);
                             Shadow::PushTexture(TitlebarTex);
-                            dl->AddTexture({ p.x + 80.f, p.y }, { 64.f, 64.f }, { 1.f, 0.5f, 0.5f, 1.f });
+                            dl->AddTexture({ p.x + 80.f, p.y }, { 64.f, 64.f }, Shadow::GetColor({ 1.f, 0.5f, 0.5f, 1.f }));
                             Shadow::PopTexture();
                         }
 

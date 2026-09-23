@@ -3185,7 +3185,7 @@ namespace Shadow {
             if (!noIndent) {
                 g_Ctx.IndentX += g_Ctx.Style.TreeNodeIndent;
             }
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosX(g_Ctx.IndentX);
             return false;
         }
 
@@ -3219,11 +3219,11 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, interactSize)) {
             SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
             g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
-            g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
+            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
             if (!noIndent) {
                 g_Ctx.IndentX += g_Ctx.Style.TreeNodeIndent;
             }
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosX(g_Ctx.IndentX);
             return isOpen;
         }
 
@@ -3272,11 +3272,11 @@ namespace Shadow {
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
 
-        g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
+        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
         if (!noIndent) {
             g_Ctx.IndentX += g_Ctx.Style.TreeNodeIndent;
         }
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosX(g_Ctx.IndentX);
 
         return isOpen;
     }
@@ -3295,47 +3295,47 @@ namespace Shadow {
             g_Ctx.IndentX = std::max(0.f, g_Ctx.IndentX - g_Ctx.Style.TreeNodeIndent);
         }
 
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosX(g_Ctx.IndentX);
     }
 
     inline void Indent(float indent_w = 0.0f) {
         if (!g_Ctx.InActiveTab) return;
         float actual_indent = (indent_w > 0.0f) ? indent_w : g_Ctx.Style.IndentSpacing;
         g_Ctx.IndentX += actual_indent;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosX(g_Ctx.IndentX);
     }
 
     inline void Unindent(float indent_w = 0.0f) {
         if (!g_Ctx.InActiveTab) return;
         float actual_indent = (indent_w > 0.0f) ? indent_w : g_Ctx.Style.IndentSpacing;
         g_Ctx.IndentX = std::max(0.f, g_Ctx.IndentX - actual_indent);
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosX(g_Ctx.IndentX);
     }
 
     inline void Spacing(Vec2 size_arg = { 0.f, 0.f }) {
         if (!g_Ctx.InActiveTab) return;
-        g_Ctx.Cursor.y += size_arg.y > 0.f ? size_arg.y : g_Ctx.Style.ItemSpacing.y;
-        if (size_arg.x > 0.f) g_Ctx.Cursor.x += size_arg.x;
+        SetCursorPosY(GetCursorPosY() + (size_arg.y > 0.f ? size_arg.y : g_Ctx.Style.ItemSpacing.y));
+        if (size_arg.x > 0.f) SetCursorPosX(GetCursorPosX() + size_arg.x);
     }
 
     inline void SameLine(float offset_from_start_x = 0.0f, float spacing = -1.0f) {
         if (!g_Ctx.InActiveTab) return;
         // 撤销上一个控件产生的Y轴换行递增
-        g_Ctx.Cursor.y -= (g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosY(GetCursorPosY() - (g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y));
 
         if (offset_from_start_x > 0.0f) {
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + offset_from_start_x + g_Ctx.IndentX;
+            SetCursorPosX(offset_from_start_x + g_Ctx.IndentX);
         }
         else {
             float sp = (spacing < 0.0f) ? g_Ctx.Style.ItemSpacing.x : spacing;
-            g_Ctx.Cursor.x = g_Ctx.LastItemMaxX + sp;
+            SetCursorScreenPos({ g_Ctx.LastItemMaxX + sp, g_Ctx.Cursor.y });
         }
     }
 
     inline void NewLine() {
         if (!g_Ctx.InActiveTab) return;
-        g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x;
     }
 
@@ -3448,7 +3448,7 @@ namespace Shadow {
 
         if (!display.empty()) {
             GetWindowDrawList()->AddText({ g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y }, g_Ctx.Style.Colors[GuiCol_Text], display);
-            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+            SetCursorPosY(GetCursorPosY() + g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y);
         }
 
         float boxWidth = size.x;
@@ -3488,10 +3488,10 @@ namespace Shadow {
         g_Ctx.CurrentWindowFlags = ShadowWindowFlags_NoResize | ShadowWindowFlags_NoMove | ShadowWindowFlags_NoTitleBar;
         g_Ctx.Style.WindowPadding = { g_Ctx.Style.FramePadding.x, g_Ctx.Style.FramePadding.y };
 
-        g_Ctx.Cursor = { boxPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, boxPos.y + g_Ctx.Style.WindowPadding.y };
+        SetCursorScreenPos({ boxPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, boxPos.y + g_Ctx.Style.WindowPadding.y });
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;
 
-        float maxScroll = std::max(0.f, g_Ctx.ListBoxContentHeight[id] - boxHeight);
+        float maxScroll = GetScrollMaxY();
         float& scrollY = g_Ctx.ListBoxScrollY[id];
         scrollY = std::clamp(scrollY, 0.f, maxScroll);
         g_Ctx.ScrollY = scrollY;
@@ -3515,7 +3515,7 @@ namespace Shadow {
             }
         }
 
-        g_Ctx.Cursor.y -= g_Ctx.ScrollY;
+        SetCursorPosY(GetCursorPosY() - g_Ctx.ScrollY);
         PushClipRect(boxPos, { boxPos.x + boxWidth, boxPos.y + boxHeight });
 
         return true;
@@ -3527,16 +3527,18 @@ namespace Shadow {
         if (g_Ctx.ListBoxStateStack.empty()) return;
 
         ListBoxState backup = g_Ctx.ListBoxStateStack.back();
-        g_Ctx.ListBoxStateStack.pop_back();
+        // 暂时不 pop，先更新内容高度，让 GetScrollMaxY() 能读取到正确的 ListBox 上下文
 
         float actualCursorY = g_Ctx.Cursor.y + (g_Ctx.IsScrollApplied ? g_Ctx.ScrollY : 0.f);
         g_Ctx.ListBoxContentHeight[backup.Id] = actualCursorY - g_Ctx.ContentStartY + g_Ctx.Style.WindowPadding.y;
 
-        PopClipRect();
-
+        float maxScroll = GetScrollMaxY();   // 此时栈顶仍是 backup，返回该 ListBox 的 maxScroll
         float viewHeight = backup.Size.y;
         float contentHeight = g_Ctx.ListBoxContentHeight[backup.Id];
-        float maxScroll = std::max(0.f, contentHeight - viewHeight);
+
+        g_Ctx.ListBoxStateStack.pop_back();
+
+        PopClipRect();
         float& scrollY = g_Ctx.ListBoxScrollY[backup.Id];
 
         g_Ctx.CurrentScrollbarWidth = 0.f;
@@ -3594,7 +3596,7 @@ namespace Shadow {
 
         g_Ctx.WindowPos = backup.ParentWindowPos;
         g_Ctx.WindowSize = backup.ParentWindowSize;
-        g_Ctx.Cursor = backup.ParentCursor;
+        SetCursorScreenPos(backup.ParentCursor);
         g_Ctx.ContentStartY = backup.ParentContentStartY;
         g_Ctx.ScrollY = backup.ParentScrollY;
         g_Ctx.ContentHeight = backup.ParentContentHeight;
@@ -3607,8 +3609,8 @@ namespace Shadow {
         SetLastItemInfo(backup.Pos, { backup.Pos.x + backup.Size.x, backup.Pos.y + backup.Size.y }, backup.Id, false);
         g_Ctx.LastItemMaxX = backup.Pos.x + backup.Size.x;
 
-        g_Ctx.Cursor.y += backup.Size.y + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + backup.Size.y + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
     }
 
     inline bool InputTextEx(size_t id, Vec2 pos, Vec2 size, std::string& text, ShadowInputTextFlags flags = 0, bool is_popup = false, std::string_view hint = "") {
@@ -3855,7 +3857,7 @@ namespace Shadow {
         // 与 Dear ImGui 一致：菜单栏高度等于 ItemHeight，菜单项本身占满菜单栏高度
         float menuBarHeight = g_Ctx.ItemHeight;
 
-        g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x, g_Ctx.WindowPos.y + titleBarHeight };
+        SetCursorScreenPos({ g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x, g_Ctx.WindowPos.y + titleBarHeight });
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x;
 
         PushClipRect({ g_Ctx.WindowPos.x, g_Ctx.WindowPos.y + titleBarHeight }, { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + titleBarHeight + menuBarHeight });
@@ -3871,7 +3873,7 @@ namespace Shadow {
 
         if (state.IsOpen) {
             PopClipRect();
-            g_Ctx.Cursor = g_Ctx.BackupMenuBarCursor;
+            SetCursorScreenPos(g_Ctx.BackupMenuBarCursor);
             g_Ctx.LastItemMaxX = g_Ctx.BackupMenuBarLastItemMaxX;
 
             // 【新增】菜单栏绘制完毕，重新压入内容区专属剪裁区域，继续保护下方滚动内容
@@ -3909,8 +3911,7 @@ namespace Shadow {
         Vec2 pos;
         if (in_menubar) {
             pos = { g_Ctx.LastItemMaxX, g_Ctx.Cursor.y };
-            g_Ctx.Cursor.x = pos.x;
-            g_Ctx.Cursor.y = pos.y;
+            SetCursorScreenPos(pos);
         }
         else {
             pos = g_Ctx.Cursor;
@@ -3974,8 +3975,8 @@ namespace Shadow {
         else {
             SetLastItemInfo(pos, { pos.x + itemSize.x, pos.y + itemSize.y }, id, disabled);
             g_Ctx.LastItemMaxX = std::max(g_Ctx.LastItemMaxX, pos.x + minWidth);
-            g_Ctx.Cursor.y += itemSize.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + itemSize.y);
+            SetCursorPosX(g_Ctx.IndentX);
         }
 
         bool popup_ret = false;
@@ -4037,8 +4038,7 @@ namespace Shadow {
         Vec2 pos;
         if (in_menubar) {
             pos = { g_Ctx.LastItemMaxX, g_Ctx.Cursor.y };
-            g_Ctx.Cursor.x = pos.x;
-            g_Ctx.Cursor.y = pos.y;
+            SetCursorScreenPos(pos);
         }
         else {
             pos = g_Ctx.Cursor;
@@ -4090,8 +4090,8 @@ namespace Shadow {
         else {
             SetLastItemInfo(pos, { pos.x + itemSize.x, pos.y + itemSize.y }, id, disabled);
             g_Ctx.LastItemMaxX = std::max(g_Ctx.LastItemMaxX, pos.x + minWidth);
-            g_Ctx.Cursor.y += itemSize.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + itemSize.y);
+            SetCursorPosX(g_Ctx.IndentX);
         }
 
         return clicked;
@@ -4142,8 +4142,8 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, { itemWidth, itemHeight })) {
             SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + itemWidth, g_Ctx.Cursor.y + itemHeight }, ++g_Ctx.WidgetCount, disabled);
             g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + itemWidth;
-            g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+            SetCursorPosX(g_Ctx.IndentX);
             return;
         }
 
@@ -4162,8 +4162,8 @@ namespace Shadow {
 
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + itemWidth, g_Ctx.Cursor.y + itemHeight }, ++g_Ctx.WidgetCount, disabled);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + itemWidth;
-        g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
     }
 
     inline void TextWrapped(Color color, std::string_view text, Vec2 size_arg = { 0.f, 0.f }) {
@@ -4212,8 +4212,8 @@ namespace Shadow {
                 maxLineX = std::max(maxLineX, g_Ctx.Cursor.x + currentLineWidth);
             }
             if (addSpacing) {
-                g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
-                g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+                SetCursorPosY(GetCursorPosY() + g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y);
+                SetCursorPosX(g_Ctx.IndentX);
             }
             currentLine.clear();
             currentLineWidth = 0.f;
@@ -4291,7 +4291,7 @@ namespace Shadow {
 
         if (!currentLine.empty()) {
             FlushLine(false);
-            g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+            SetCursorPosY(GetCursorPosY() + g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y);
         }
 
         float finalY = g_Ctx.Cursor.y - g_Ctx.Style.ItemSpacing.y;
@@ -4303,7 +4303,7 @@ namespace Shadow {
 
         SetLastItemInfo({ g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, startY }, { maxLineX, finalY }, ++g_Ctx.WidgetCount, disabled);
         g_Ctx.LastItemMaxX = maxLineX;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosX(g_Ctx.IndentX);
     }
 
     inline void Separator(Vec2 size_arg = { 0.f, 0.f }) {
@@ -4324,8 +4324,8 @@ namespace Shadow {
             g_Ctx.LastItemMaxX = std::max(g_Ctx.LastItemMaxX, x2);
         }
 
-        g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
     }
 
     inline void Dummy(Vec2 size) {
@@ -4334,8 +4334,8 @@ namespace Shadow {
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, ++g_Ctx.WidgetCount, false);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
 
-        g_Ctx.Cursor.y += size.y + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + size.y + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
     }
 
     inline void Text(std::string_view text, Vec2 size_arg = { 0.f, 0.f }) {
@@ -4350,8 +4350,8 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, { itemWidth, itemHeight })) {
             SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + itemWidth, g_Ctx.Cursor.y + itemHeight }, ++g_Ctx.WidgetCount, disabled);
             g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + itemWidth;
-            g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+            SetCursorPosX(g_Ctx.IndentX);
             return;
         }
 
@@ -4361,8 +4361,8 @@ namespace Shadow {
 
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + itemWidth, g_Ctx.Cursor.y + itemHeight }, ++g_Ctx.WidgetCount, disabled);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + itemWidth;
-        g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
     }
 
     inline void TextDisabled(std::string_view text, Vec2 size_arg = { 0.f, 0.f }) {
@@ -4375,8 +4375,8 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, { itemWidth, itemHeight })) {
             SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + itemWidth, g_Ctx.Cursor.y + itemHeight }, ++g_Ctx.WidgetCount, true);
             g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + itemWidth;
-            g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+            SetCursorPosX(g_Ctx.IndentX);
             return;
         }
 
@@ -4385,8 +4385,8 @@ namespace Shadow {
 
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + itemWidth, g_Ctx.Cursor.y + itemHeight }, ++g_Ctx.WidgetCount, true);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + itemWidth;
-        g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
     }
 
     inline void NewFrame(SDK::UCanvas* Canvas) {
@@ -4667,7 +4667,7 @@ namespace Shadow {
 
         float viewHeight = (g_Ctx.WindowPos.y + g_Ctx.WindowSize.y) - g_Ctx.ContentStartY - g_Ctx.Style.ResizeGripSize - g_Ctx.Style.WindowScrollBottomPadding;
         if (viewHeight < g_Ctx.Style.WindowScrollMinViewHeight) viewHeight = g_Ctx.Style.WindowScrollMinViewHeight;
-        float maxScroll = std::max(0.f, g_Ctx.ContentHeight - viewHeight);
+        float maxScroll = GetScrollMaxY();
         g_Ctx.ScrollY = std::clamp(g_Ctx.ScrollY, 0.f, maxScroll);
 
         bool hoveringAnyTabBar = false;
@@ -4786,8 +4786,8 @@ namespace Shadow {
             GetWindowDrawList()->AddLine({ g_Ctx.WindowPos.x, g_Ctx.WindowPos.y + titleBarHeight + menuBarHeight }, { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + titleBarHeight + menuBarHeight }, g_Ctx.Style.Colors[GuiCol_Border], g_Ctx.Style.MenuBarBorderThickness);
         }
 
-        g_Ctx.IndentX = 0.f;
-        g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, g_Ctx.WindowPos.y + titleBarHeight + menuBarHeight + g_Ctx.Style.WindowPadding.y };
+
+        SetCursorScreenPos({ g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, g_Ctx.WindowPos.y + titleBarHeight + menuBarHeight + g_Ctx.Style.WindowPadding.y });
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;
 
         // 压入内容区专属剪裁区域，阻断控件滚动到标题栏上方
@@ -4796,7 +4796,7 @@ namespace Shadow {
             { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.WindowPos.y + g_Ctx.WindowSize.y }
         );
 
-        g_Ctx.Cursor.y -= g_Ctx.ScrollY;
+        SetCursorPosY(GetCursorPosY() - g_Ctx.ScrollY);
 
         return true;
     }
@@ -4834,7 +4834,7 @@ namespace Shadow {
 
         g_Ctx.WindowSize = bgSize;
         g_Ctx.IndentX = 0.f;
-        g_Ctx.Cursor = { g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, g_Ctx.WindowPos.y + g_Ctx.Style.WindowPadding.y };
+        SetCursorScreenPos({ g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX, g_Ctx.WindowPos.y + g_Ctx.Style.WindowPadding.y });
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;
         g_Ctx.ScrollY = 0.f;
         g_Ctx.IsScrollApplied = false;
@@ -4852,7 +4852,7 @@ namespace Shadow {
 
         g_Ctx.WindowPos = g_Ctx.BackupWindowPos;
         g_Ctx.WindowSize = g_Ctx.BackupWindowSize;
-        g_Ctx.Cursor = g_Ctx.BackupCursor;
+        SetCursorScreenPos(g_Ctx.BackupCursor);
         g_Ctx.ContentStartY = g_Ctx.BackupContentStartY;
         g_Ctx.ScrollY = g_Ctx.BackupScrollY;
         g_Ctx.LastItemMaxX = g_Ctx.BackupLastItemMaxX;
@@ -4884,12 +4884,13 @@ namespace Shadow {
         float viewHeight = (g_Ctx.WindowPos.y + g_Ctx.WindowSize.y) - g_Ctx.ContentStartY - g_Ctx.Style.ResizeGripSize - g_Ctx.Style.WindowScrollBottomPadding;
         if (viewHeight < g_Ctx.Style.WindowScrollMinViewHeight) viewHeight = g_Ctx.Style.WindowScrollMinViewHeight;
 
+        float maxScroll = GetScrollMaxY();
+
         g_Ctx.CurrentScrollbarWidth = 0.f;
 
-        if (!noScrollbar && g_Ctx.ContentHeight > viewHeight) {
+        if (!noScrollbar && maxScroll > 0.f) {
             g_Ctx.CurrentScrollbarWidth = g_Ctx.Style.ScrollbarSize;
 
-            float maxScroll = g_Ctx.ContentHeight - viewHeight;
             float scrollbarWidth = g_Ctx.Style.ScrollbarSize;
             float scrollbarMarginRight = g_Ctx.Style.ScrollbarMargin;
             Vec2 trackPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - scrollbarWidth - scrollbarMarginRight, g_Ctx.ContentStartY };
@@ -4960,7 +4961,7 @@ namespace Shadow {
         }
 
         // 暂时撤销滚动：TabBar 作为固定在顶部的头组件，不应当跟随页面内容滚动
-        g_Ctx.Cursor.y += g_Ctx.ScrollY;
+        SetCursorPosY(GetCursorPosY() + g_Ctx.ScrollY);
 
         g_Ctx.TabCursor = g_Ctx.Cursor;
         g_Ctx.TabBarOrigin = g_Ctx.Cursor;
@@ -4993,13 +4994,13 @@ namespace Shadow {
         g_Ctx.TabBarDisplayCache[id].clear();
         g_Ctx.TabAppearedThisFrame[id].clear();
 
-        g_Ctx.Cursor.y += g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y;
+        SetCursorPosY(GetCursorPosY() + g_Ctx.ItemHeight + g_Ctx.Style.ItemSpacing.y);
 
         float scrollbarReserve = needsScrollbar ? (g_Ctx.Style.ScrollbarSize + g_Ctx.Style.TabBarScrollbarReserve) : 0.f;
-        g_Ctx.Cursor.y += scrollbarReserve;
+        SetCursorPosY(GetCursorPosY() + scrollbarReserve);
 
         GetWindowDrawList()->AddLine({ g_Ctx.WindowPos.x, g_Ctx.Cursor.y }, { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.Cursor.y }, g_Ctx.Style.Colors[GuiCol_Separator], g_Ctx.Style.TabBarSeparatorHeight);
-        g_Ctx.Cursor.y += g_Ctx.Style.TabBarSeparatorHeight + g_Ctx.Style.WindowPadding.y;
+        SetCursorPosY(GetCursorPosY() + g_Ctx.Style.TabBarSeparatorHeight + g_Ctx.Style.WindowPadding.y);
 
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;
 
@@ -5010,7 +5011,7 @@ namespace Shadow {
         );
 
         // 重新应用滚动，使 TabBar 内部的子控件开始滚动
-        g_Ctx.Cursor.y -= g_Ctx.ScrollY;
+        SetCursorPosY(GetCursorPosY() - g_Ctx.ScrollY);
         g_Ctx.IsScrollApplied = true;
 
         return true;
@@ -5028,7 +5029,7 @@ namespace Shadow {
         g_Ctx.TabBarContentWidth = g_Ctx.TabBarContentWidthAccum;
 
         float viewWidth = g_Ctx.TabBarViewWidth;
-        float maxScrollX = std::max(0.f, g_Ctx.TabBarContentWidth - viewWidth);
+        float maxScrollX = GetScrollMaxX();
         float& scrollX = g_Ctx.TabBarScrollX[tabBarId];
         scrollX = std::clamp(scrollX, 0.f, maxScrollX);
 
@@ -5621,8 +5622,8 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, { boxPos.x + boxSize.x - g_Ctx.Cursor.x, itemHeight })) {
             SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
             g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
-            g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+            SetCursorPosX(g_Ctx.IndentX);
             PopID();
             return false;
         }
@@ -5692,7 +5693,7 @@ namespace Shadow {
                 Color textCol = isCurrentItem ? g_Ctx.Style.Colors[GuiCol_TextHighlight] : g_Ctx.Style.Colors[GuiCol_Text];
                 GetWindowDrawList()->AddText({ itemPos.x + g_Ctx.Style.FramePadding.x, itemPos.y + g_Ctx.Style.FramePadding.y }, textCol, items[i]);
 
-                g_Ctx.Cursor.y += g_Ctx.ItemHeight;
+                SetCursorPosY(GetCursorPosY() + g_Ctx.ItemHeight);
             }
             g_Ctx.LastItemMaxX = g_Ctx.WindowPos.x + boxWidth;
         }
@@ -5703,8 +5704,8 @@ namespace Shadow {
 
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
-        g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
 
         return toggled;
     }
@@ -5724,8 +5725,8 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, interactSize)) {
             SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
             g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
-            g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+            SetCursorPosX(g_Ctx.IndentX);
             return false;
         }
 
@@ -5754,8 +5755,8 @@ namespace Shadow {
 
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
-        g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
 
         return *value;
     }
@@ -5778,8 +5779,8 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, interactSize)) {
             SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
             g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
-            g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+            SetCursorPosX(g_Ctx.IndentX);
             return false;
         }
 
@@ -5815,8 +5816,8 @@ namespace Shadow {
 
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + interactSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + interactSize.x;
-        g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
 
         return *value;
     }
@@ -5836,8 +5837,8 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, size)) {
             SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, id, disabled);
             g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
-            g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+            SetCursorPosX(g_Ctx.IndentX);
             return false;
         }
 
@@ -5873,8 +5874,8 @@ namespace Shadow {
 
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, id, disabled);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
-        g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
 
         return clicked;
     }
@@ -5914,8 +5915,8 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, { boxPos.x + boxWidth - g_Ctx.Cursor.x, itemHeight })) {
             SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
             g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
-            g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+            SetCursorPosX(g_Ctx.IndentX);
             return false;
         }
 
@@ -5928,8 +5929,8 @@ namespace Shadow {
 
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
-        g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
 
         return changed;
     }
@@ -5969,8 +5970,8 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, { boxPos.x + boxWidth - g_Ctx.Cursor.x, itemHeight })) {
             SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
             g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
-            g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+            SetCursorPosX(g_Ctx.IndentX);
             PopID();
             return false;
         }
@@ -6020,8 +6021,8 @@ namespace Shadow {
 
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
-        g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
 
         return valueChanged;
     }
@@ -6043,8 +6044,8 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, size)) {
             SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, id, disabled);
             g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
-            g_Ctx.Cursor.y += size.y + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + size.y + g_Ctx.Style.ItemSpacing.y);
+            SetCursorPosX(g_Ctx.IndentX);
             return false;
         }
 
@@ -6063,8 +6064,8 @@ namespace Shadow {
 
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, id, disabled);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
-        g_Ctx.Cursor.y += size.y + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + size.y + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
         return clicked;
     }
 
@@ -6077,8 +6078,8 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, size)) {
             SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, ++g_Ctx.WidgetCount, disabled);
             g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
-            g_Ctx.Cursor.y += size.y + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + size.y + g_Ctx.Style.ItemSpacing.y);
+            SetCursorPosX(g_Ctx.IndentX);
             return;
         }
 
@@ -6091,8 +6092,8 @@ namespace Shadow {
 
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + size.x, g_Ctx.Cursor.y + size.y }, ++g_Ctx.WidgetCount, disabled);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + size.x;
-        g_Ctx.Cursor.y += size.y + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + size.y + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
     }
 
     inline bool ImageButton(std::string_view name, SDK::UTexture* texture, Vec2 size) {
@@ -6106,8 +6107,8 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, btnSize)) {
             SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + btnSize.x, g_Ctx.Cursor.y + btnSize.y }, id, disabled);
             g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + btnSize.x;
-            g_Ctx.Cursor.y += btnSize.y + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + btnSize.y + g_Ctx.Style.ItemSpacing.y);
+            SetCursorPosX(g_Ctx.IndentX);
             return false;
         }
 
@@ -6126,8 +6127,8 @@ namespace Shadow {
 
         SetLastItemInfo(g_Ctx.Cursor, { g_Ctx.Cursor.x + btnSize.x, g_Ctx.Cursor.y + btnSize.y }, id, disabled);
         g_Ctx.LastItemMaxX = g_Ctx.Cursor.x + btnSize.x;
-        g_Ctx.Cursor.y += btnSize.y + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + btnSize.y + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
 
         return clicked;
     }
@@ -6198,8 +6199,8 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, { valBoxPos.x + valBoxSize.x - g_Ctx.Cursor.x, itemHeight })) {
             SetLastItemInfo({ std::min(g_Ctx.Cursor.x, sliderPos.x), g_Ctx.Cursor.y }, { valBoxPos.x + valBoxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
             g_Ctx.LastItemMaxX = valBoxPos.x + valBoxSize.x;
-            g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+            SetCursorPosX(g_Ctx.IndentX);
             PopID();
             return;
         }
@@ -6281,8 +6282,8 @@ namespace Shadow {
 
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, sliderPos.x), g_Ctx.Cursor.y }, { valBoxPos.x + valBoxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = valBoxPos.x + valBoxSize.x;
-        g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
     }
 
     inline void ColorPicker(std::string_view name, float* r, float* g, float* b, float* a, ShadowColorPickerFlags flags = ShadowColorPickerFlags_None, Vec2 size_arg = { 0.f, 0.f }) {
@@ -6315,8 +6316,8 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, { boxPos.x + boxSize.x - g_Ctx.Cursor.x, itemHeight })) {
             SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
             g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
-            g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+            SetCursorPosX(g_Ctx.IndentX);
             PopID();
             return;
         }
@@ -6530,7 +6531,7 @@ namespace Shadow {
                 GetWindowDrawList()->AddRect({ cursorAlpha.x + g_Ctx.Style.SliderFocusBorderThickness, cursorAlpha.y + g_Ctx.Style.SliderFocusBorderThickness }, { alphaWidth + g_Ctx.Style.ColorPickerCursorCenterSize - g_Ctx.Style.SliderFocusBorderThickness * 2.f, g_Ctx.Style.ColorPickerCursorCenterSize - g_Ctx.Style.SliderFocusBorderThickness * 2.f }, g_Ctx.Style.Colors[GuiCol_ColorPickerLight]);
             }
 
-            g_Ctx.Cursor.y += popupHeight;
+            SetCursorPosY(GetCursorPosY() + popupHeight);
             g_Ctx.LastItemMaxX = g_Ctx.WindowPos.x + popupWidth;
         }
         EndPopup();
@@ -6540,8 +6541,8 @@ namespace Shadow {
 
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
-        g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
     }
 
     inline void ColorPicker(std::string_view name, Color* color, ShadowColorPickerFlags flags = ShadowColorPickerFlags_None, Vec2 size_arg = { 0.f, 0.f }) {
@@ -6585,8 +6586,8 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, { btnPos.x + btnSize.x - g_Ctx.Cursor.x, itemHeight })) {
             SetLastItemInfo({ std::min(g_Ctx.Cursor.x, btnPos.x), g_Ctx.Cursor.y }, { btnPos.x + btnSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
             g_Ctx.LastItemMaxX = btnPos.x + btnSize.x;
-            g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+            SetCursorPosX(g_Ctx.IndentX);
             return false;
         }
 
@@ -6612,8 +6613,8 @@ namespace Shadow {
 
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, btnPos.x), g_Ctx.Cursor.y }, { btnPos.x + btnSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = btnPos.x + btnSize.x;
-        g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
         return *hotkey != 0 && g_Ctx.KeyStates[*hotkey];
     }
 
@@ -6665,8 +6666,8 @@ namespace Shadow {
         if (!IsRectVisible(g_Ctx.Cursor, { maxX - g_Ctx.Cursor.x, itemHeight })) {
             SetLastItemInfo({ std::min(g_Ctx.Cursor.x, btnPos.x), g_Ctx.Cursor.y }, { maxX, g_Ctx.Cursor.y + itemHeight }, id, disabled);
             g_Ctx.LastItemMaxX = maxX;
-            g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-            g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+            SetCursorPosX(g_Ctx.IndentX);
             PopID();
             return;
         }
@@ -6732,7 +6733,7 @@ namespace Shadow {
                 Color textCol = isCurrentItem ? g_Ctx.Style.Colors[GuiCol_TextHighlight] : g_Ctx.Style.Colors[GuiCol_Text];
                 GetWindowDrawList()->AddText({ itemPos.x + g_Ctx.Style.FramePadding.x, itemPos.y + g_Ctx.Style.FramePadding.y }, textCol, modeStrs[i]);
 
-                g_Ctx.Cursor.y += g_Ctx.ItemHeight;
+                SetCursorPosY(GetCursorPosY() + g_Ctx.ItemHeight);
             }
             g_Ctx.LastItemMaxX = g_Ctx.WindowPos.x + g_Ctx.Style.HotkeyModePopupWidth;
         }
@@ -6758,7 +6759,7 @@ namespace Shadow {
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, btnPos.x), g_Ctx.Cursor.y }, { maxX, g_Ctx.Cursor.y + itemHeight }, id, disabled);
 
         g_Ctx.LastItemMaxX = maxX;
-        g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
-        g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+        SetCursorPosY(GetCursorPosY() + itemHeight + g_Ctx.Style.ItemSpacing.y);
+        SetCursorPosX(g_Ctx.IndentX);
     }
 }

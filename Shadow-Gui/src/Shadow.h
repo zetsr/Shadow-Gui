@@ -646,6 +646,8 @@ namespace Shadow {
         float InputTextSelectionPaddingY = 2.f;
         float InputTextMinWidth = 50.f;
         int   InputTextCursorBlinkIntervalMS = 500;
+        float KeyRepeatDelay = 0.250f;               // 键盘长按连发初始延迟 (秒)
+        float KeyRepeatRate = 0.050f;                // 键盘长按连发速率 (秒)
 
         // Menu
         float MenuArrowSizeRatio = 0.55f;
@@ -1766,6 +1768,7 @@ namespace Shadow {
         if (!g_Ctx.KeyStates[vk]) {
             g_Ctx.HotkeyToggles[vk] = !g_Ctx.HotkeyToggles[vk];
             g_Ctx.KeyPressed[vk] = true; // 仅在初次按下的那一帧置为 true
+            g_Ctx.KeyPressTime[vk] = g_Ctx.RealTimeSeconds;
         }
         // 移除对 isRepeat 的 KeyPressed 赋值，完全交由框架的高精度时钟接管连发
         g_Ctx.KeyStates[vk] = true;
@@ -1855,13 +1858,13 @@ namespace Shadow {
                     *info.is_active = false;
                     break;
                 case HotkeyMode::HoldOn:
-                    *info.is_active = g_Ctx.KeyStates[*info.hotkey];
+                    *info.is_active = (*info.hotkey != 0) && g_Ctx.KeyStates[*info.hotkey];
                     break;
                 case HotkeyMode::HoldOff:
-                    *info.is_active = !g_Ctx.KeyStates[*info.hotkey];
+                    *info.is_active = (*info.hotkey != 0) && !g_Ctx.KeyStates[*info.hotkey];
                     break;
                 case HotkeyMode::ToggleOn:
-                    *info.is_active = g_Ctx.HotkeyToggles[*info.hotkey];
+                    *info.is_active = (*info.hotkey != 0) && g_Ctx.HotkeyToggles[*info.hotkey];
                     break;
                 case HotkeyMode::AlwaysOn:
                     *info.is_active = true;
@@ -1870,7 +1873,7 @@ namespace Shadow {
             }
             else if (info.is_active) {
                 // 没有模式指针（简单版本的HotKey），is_active 就是 hotkey 是否被按下
-                *info.is_active = g_Ctx.KeyStates[*info.hotkey];
+                *info.is_active = (*info.hotkey != 0) && g_Ctx.KeyStates[*info.hotkey];
             }
         }
     }
@@ -4403,6 +4406,23 @@ namespace Shadow {
             g_Ctx.DeltaTime = 0.0;
         }
 
+        // 高精度时钟接管长按连发脉冲触发
+        if (g_Ctx.Style.KeyRepeatRate > 0.0f) {
+            for (int vk = 0; vk < 256; ++vk) {
+                if (g_Ctx.KeyStates[vk]) {
+                    double t = g_Ctx.RealTimeSeconds - g_Ctx.KeyPressTime[vk];
+                    double t_prev = t - g_Ctx.DeltaTime;
+                    if (t >= g_Ctx.Style.KeyRepeatDelay) {
+                        int count_curr = static_cast<int>((t - g_Ctx.Style.KeyRepeatDelay) / g_Ctx.Style.KeyRepeatRate);
+                        int count_prev = (t_prev >= g_Ctx.Style.KeyRepeatDelay) ? static_cast<int>((t_prev - g_Ctx.Style.KeyRepeatDelay) / g_Ctx.Style.KeyRepeatRate) : -1;
+                        if (count_curr > count_prev) {
+                            g_Ctx.KeyPressed[vk] = true;
+                        }
+                    }
+                }
+            }
+        }
+
         uint64_t currentMS = static_cast<uint64_t>(g_Ctx.RealTimeSeconds * 1000.0);
 
         if (!g_Ctx.DefaultFont) {
@@ -6654,9 +6674,9 @@ namespace Shadow {
 
         switch (*hotkey_mode) {
         case HotkeyMode::None:      *is_active = false; break;
-        case HotkeyMode::HoldOn:    *is_active = g_Ctx.KeyStates[*hotkey]; break;
-        case HotkeyMode::HoldOff:   *is_active = !g_Ctx.KeyStates[*hotkey]; break;
-        case HotkeyMode::ToggleOn:  *is_active = g_Ctx.HotkeyToggles[*hotkey]; break;
+        case HotkeyMode::HoldOn:    *is_active = (*hotkey != 0) && g_Ctx.KeyStates[*hotkey]; break;
+        case HotkeyMode::HoldOff:   *is_active = (*hotkey != 0) && !g_Ctx.KeyStates[*hotkey]; break;
+        case HotkeyMode::ToggleOn:  *is_active = (*hotkey != 0) && g_Ctx.HotkeyToggles[*hotkey]; break;
         case HotkeyMode::AlwaysOn:  *is_active = true; break;
         }
 

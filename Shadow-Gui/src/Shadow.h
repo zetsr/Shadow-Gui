@@ -3590,7 +3590,7 @@ namespace Shadow {
             Vec2 trackPos = { backup.Pos.x + backup.Size.x - scrollbarWidth - scrollbarMarginRight, backup.Pos.y };
             Vec2 trackSize = { scrollbarWidth, viewHeight };
 
-            GetWindowDrawList()->AddRect(trackPos, trackSize, GetColor(GuiCol_FrameBg));
+            GetWindowDrawList()->AddRectFilled(trackPos, trackSize, GetColor(GuiCol_FrameBg));
 
             float thumbHeight = std::max(g_Ctx.Style.ScrollbarThumbMinSize, (viewHeight / contentHeight) * trackSize.y);
             float thumbY = trackPos.y + (maxScroll > 0.f ? (scrollY / maxScroll) * (trackSize.y - thumbHeight) : 0.f);
@@ -3626,7 +3626,7 @@ namespace Shadow {
             Color thumbColor = (g_Ctx.DraggingListBoxScrollId == backup.Id)
                 ? GetColor(GuiCol_SliderGrab)
                 : (hoveringThumb ? GetColor(GuiCol_FrameBgHovered) : GetColor(GuiCol_Border));
-            GetWindowDrawList()->AddRect(thumbPos, thumbSize, thumbColor);
+            GetWindowDrawList()->AddRectFilled(thumbPos, thumbSize, thumbColor);
         }
         else {
             if (g_Ctx.DraggingListBoxScrollId == backup.Id) {
@@ -4903,7 +4903,7 @@ namespace Shadow {
             Vec2 trackPos = { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x - scrollbarWidth - scrollbarMarginRight, g_Ctx.ContentStartY };
             Vec2 trackSize = { scrollbarWidth, viewHeight };
 
-            GetWindowDrawList()->AddRect(trackPos, trackSize, GetColor(GuiCol_FrameBg));
+            GetWindowDrawList()->AddRectFilled(trackPos, trackSize, GetColor(GuiCol_FrameBg));
 
             float thumbHeight = std::max(g_Ctx.Style.ScrollbarThumbMinSize, (viewHeight / g_Ctx.ContentHeight) * trackSize.y);
             float thumbY = trackPos.y + (g_Ctx.ScrollY / maxScroll) * (trackSize.y - thumbHeight);
@@ -5006,7 +5006,7 @@ namespace Shadow {
         float scrollbarReserve = needsScrollbar ? (g_Ctx.Style.ScrollbarSize + g_Ctx.Style.TabBarScrollbarReserve) : 0.f;
         SetCursorPosY(GetCursorPosY() + scrollbarReserve);
 
-        GetWindowDrawList()->AddLine({ g_Ctx.WindowPos.x, g_Ctx.Cursor.y }, { g_Ctx.WindowPos.x + g_Ctx.WindowSize.x, g_Ctx.Cursor.y }, GetColor(GuiCol_Separator), g_Ctx.Style.TabBarSeparatorHeight);
+        GetWindowDrawList()->AddRectFilled({ g_Ctx.WindowPos.x, g_Ctx.Cursor.y }, { g_Ctx.WindowSize.x, g_Ctx.Style.TabBarSeparatorHeight }, GetColor(GuiCol_Separator));
         SetCursorPosY(GetCursorPosY() + g_Ctx.Style.TabBarSeparatorHeight + g_Ctx.Style.WindowPadding.y);
 
         g_Ctx.ContentStartY = g_Ctx.Cursor.y;
@@ -5043,7 +5043,7 @@ namespace Shadow {
         Vec2 tabRowPos = g_Ctx.TabBarOrigin;
         Vec2 tabRowSize = { viewWidth, g_Ctx.ItemHeight };
         bool hoveringTabRow = IsMouseHovering(tabRowPos, tabRowSize);
-        bool overListBox = (g_Ctx.HoveredListBoxIdCurrentFrame != 0);
+        bool overListBox = (g_Ctx.HoveredListBoxIdPreviousFrame != 0);
 
         if (reorderable && g_Ctx.DraggingTabId != 0 && g_Ctx.DraggingTabBarId == tabBarId) {
             if (g_Ctx.MouseDown) {
@@ -5115,7 +5115,7 @@ namespace Shadow {
                     }
 
                     PushClipRect(clipMin, clipMax);
-                    GetWindowDrawList()->AddRect(tabInfo.pos, tabInfo.size, bgColor);
+                    GetWindowDrawList()->AddRectFilled(tabInfo.pos, tabInfo.size, bgColor);
                     GetWindowDrawList()->AddText({ tabInfo.pos.x + g_Ctx.Style.TabExtraWidth / 2.f, tabInfo.pos.y + g_Ctx.Style.FramePadding.y }, textColor, tabInfo.display);
                     PopClipRect();
 
@@ -5131,7 +5131,7 @@ namespace Shadow {
             Vec2 trackPos = { tabRowPos.x, tabRowPos.y + g_Ctx.ItemHeight + 2.f };
             Vec2 trackSize = { viewWidth, barHeight };
 
-            GetWindowDrawList()->AddRect(trackPos, trackSize, GetColor(GuiCol_FrameBg));
+            GetWindowDrawList()->AddRectFilled(trackPos, trackSize, GetColor(GuiCol_FrameBg));
 
             float thumbWidth = std::max(g_Ctx.Style.ScrollbarThumbMinSize, (viewWidth / g_Ctx.TabBarContentWidth) * trackSize.x);
             float thumbX = trackPos.x + (maxScrollX > 0.f ? (scrollX / maxScrollX) * (trackSize.x - thumbWidth) : 0.f);
@@ -5169,7 +5169,7 @@ namespace Shadow {
             Color thumbColor = (g_Ctx.DraggingTabBarScrollId == tabBarId)
                 ? GetColor(GuiCol_SliderGrab)
                 : (hoveringThumb ? GetColor(GuiCol_FrameBgHovered) : GetColor(GuiCol_Border));
-            GetWindowDrawList()->AddRect(thumbPos, thumbSize, thumbColor);
+            GetWindowDrawList()->AddRectFilled(thumbPos, thumbSize, thumbColor);
 
             bool hoveringForWheel = hoveringTabRow || hoveringTrack;
 
@@ -5302,7 +5302,7 @@ namespace Shadow {
 
             if (tabVisible) {
                 PushClipRect(clipMin, clipMax);
-                GetWindowDrawList()->AddRect(tabPos, tabSize, bgColor);
+                GetWindowDrawList()->AddRectFilled(tabPos, tabSize, bgColor);
                 GetWindowDrawList()->AddText({ tabPos.x + g_Ctx.Style.TabExtraWidth / 2.f, tabPos.y + g_Ctx.Style.FramePadding.y }, textColor, display);
                 PopClipRect();
             }

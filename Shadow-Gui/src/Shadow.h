@@ -1579,17 +1579,6 @@ namespace Shadow {
         return hash;
     }
 
-    inline void ParseLabel(std::string_view raw, std::string_view& display_name, size_t& id) {
-        id = HashString(raw);
-
-        if (!g_Ctx.IDStack.empty()) {
-            id ^= g_Ctx.IDStack.back() + 0x9e3779b9 + (id << 6) + (id >> 2);
-        }
-
-        size_t pos = raw.find("##");
-        display_name = (pos != std::string_view::npos) ? raw.substr(0, pos) : raw;
-    }
-
     inline std::wstring ToWString(std::string_view utf8_str) {
         if (utf8_str.empty()) return L"";
         int size_needed = MultiByteToWideChar(CP_UTF8, 0, utf8_str.data(), static_cast<int>(utf8_str.size()), nullptr, 0);
@@ -1797,8 +1786,8 @@ namespace Shadow {
         return table;
         }();
 
-    inline void ApplyHexInput() {
-        auto it = g_Ctx.InputBuffers.find(HashString("CPHexInput"));
+    inline void ApplyHexInput(size_t hexId) {
+        auto it = g_Ctx.InputBuffers.find(hexId);
         if (it == g_Ctx.InputBuffers.end()) return;
         std::string_view hex = it->second;
 
@@ -2021,16 +2010,6 @@ namespace Shadow {
             break;
         }
         return 0;
-    }
-
-    inline void OpenPopup(size_t id) {
-        if (std::find(g_Ctx.ActivePopups.begin(), g_Ctx.ActivePopups.end(), id) == g_Ctx.ActivePopups.end()) {
-            g_Ctx.ActivePopups.push_back(id);
-        }
-    }
-
-    inline bool IsPopupOpen(size_t id) {
-        return std::find(g_Ctx.ActivePopups.begin(), g_Ctx.ActivePopups.end(), id) != g_Ctx.ActivePopups.end();
     }
 
     inline void CloseCurrentPopup() {
@@ -2380,26 +2359,71 @@ namespace Shadow {
         }
     }
 
-    inline void PushID(int int_id) {
-        size_t id = std::hash<int>()(int_id);
-        if (!g_Ctx.IDStack.empty()) {
-            id ^= g_Ctx.IDStack.back() + 0x9e3779b9 + (id << 6) + (id >> 2);
-        }
-        g_Ctx.IDStack.push_back(id);
-    }
-
-    inline void PushID(std::string_view str_id) {
+    inline size_t GetID(std::string_view str_id) {
         size_t id = HashString(str_id);
         if (!g_Ctx.IDStack.empty()) {
             id ^= g_Ctx.IDStack.back() + 0x9e3779b9 + (id << 6) + (id >> 2);
         }
-        g_Ctx.IDStack.push_back(id);
+        return id;
+    }
+
+    inline size_t GetID(int int_id) {
+        size_t id = std::hash<int>()(int_id);
+        if (!g_Ctx.IDStack.empty()) {
+            id ^= g_Ctx.IDStack.back() + 0x9e3779b9 + (id << 6) + (id >> 2);
+        }
+        return id;
+    }
+
+    inline size_t GetID(const void* ptr_id) {
+        size_t id = std::hash<const void*>()(ptr_id);
+        if (!g_Ctx.IDStack.empty()) {
+            id ^= g_Ctx.IDStack.back() + 0x9e3779b9 + (id << 6) + (id >> 2);
+        }
+        return id;
+    }
+
+    inline void PushID(int int_id) {
+        g_Ctx.IDStack.push_back(GetID(int_id));
+    }
+
+    inline void PushID(std::string_view str_id) {
+        g_Ctx.IDStack.push_back(GetID(str_id));
+    }
+
+    inline void PushID(const void* ptr_id) {
+        g_Ctx.IDStack.push_back(GetID(ptr_id));
     }
 
     inline void PopID() {
         if (!g_Ctx.IDStack.empty()) {
             g_Ctx.IDStack.pop_back();
         }
+    }
+
+    inline void ParseLabel(std::string_view raw, std::string_view& display_name, size_t& id) {
+        id = GetID(raw);
+
+        size_t pos = raw.find("##");
+        display_name = (pos != std::string_view::npos) ? raw.substr(0, pos) : raw;
+    }
+
+    inline void OpenPopup(size_t id) {
+        if (std::find(g_Ctx.ActivePopups.begin(), g_Ctx.ActivePopups.end(), id) == g_Ctx.ActivePopups.end()) {
+            g_Ctx.ActivePopups.push_back(id);
+        }
+    }
+
+    inline void OpenPopup(std::string_view name) {
+        OpenPopup(GetID(name));
+    }
+
+    inline bool IsPopupOpen(size_t id) {
+        return std::find(g_Ctx.ActivePopups.begin(), g_Ctx.ActivePopups.end(), id) != g_Ctx.ActivePopups.end();
+    }
+
+    inline bool IsPopupOpen(std::string_view name) {
+        return IsPopupOpen(GetID(name));
     }
 
     inline void PushTextWrapPos(float wrap_pos_x = 0.0f) {
@@ -3381,7 +3405,9 @@ namespace Shadow {
                 if (g_Ctx.DraggingSliderId == id) {
                     isSelfActive = true;
                 }
-                size_t sliderInputId = id ^ HashString("_sliderInput");
+                g_Ctx.IDStack.push_back(id);
+                size_t sliderInputId = GetID("##SliderInput");
+                g_Ctx.IDStack.pop_back();
                 if (g_Ctx.ActiveInputId == sliderInputId) {
                     isSelfActive = true;
                 }
@@ -5577,6 +5603,7 @@ namespace Shadow {
         if (!g_Ctx.InActiveTab) return false;
         std::string_view display; size_t id; ParseLabel(name, display, id);
         g_Ctx.WidgetCount++;
+        PushID(name);
 
         float itemHeight = size_arg.y > 0.f ? size_arg.y : g_Ctx.ItemHeight;
         bool disabled = IsDisabled();
@@ -5634,6 +5661,7 @@ namespace Shadow {
             g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
             g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
             g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            PopID();
             return false;
         }
 
@@ -5649,16 +5677,14 @@ namespace Shadow {
         }
         bool toggled = false;
 
-        std::string popupName = std::format("##Combo_{}", id);
-
         if (hovered && g_Ctx.MouseClicked) {
             g_Ctx.IsDragging = false;
 
-            if (IsPopupOpen(HashString(popupName))) {
+            if (IsPopupOpen("##ComboPopup")) {
                 CloseCurrentPopup();
             }
             else {
-                OpenPopup(HashString(popupName));
+                OpenPopup("##ComboPopup");
                 SetNextWindowPos({ boxPos.x, boxPos.y + boxSize.y });
                 SetNextWindowSize({ boxWidth, items.size() * g_Ctx.ItemHeight });
             }
@@ -5682,7 +5708,7 @@ namespace Shadow {
         Vec2 backupPad = g_Ctx.Style.WindowPadding;
         g_Ctx.Style.WindowPadding = { 0.f, 0.f };
 
-        if (BeginPopup(popupName, ShadowWindowFlags_NoMove)) {
+        if (BeginPopup("##ComboPopup", ShadowWindowFlags_NoMove)) {
             for (size_t i = 0; i < items.size(); ++i) {
                 Vec2 itemPos = g_Ctx.Cursor;
                 bool itemHovered = IsMouseHoveringRaw(itemPos, { boxWidth, g_Ctx.ItemHeight });
@@ -5710,6 +5736,8 @@ namespace Shadow {
         }
         EndPopup();
         g_Ctx.Style.WindowPadding = backupPad;
+
+        PopID();
 
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
@@ -5952,6 +5980,7 @@ namespace Shadow {
         if (!g_Ctx.InActiveTab) return false;
         std::string_view display; size_t id; ParseLabel(name, display, id);
         g_Ctx.WidgetCount++;
+        PushID(name);
 
         float itemHeight = size_arg.y > 0.f ? size_arg.y : g_Ctx.ItemHeight;
         bool disabled = IsDisabled();
@@ -5980,6 +6009,7 @@ namespace Shadow {
             g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
             g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
             g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            PopID();
             return false;
         }
 
@@ -5988,7 +6018,7 @@ namespace Shadow {
             GetWindowDrawList()->AddText({ g_Ctx.Cursor.x, g_Ctx.Cursor.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, textColor, display);
         }
 
-        size_t inputId = id ^ HashString("_inputFloat");
+        size_t inputId = GetID("##InputFloatText");
 
         if (g_Ctx.ActiveInputId != inputId) {
             if ((flags & ShadowInputTextFlags_DisplayEmptyRefVal) && std::abs(*v) < g_Ctx.Style.InputFloatEmptyThreshold) {
@@ -6023,6 +6053,8 @@ namespace Shadow {
         if (g_Ctx.ActiveInputId == inputId) {
             g_Ctx.ActiveId = id;
         }
+
+        PopID();
 
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
@@ -6142,6 +6174,7 @@ namespace Shadow {
         if (!g_Ctx.InActiveTab) return;
         std::string_view display; size_t id; ParseLabel(name, display, id);
         g_Ctx.WidgetCount++;
+        PushID(name);
 
         float itemHeight = size_arg.y > 0.f ? size_arg.y : g_Ctx.ItemHeight;
         bool disabled = IsDisabled();
@@ -6153,7 +6186,7 @@ namespace Shadow {
             textWidth = MeasureTextSize(display).x;
         }
 
-        size_t sliderInputId = id ^ HashString("_sliderInput");
+        size_t sliderInputId = GetID("##SliderInput");
 
         int prec = g_Ctx.Style.SliderDefaultPrecision;
         if (step > 0.f) {
@@ -6205,6 +6238,7 @@ namespace Shadow {
             g_Ctx.LastItemMaxX = valBoxPos.x + valBoxSize.x;
             g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
             g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            PopID();
             return;
         }
 
@@ -6284,6 +6318,8 @@ namespace Shadow {
             g_Ctx.ActiveId = id;
         }
 
+        PopID();
+
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, sliderPos.x), g_Ctx.Cursor.y }, { valBoxPos.x + valBoxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = valBoxPos.x + valBoxSize.x;
         g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
@@ -6294,6 +6330,7 @@ namespace Shadow {
         if (!g_Ctx.InActiveTab) return;
         std::string_view display; size_t id; ParseLabel(name, display, id);
         g_Ctx.WidgetCount++;
+        PushID(name);
 
         float itemHeight = size_arg.y > 0.f ? size_arg.y : g_Ctx.ItemHeight;
         bool disabled = IsDisabled();
@@ -6321,6 +6358,7 @@ namespace Shadow {
             g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
             g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
             g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            PopID();
             return;
         }
 
@@ -6330,7 +6368,6 @@ namespace Shadow {
         }
 
         bool hovered = !disabled && IsMouseHovering(boxPos, boxSize);
-        std::string popupName = std::format("##CP_{}", id);
 
         if (hovered && g_Ctx.MouseDown) {
             g_Ctx.ActiveId = id;
@@ -6339,11 +6376,11 @@ namespace Shadow {
         if (hovered && g_Ctx.MouseClicked) {
             g_Ctx.IsDragging = false;
 
-            if (IsPopupOpen(HashString(popupName))) {
+            if (IsPopupOpen("##ColorPickerPopup")) {
                 CloseCurrentPopup();
             }
             else {
-                OpenPopup(HashString(popupName));
+                OpenPopup("##ColorPickerPopup");
 
                 g_Ctx.ColorPickerR = r; g_Ctx.ColorPickerG = g; g_Ctx.ColorPickerB = b; g_Ctx.ColorPickerA = a;
                 RGBtoHSV(*r, *g, *b, g_Ctx.ColorPickerH, g_Ctx.ColorPickerS, g_Ctx.ColorPickerV);
@@ -6391,7 +6428,7 @@ namespace Shadow {
             }
         }
 
-        if (hovered || IsPopupOpen(HashString(popupName))) {
+        if (hovered || IsPopupOpen("##ColorPickerPopup")) {
             Color border = g_Ctx.Style.Colors[GuiCol_Border];
             GetWindowDrawList()->AddLine({ boxPos.x, boxPos.y }, { boxPos.x + boxSize.x, boxPos.y }, border);
             GetWindowDrawList()->AddLine({ boxPos.x + boxSize.x, boxPos.y }, { boxPos.x + boxSize.x, boxPos.y + boxSize.y }, border);
@@ -6402,7 +6439,7 @@ namespace Shadow {
         Vec2 backupPad = g_Ctx.Style.WindowPadding;
         g_Ctx.Style.WindowPadding = { 0.f, 0.f };
 
-        if (BeginPopup(popupName)) {
+        if (BeginPopup("##ColorPickerPopup")) {
             float padding = g_Ctx.Style.CPPadding;
             float svSize = g_Ctx.Style.CPSVSize;
             float hueWidth = g_Ctx.Style.CPHueWidth;
@@ -6503,7 +6540,7 @@ namespace Shadow {
                 }
             }
 
-            size_t hexId = HashString("CPHexInput");
+            size_t hexId = GetID("##HexInput");
             if (g_Ctx.ActiveInputId != hexId) {
                 uint8_t r8 = static_cast<uint8_t>(*r * 255.f);
                 uint8_t g8 = static_cast<uint8_t>(*g * 255.f);
@@ -6514,7 +6551,7 @@ namespace Shadow {
 
             bool hexChanged = InputTextEx(hexId, hexPos, hexSize, g_Ctx.InputBuffers[hexId], ShadowInputTextFlags_CharsHexadecimal | ShadowInputTextFlags_CharsUppercase, true);
             if (hexChanged) {
-                ApplyHexInput();
+                ApplyHexInput(hexId);
             }
 
             // 绘制 SV 选择器的 Cursor
@@ -6542,6 +6579,8 @@ namespace Shadow {
         }
         EndPopup();
         g_Ctx.Style.WindowPadding = backupPad;
+
+        PopID();
 
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, boxPos.x), g_Ctx.Cursor.y }, { boxPos.x + boxSize.x, g_Ctx.Cursor.y + itemHeight }, id, disabled);
         g_Ctx.LastItemMaxX = boxPos.x + boxSize.x;
@@ -6628,6 +6667,7 @@ namespace Shadow {
         if (!g_Ctx.InActiveTab) return;
         std::string_view display; size_t id; ParseLabel(name, display, id);
         g_Ctx.WidgetCount++;
+        PushID(name);
 
         float itemHeight = size_arg.y > 0.f ? size_arg.y : g_Ctx.ItemHeight;
         bool disabled = IsDisabled();
@@ -6671,6 +6711,7 @@ namespace Shadow {
             g_Ctx.LastItemMaxX = maxX;
             g_Ctx.Cursor.y += itemHeight + g_Ctx.Style.ItemSpacing.y;
             g_Ctx.Cursor.x = g_Ctx.WindowPos.x + g_Ctx.Style.WindowPadding.x + g_Ctx.IndentX;
+            PopID();
             return;
         }
 
@@ -6684,7 +6725,6 @@ namespace Shadow {
         if (btnHovered && g_Ctx.MouseDown) {
             g_Ctx.ActiveId = id;
         }
-        std::string popupName = std::format("##Hotkey_{}", id);
 
         if (btnHovered) {
             if (g_Ctx.MouseClicked) {
@@ -6695,11 +6735,11 @@ namespace Shadow {
             else if (g_Ctx.RightMouseClicked) {
                 g_Ctx.IsDragging = false;
 
-                if (IsPopupOpen(HashString(popupName))) {
+                if (IsPopupOpen("##HotkeyModePopup")) {
                     CloseCurrentPopup();
                 }
                 else {
-                    OpenPopup(HashString(popupName));
+                    OpenPopup("##HotkeyModePopup");
                     SetNextWindowPos({ btnPos.x, btnPos.y + btnSize.y });
                     SetNextWindowSize({ g_Ctx.Style.HotkeyModePopupWidth, modeStrs.size() * g_Ctx.ItemHeight });
                 }
@@ -6715,7 +6755,7 @@ namespace Shadow {
         g_Ctx.Style.WindowPadding = { 0.f, 0.f };
 
         // 限制其拖拽
-        if (BeginPopup(popupName, ShadowWindowFlags_NoMove)) {
+        if (BeginPopup("##HotkeyModePopup", ShadowWindowFlags_NoMove)) {
             for (size_t i = 0; i < modeStrs.size(); ++i) {
                 Vec2 itemPos = g_Ctx.Cursor;
                 bool itemHovered = IsMouseHoveringRaw(itemPos, { g_Ctx.Style.HotkeyModePopupWidth, g_Ctx.ItemHeight });
@@ -6756,6 +6796,8 @@ namespace Shadow {
             if (disabled) indicatorColor.a *= g_Ctx.Style.DisabledAlpha;
             GetWindowDrawList()->AddRectFilled({ btnPos.x + btnSize.x + g_Ctx.Style.ItemSpacing.x, g_Ctx.Cursor.y + dotOffset }, { dotSize, dotSize }, indicatorColor);
         }
+
+        PopID();
 
         SetLastItemInfo({ std::min(g_Ctx.Cursor.x, btnPos.x), g_Ctx.Cursor.y }, { maxX, g_Ctx.Cursor.y + itemHeight }, id, disabled);
 

@@ -5338,205 +5338,27 @@ namespace Shadow {
         CheckAndDrawErrors();
 
         auto ExecCmds = [](const std::vector<ShadowDrawCmd>& cmds) {
-            if (cmds.empty()) return;
-
-            size_t n = cmds.size();
-            if (n <= 1) {
-                const auto& cmd = cmds[0];
-                if (cmd.type == ShadowDrawCmdType::Line) {
-                    InternalDrawLine(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
-                }
-                else if (cmd.type == ShadowDrawCmdType::Rect) {
-                    InternalDrawRect(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
-                }
-                else if (cmd.type == ShadowDrawCmdType::RectFilled) {
-                    InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
-                }
-                else if (cmd.type == ShadowDrawCmdType::Texture) {
-                    InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
-                }
-                else if (cmd.type == ShadowDrawCmdType::Text) {
-                    InternalDrawText(cmd.text, cmd.pos, cmd.color, cmd.font, cmd.fontScale, cmd.textShadowColor, cmd.textOutlineColor, cmd.textOutline, cmd.noSDF);
-                }
-                else if (cmd.type == ShadowDrawCmdType::TriangleFilled) {
-                    InternalDrawTriangleFilled(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
-                }
-                else if (cmd.type == ShadowDrawCmdType::Triangle) {
-                    InternalDrawTriangle(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
-                }
-                return;
-            }
-
-            struct CmdAABB {
-                Vec2 min;
-                Vec2 max;
-                uintptr_t resourceKey;
-            };
-
-            std::vector<CmdAABB> aabbs(n);
-            SDK::UTexture* defaultTex = g_Ctx.Canvas ? g_Ctx.Canvas->DefaultTexture : nullptr;
-
-            for (size_t i = 0; i < n; ++i) {
-                const auto& cmd = cmds[i];
-                CmdAABB& box = aabbs[i];
+            for (const auto& cmd : cmds) {
                 switch (cmd.type) {
-                case ShadowDrawCmdType::Line: {
-                    float minX = std::min(cmd.pos.x, cmd.size.x);
-                    float maxX = std::max(cmd.pos.x, cmd.size.x);
-                    float minY = std::min(cmd.pos.y, cmd.size.y);
-                    float maxY = std::max(cmd.pos.y, cmd.size.y);
-                    float ht = cmd.thickness * 0.5f;
-                    box.min = { minX - ht, minY - ht };
-                    box.max = { maxX + ht, maxY + ht };
-                    SDK::UTexture* tex = cmd.texture ? cmd.texture : defaultTex;
-                    box.resourceKey = reinterpret_cast<uintptr_t>(tex);
-                    break;
-                }
-                case ShadowDrawCmdType::Rect: {
-                    float ht = cmd.thickness * 0.5f;
-                    box.min = { cmd.pos.x - ht, cmd.pos.y - ht };
-                    box.max = { cmd.pos.x + cmd.size.x + ht, cmd.pos.y + cmd.size.y + ht };
-                    SDK::UTexture* tex = cmd.texture ? cmd.texture : defaultTex;
-                    box.resourceKey = reinterpret_cast<uintptr_t>(tex);
-                    break;
-                }
-                case ShadowDrawCmdType::RectFilled: {
-                    box.min = cmd.pos;
-                    box.max = { cmd.pos.x + cmd.size.x, cmd.pos.y + cmd.size.y };
-                    SDK::UTexture* tex = cmd.texture ? cmd.texture : defaultTex;
-                    box.resourceKey = reinterpret_cast<uintptr_t>(tex);
-                    break;
-                }
-                case ShadowDrawCmdType::Texture: {
-                    box.min = cmd.pos;
-                    box.max = { cmd.pos.x + cmd.size.x, cmd.pos.y + cmd.size.y };
-                    SDK::UTexture* tex = cmd.texture ? cmd.texture : defaultTex;
-                    box.resourceKey = reinterpret_cast<uintptr_t>(tex);
-                    break;
-                }
-                case ShadowDrawCmdType::TriangleFilled:
-                case ShadowDrawCmdType::Triangle: {
-                    float minX = std::min({ cmd.p1.x, cmd.p2.x, cmd.p3.x });
-                    float maxX = std::max({ cmd.p1.x, cmd.p2.x, cmd.p3.x });
-                    float minY = std::min({ cmd.p1.y, cmd.p2.y, cmd.p3.y });
-                    float maxY = std::max({ cmd.p1.y, cmd.p2.y, cmd.p3.y });
-                    float ht = (cmd.type == ShadowDrawCmdType::Triangle) ? cmd.thickness * 0.5f : 0.0f;
-                    box.min = { minX - ht, minY - ht };
-                    box.max = { maxX + ht, maxY + ht };
-                    SDK::UTexture* tex = cmd.texture ? cmd.texture : defaultTex;
-                    box.resourceKey = reinterpret_cast<uintptr_t>(tex);
-                    break;
-                }
-                case ShadowDrawCmdType::Text: {
-                    box.min = cmd.pos;
-                    box.max = { cmd.pos.x + cmd.size.x, cmd.pos.y + cmd.size.y };
-                    box.resourceKey = reinterpret_cast<uintptr_t>(cmd.font) ^ (cmd.noSDF ? 0x55555555 : 0);
-                    break;
-                }
-                }
-            }
-
-            // 构建依赖关系 (DAG)
-            std::vector<int> in_degrees(n, 0);
-            std::vector<std::vector<uint32_t>> adj(n);
-
-            auto HasConflict = [&](size_t i, size_t j) -> bool {
-                const auto& c1 = cmds[i];
-                const auto& c2 = cmds[j];
-
-                // 剪裁状态不同视作强制先后屏障
-                if (c1.clippingEnabled != c2.clippingEnabled) return true;
-                if (c1.clippingEnabled) {
-                    if (c1.clipMin.x != c2.clipMin.x || c1.clipMin.y != c2.clipMin.y ||
-                        c1.clipMax.x != c2.clipMax.x || c1.clipMax.y != c2.clipMax.y) {
-                        return true;
-                    }
-                }
-
-                // AABB 相交重叠判断
-                const auto& b1 = aabbs[i];
-                const auto& b2 = aabbs[j];
-                bool overlapX = (std::max(b1.min.x, b2.min.x) < std::min(b1.max.x, b2.max.x));
-                bool overlapY = (std::max(b1.min.y, b2.min.y) < std::min(b1.max.y, b2.max.y));
-                return overlapX && overlapY;
-                };
-
-            for (size_t i = 0; i < n; ++i) {
-                for (size_t j = i + 1; j < n; ++j) {
-                    if (HasConflict(i, j)) {
-                        adj[i].push_back(static_cast<uint32_t>(j));
-                        in_degrees[j]++;
-                    }
-                }
-            }
-
-            std::vector<uint32_t> ready;
-            ready.reserve(n);
-            for (size_t i = 0; i < n; ++i) {
-                if (in_degrees[i] == 0) {
-                    ready.push_back(static_cast<uint32_t>(i));
-                }
-            }
-
-            uintptr_t currentResourceKey = 0;
-            bool hasCurrentResource = false;
-
-            auto ExecuteSingleCmd = [](const ShadowDrawCmd& cmd) {
-                if (cmd.type == ShadowDrawCmdType::Line) {
+                case ShadowDrawCmdType::Line:
                     InternalDrawLine(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
-                }
-                else if (cmd.type == ShadowDrawCmdType::Rect) {
+                    break;
+                case ShadowDrawCmdType::Rect:
                     InternalDrawRect(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
-                }
-                else if (cmd.type == ShadowDrawCmdType::RectFilled) {
+                    break;
+                case ShadowDrawCmdType::RectFilled:
+                case ShadowDrawCmdType::Texture:
                     InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
-                }
-                else if (cmd.type == ShadowDrawCmdType::Texture) {
-                    InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
-                }
-                else if (cmd.type == ShadowDrawCmdType::Text) {
+                    break;
+                case ShadowDrawCmdType::Text:
                     InternalDrawText(cmd.text, cmd.pos, cmd.color, cmd.font, cmd.fontScale, cmd.textShadowColor, cmd.textOutlineColor, cmd.textOutline, cmd.noSDF);
-                }
-                else if (cmd.type == ShadowDrawCmdType::TriangleFilled) {
+                    break;
+                case ShadowDrawCmdType::TriangleFilled:
                     InternalDrawTriangleFilled(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
-                }
-                else if (cmd.type == ShadowDrawCmdType::Triangle) {
+                    break;
+                case ShadowDrawCmdType::Triangle:
                     InternalDrawTriangle(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
-                }
-                };
-
-            while (!ready.empty()) {
-                size_t chosenIdx = 0;
-                if (hasCurrentResource) {
-                    bool found = false;
-                    for (size_t k = 0; k < ready.size(); ++k) {
-                        if (aabbs[ready[k]].resourceKey == currentResourceKey) {
-                            chosenIdx = k;
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) {
-                        chosenIdx = 0;
-                    }
-                }
-                else {
-                    chosenIdx = 0;
-                }
-
-                uint32_t cmdIdx = ready[chosenIdx];
-                ready.erase(ready.begin() + chosenIdx);
-
-                currentResourceKey = aabbs[cmdIdx].resourceKey;
-                hasCurrentResource = true;
-
-                ExecuteSingleCmd(cmds[cmdIdx]);
-
-                for (uint32_t next : adj[cmdIdx]) {
-                    in_degrees[next]--;
-                    if (in_degrees[next] == 0) {
-                        ready.push_back(next);
-                    }
+                    break;
                 }
             }
             };

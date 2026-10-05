@@ -71,14 +71,23 @@ namespace Shadow {
             }
 
             const int32_t Index = Obj->Index;
-            const int32_t ChunkIndex = Index / SDK::TUObjectArray::ElementsPerChunk;
-            const int32_t InChunkIdx = Index % SDK::TUObjectArray::ElementsPerChunk;
-
-            if (Index < 0 || ChunkIndex >= ObjectsArray->NumChunks || Index >= ObjectsArray->NumElements) {
+            if (Index < 0 || Index >= ObjectsArray->NumElements) {
                 return nullptr;
             }
 
-            SDK::FUObjectItem* ChunkPtr = ObjectsArray->GetDecrytedObjPtr()[ChunkIndex];
+            const int32_t ChunkIndex = Index / SDK::TUObjectArray::ElementsPerChunk;
+            const int32_t InChunkIdx = Index % SDK::TUObjectArray::ElementsPerChunk;
+
+            if (ObjectsArray->NumChunks > 0 && ChunkIndex >= ObjectsArray->NumChunks) {
+                return nullptr;
+            }
+
+            SDK::FUObjectItem** DecryptedChunks = ObjectsArray->GetDecrytedObjPtr();
+            if (!DecryptedChunks) {
+                return nullptr;
+            }
+
+            SDK::FUObjectItem* ChunkPtr = DecryptedChunks[ChunkIndex];
             if (!ChunkPtr) {
                 return nullptr;
             }
@@ -98,8 +107,10 @@ namespace Shadow {
             }
 
             FUObjectItemInternal* Item = GetObjectItem(Obj);
-            if (!Item || Item->Object != Obj || (Item->Flags & INTERNAL_FLAGS_GARBAGE_MASK)) {
-                return false;
+            if (Item) {
+                if (Item->Object != Obj || (Item->Flags & INTERNAL_FLAGS_GARBAGE_MASK)) {
+                    return false;
+                }
             }
 
             return true;
@@ -130,6 +141,31 @@ namespace Shadow {
             InternalSolidifyBase(Texture);
             Texture->bTemporarilyDisableStreaming = 1;
             Texture->LODGroup = SDK::ETextureGroup::TEXTUREGROUP_UI;
+        }
+
+        // 移除 Standalone 与 RootSet 标志，允许引擎 GC 正常回收对象
+        static void InternalUnsolidifyBase(SDK::UObject* Obj) {
+            if (!Obj) {
+                return;
+            }
+
+            *(uint32_t*)(&Obj->Flags) &= ~(OBJECT_FLAG_PUBLIC | OBJECT_FLAG_STANDALONE);
+            *(uint32_t*)(&Obj->Flags) |= OBJECT_FLAG_TRANSIENT;
+
+            FUObjectItemInternal* Item = GetObjectItem(Obj);
+            if (Item && Item->Object == Obj) {
+                Item->Flags &= ~INTERNAL_FLAG_ROOTSET;
+            }
+        }
+
+        // 针对 Texture2D 的解除固化（恢复显存流送限制并允许 GC 回收）
+        static void UnsolidifyTexture(SDK::UTexture2D* Texture) {
+            if (!Texture) {
+                return;
+            }
+
+            InternalUnsolidifyBase(Texture);
+            Texture->bTemporarilyDisableStreaming = 0;
         }
 
         // 将对象从全局池中抹除，使引擎在退出时彻底忽略它，阻止 FMemory::Free 释放 CRT 内存
@@ -165,7 +201,14 @@ namespace Shadow {
 
             if (CurrentWorld != s_CachedWorld) {
                 s_CachedWorld = CurrentWorld;
+                for (auto& Pair : s_BufferTextureCache) {
+                    UnsolidifyTexture(Pair.second);
+                }
                 s_BufferTextureCache.clear();
+
+                for (auto& Pair : s_FileTextureCache) {
+                    UnsolidifyTexture(Pair.second);
+                }
                 s_FileTextureCache.clear();
             }
 
@@ -226,6 +269,7 @@ namespace Shadow {
                 return It->second;
             }
             else {
+                Detail::UnsolidifyTexture(It->second);
                 Detail::s_BufferTextureCache.erase(It);
             }
         }
@@ -261,6 +305,7 @@ namespace Shadow {
                 return It->second;
             }
             else {
+                Detail::UnsolidifyTexture(It->second);
                 Detail::s_FileTextureCache.erase(It);
             }
         }

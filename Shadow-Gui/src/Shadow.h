@@ -31,6 +31,9 @@ Credit:
 
 namespace Shadow {
     namespace Detail {
+        // UFunction 标志位定义
+        constexpr int32_t FUNCTION_FLAG_NATIVE = 0x00000400; // FUNC_Native
+
         // 通用标志位定义 (UObject Flags & Internal GC Flags)
         constexpr uint32_t OBJECT_FLAG_PUBLIC = 0x00000001; // RF_Public
         constexpr uint32_t OBJECT_FLAG_STANDALONE = 0x00000002; // RF_Standalone
@@ -59,6 +62,65 @@ namespace Shadow {
 
         static_assert(sizeof(FUObjectItemInternal) == sizeof(SDK::FUObjectItem),
             "FUObjectItem size mismatch! Please verify SDK::FUObjectItem");
+
+        // 虚幻引擎原生底层 FScriptArray 内存布局映射 (16 字节)
+        struct FScriptArrayHelper {
+            void* Data = nullptr;
+            int32_t NumElements = 0;
+            int32_t MaxElements = 0;
+        };
+        static_assert(sizeof(FScriptArrayHelper) == 0x10, "FScriptArrayHelper size mismatch!");
+
+        // 映射 UKismetRenderingLibrary::ImportBufferAsTexture2D 调用的原生 Parms 结构体 (32 字节)
+        struct FImportBufferAsTexture2DParams {
+            SDK::UObject* WorldContextObject;
+            FScriptArrayHelper ImageBuffer;
+            SDK::UTexture2D* ReturnValue;
+        };
+        static_assert(sizeof(FImportBufferAsTexture2DParams) == 0x20, "FImportBufferAsTexture2DParams size mismatch!");
+
+        // 避开 Dumper-7 的 SDK::TArray 内存泄露，直接构造虚幻引擎底层参数布局调用 ProcessEvent
+        static SDK::UTexture2D* ImportBufferAsTexture2D(SDK::UWorld* World, const unsigned char* BufferData, size_t BufferSize) {
+            if (!World || !BufferData || BufferSize == 0) {
+                return nullptr;
+            }
+
+            static SDK::UFunction* Func = nullptr;
+            if (!Func) {
+                SDK::UClass* Clazz = SDK::UKismetRenderingLibrary::StaticClass();
+                if (Clazz) {
+                    Func = Clazz->GetFunction("KismetRenderingLibrary", "ImportBufferAsTexture2D");
+                }
+                if (!Func) {
+                    Func = static_cast<SDK::UFunction*>(SDK::UObject::FindObjectFastImpl("ImportBufferAsTexture2D"));
+                }
+            }
+
+            if (!Func) {
+                return nullptr;
+            }
+
+            SDK::UObject* DefaultObj = SDK::UKismetRenderingLibrary::GetDefaultObj();
+            if (!DefaultObj) {
+                return nullptr;
+            }
+
+            FImportBufferAsTexture2DParams Parms{};
+            Parms.WorldContextObject = World;
+            Parms.ImageBuffer.Data = const_cast<unsigned char*>(BufferData);
+            Parms.ImageBuffer.NumElements = static_cast<int32_t>(BufferSize);
+            Parms.ImageBuffer.MaxElements = static_cast<int32_t>(BufferSize);
+            Parms.ReturnValue = nullptr;
+
+            const auto OriginalFlags = Func->FunctionFlags;
+            Func->FunctionFlags |= FUNCTION_FLAG_NATIVE;
+
+            DefaultObj->ProcessEvent(Func, &Parms);
+
+            Func->FunctionFlags = OriginalFlags;
+
+            return Parms.ReturnValue;
+        }
 
         static FUObjectItemInternal* GetObjectItem(SDK::UObject* Obj) {
             if (!Obj) {
@@ -274,13 +336,8 @@ namespace Shadow {
             }
         }
 
-        SDK::TArray<uint8_t> ImageBuffer(
-            const_cast<uint8_t*>(BufferData),
-            static_cast<int32_t>(BufferSize),
-            static_cast<int32_t>(BufferSize)
-        );
+        SDK::UTexture2D* LoadedTexture = Detail::ImportBufferAsTexture2D(World, BufferData, BufferSize);
 
-        SDK::UTexture2D* LoadedTexture = SDK::UKismetRenderingLibrary::ImportBufferAsTexture2D(World, ImageBuffer);
         if (LoadedTexture) {
             Detail::SolidifyTexture(LoadedTexture);
             Detail::s_BufferTextureCache[BufferData] = LoadedTexture;
@@ -349,7 +406,7 @@ namespace Shadow {
         Entry.Font.SubFaceIndex = 0;
         Entry.Font.FontFaceAsset = nullptr;
 
-        NewFont->CompositeFont.DefaultTypeface.Fonts = SDK::TArray<SDK::FTypefaceEntry>(&Entry, 1, 1);
+        *reinterpret_cast<Detail::FScriptArrayHelper*>(&NewFont->CompositeFont.DefaultTypeface.Fonts) = { &Entry, 1, 1 };
 
         // 将其变成幽灵对象，切断引擎退出时对该 CRT 内存的所有销毁链路
         Detail::GhostObject(NewFont);

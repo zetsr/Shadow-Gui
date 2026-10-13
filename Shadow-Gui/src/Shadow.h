@@ -31,6 +31,10 @@ Credit:
 
 namespace Shadow {
     namespace Detail {
+        // 字体相关默认配置常量
+        constexpr int32_t DEFAULT_FONT_SIZE = 0;
+        constexpr int32_t MIN_VALID_FONT_SIZE = 1;
+
         // UFunction 标志位定义
         constexpr int32_t FUNCTION_FLAG_NATIVE = 0x00000400; // FUNC_Native
 
@@ -377,7 +381,7 @@ namespace Shadow {
         return LoadedTexture;
     }
 
-    static SDK::UFont* LoadFontFromFile(const wchar_t* FilePath) {
+    static SDK::UFont* LoadFontFromFile(const wchar_t* FilePath, int32_t FontSize = Detail::DEFAULT_FONT_SIZE) {
         if (!FilePath) {
             return nullptr;
         }
@@ -394,6 +398,10 @@ namespace Shadow {
         }
 
         NewFont->FontCacheType = SDK::EFontCacheType::Runtime;
+
+        if (FontSize >= Detail::MIN_VALID_FONT_SIZE) {
+            NewFont->LegacyFontSize = FontSize;
+        }
 
         const wchar_t* SafePathPtr = Detail::GetPermanentPathPtr(FilePath);
 
@@ -416,7 +424,7 @@ namespace Shadow {
         return NewFont;
     }
 
-    static SDK::UFont* LoadFontFromBuffer(const unsigned char* BufferData, size_t BufferSize) {
+    static SDK::UFont* LoadFontFromBuffer(const unsigned char* BufferData, size_t BufferSize, int32_t FontSize = Detail::DEFAULT_FONT_SIZE) {
         if (!BufferData || BufferSize == 0) {
             return nullptr;
         }
@@ -439,7 +447,7 @@ namespace Shadow {
             Out.close();
         }
 
-        SDK::UFont* LoadedFont = LoadFontFromFile(TempFilePath.c_str());
+        SDK::UFont* LoadedFont = LoadFontFromFile(TempFilePath.c_str(), FontSize);
         if (LoadedFont) {
             Detail::s_BufferFontCache[BufferData] = LoadedFont;
         }

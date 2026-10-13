@@ -21,6 +21,8 @@ namespace Shadow {
         static bool show_demo = true;
         if (!show_demo) return;
 
+        SDK::UFont* font_arialbd = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\arialbd.ttf", 32);
+
         static Shadow::ShadowWindowFlags win_flags = Shadow::ShadowWindowFlags_MenuBar;
         static Shadow::ShadowTabBarFlags tab_flags = Shadow::ShadowTabBarFlags_Reorderable | Shadow::ShadowTabBarFlags_FittingPolicyScroll;
 
@@ -1182,6 +1184,13 @@ namespace Shadow {
                         Shadow::Text("PushFontNoSDF 1.5x");
                         Shadow::PopFont();
                         Shadow::HelpMarker("PushFontNoSDF / PopFont demo.");
+
+                        if (font_arialbd) {
+                            Shadow::PushFont(font_arialbd);
+                            Shadow::Text("PushFont font_arialbd (Arial Bold 32pt)");
+                            Shadow::PopFont();
+                            Shadow::HelpMarker("PushFont / PopFont demonstration with font_arialbd.");
+                        }
 
                         Shadow::PushTextPixelSnap(true);
                         Shadow::Text("Pixel snapped text");

@@ -26,6 +26,8 @@ namespace Shadow {
         static Shadow::ShadowWindowFlags win_flags = Shadow::ShadowWindowFlags_MenuBar;
         static Shadow::ShadowTabBarFlags tab_flags = Shadow::ShadowTabBarFlags_Reorderable | Shadow::ShadowTabBarFlags_FittingPolicyScroll;
 
+        Shadow::SetNextWindowSize({ 900, 600 }, Shadow::ShadowCond_Once);
+
         if (Shadow::Begin("Shadow Gui Demo##DemoWindow", win_flags)) {
             if (Shadow::BeginMenuBar()) {
                 if (Shadow::BeginMenu("File")) {

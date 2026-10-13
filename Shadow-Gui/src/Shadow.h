@@ -573,6 +573,12 @@ namespace Shadow {
     };
     using ShadowWindowFlags = int;
 
+    enum ShadowCond_ {
+        ShadowCond_Always = 1 << 0,
+        ShadowCond_Once = 1 << 1,
+    };
+    using ShadowCond = int;
+
     enum ShadowTabBarFlags_ {
         ShadowTabBarFlags_None = 0,
         ShadowTabBarFlags_Reorderable = 1 << 0,
@@ -937,6 +943,8 @@ namespace Shadow {
         ShadowWindowFlags CurrentWindowFlags = ShadowWindowFlags_None;
         float CurrentScrollbarWidth = 0.f;
 
+        bool SizeSetOnce = false;
+
         ShadowDrawList DrawList;
         uint64_t LastAccessedFrame = 0;
     };
@@ -1018,6 +1026,7 @@ namespace Shadow {
         std::vector<PopupBackupState> PopupStack;
         bool HasNextWindowSize = false;
         Vec2 NextWindowSize = { 0.f, 0.f };
+        ShadowCond NextWindowSizeCond = ShadowCond_Always;
 
         std::unordered_map<size_t, ShadowWindow> Windows;
         std::vector<size_t> WindowDisplayOrder;
@@ -1573,9 +1582,10 @@ namespace Shadow {
         g_Ctx.WindowSizeConstraintMax = max_size;
     }
 
-    inline void SetNextWindowSize(Vec2 size) {
+    inline void SetNextWindowSize(Vec2 size, ShadowCond flags = ShadowCond_Always) {
         g_Ctx.HasNextWindowSize = true;
         g_Ctx.NextWindowSize = size;
+        g_Ctx.NextWindowSizeCond = flags;
     }
 
     inline Vec2 GetCursorStartPos() {
@@ -3172,12 +3182,15 @@ namespace Shadow {
         g_Ctx.WindowPos = win.Pos;
 
         if (g_Ctx.HasNextWindowSize) {
-            win.Size = g_Ctx.NextWindowSize;
-            if (win.Size.x <= 0.f) {
-                win.Size.x = g_Ctx.Style.PopupInitialSize; // 初始安全宽度，防止裁剪区域过小导致后续控件无法显示
-            }
-            if (win.Size.y <= 0.f) {
-                win.Size.y = g_Ctx.ItemHeight;
+            if (g_Ctx.NextWindowSizeCond == ShadowCond_Always || !win.SizeSetOnce) {
+                win.Size = g_Ctx.NextWindowSize;
+                if (win.Size.x <= 0.f) {
+                    win.Size.x = g_Ctx.Style.PopupInitialSize; // 初始安全宽度，防止裁剪区域过小导致后续控件无法显示
+                }
+                if (win.Size.y <= 0.f) {
+                    win.Size.y = g_Ctx.ItemHeight;
+                }
+                win.SizeSetOnce = true;
             }
             g_Ctx.HasNextWindowSize = false;
         }
@@ -4705,7 +4718,10 @@ namespace Shadow {
         g_Ctx.WindowPos = win.Pos;
 
         if (g_Ctx.HasNextWindowSize) {
-            win.Size = g_Ctx.NextWindowSize;
+            if (g_Ctx.NextWindowSizeCond == ShadowCond_Always || !win.SizeSetOnce) {
+                win.Size = g_Ctx.NextWindowSize;
+                win.SizeSetOnce = true;
+            }
             g_Ctx.HasNextWindowSize = false;
         }
 

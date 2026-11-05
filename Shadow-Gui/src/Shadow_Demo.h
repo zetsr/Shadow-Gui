@@ -1053,6 +1053,17 @@ namespace Shadow {
                         Shadow::Slider("ControlOffsetMin", &style.ControlOffsetMin, 0.f, 400.f, 1.f);
                         Shadow::Slider("ControlOffsetRatio", &style.ControlOffsetRatio, 0.f, 1.f, 0.01f);
                         Shadow::Slider("FontScaleDpi", &style.FontScaleDpi, 0.5f, 3.f, 0.05f);
+
+                        Shadow::Separator();
+                        Shadow::Text("Rounding Metrics");
+                        Shadow::Slider("WindowRounding", &style.WindowRounding, 0.f, 20.f, 1.f);
+                        Shadow::Slider("ChildRounding", &style.ChildRounding, 0.f, 20.f, 1.f);
+                        Shadow::Slider("PopupRounding", &style.PopupRounding, 0.f, 20.f, 1.f);
+                        Shadow::Slider("FrameRounding", &style.FrameRounding, 0.f, 20.f, 1.f);
+                        Shadow::Slider("ScrollbarRounding", &style.ScrollbarRounding, 0.f, 20.f, 1.f);
+                        Shadow::Slider("GrabRounding", &style.GrabRounding, 0.f, 20.f, 1.f);
+                        Shadow::Slider("TabRounding", &style.TabRounding, 0.f, 20.f, 1.f);
+
                         Shadow::HelpMarker("Style metrics editor using GetStyle().");
                     }
                     Shadow::TreePop();
@@ -1122,6 +1133,58 @@ namespace Shadow {
                         dl->AddTriangle({ p.x + 120.f, p.y + 100.f }, { p.x + 180.f, p.y + 100.f }, { p.x + 150.f, p.y + 150.f }, Shadow::GetColor({ 1.f, 0.f, 1.f, 1.f }), 2.f);
                         dl->AddTriangleFilled({ p.x + 200.f, p.y + 100.f }, { p.x + 260.f, p.y + 100.f }, { p.x + 230.f, p.y + 150.f }, Shadow::GetColor({ 0.f, 1.f, 1.f, 1.f }));
                         dl->AddText({ p.x + 10.f, p.y + 180.f }, Shadow::GetColor({ 1.f, 1.f, 1.f, 1.f }), "DrawList Text");
+                    }
+                    Shadow::TreePop();
+
+                    if (Shadow::TreeNode("DrawList Rounded Rectangles")) {
+                        static float demo_rounding = 12.0f;
+                        static float demo_thickness = 2.0f;
+
+                        Shadow::Slider("Demo Rounding##RR", &demo_rounding, 0.0f, 30.0f, 1.0f);
+                        Shadow::Slider("Demo Thickness##RR", &demo_thickness, 1.0f, 8.0f, 0.5f);
+
+                        ShadowDrawList* dl = Shadow::GetWindowDrawList();
+
+                        // 第一行：AddRectFilled 填充矩形各种圆角标志演示
+                        Shadow::Text("1. Filled Rounded Rectangles (AddRectFilled):");
+                        Shadow::Dummy({ 0.f, 75.f });
+                        Vec2 row1_pos = { Shadow::GetCursorScreenPos().x, Shadow::GetCursorScreenPos().y - 70.f };
+
+                        struct CornerDemo {
+                            const char* name;
+                            ShadowDrawFlags flags;
+                        };
+
+                        CornerDemo demos[] = {
+                            { "All Corners", ShadowDrawFlags_RoundCornersAll },
+                            { "Top Only", ShadowDrawFlags_RoundCornersTop },
+                            { "Bottom Only", ShadowDrawFlags_RoundCornersBottom },
+                            { "Left Only", ShadowDrawFlags_RoundCornersLeft },
+                            { "Right Only", ShadowDrawFlags_RoundCornersRight }
+                        };
+
+                        float box_w = 90.f;
+                        float box_h = 55.f;
+                        float spacing_x = 12.f;
+
+                        for (int i = 0; i < 5; ++i) {
+                            Vec2 p = { row1_pos.x + i * (box_w + spacing_x), row1_pos.y };
+                            dl->AddRectFilled(p, { box_w, box_h }, Shadow::GetColor({ 0.15f + i * 0.15f, 0.45f, 0.85f - i * 0.1f, 0.9f }), demo_rounding, demos[i].flags);
+                            dl->AddText({ p.x + 6.f, p.y + box_h * 0.35f }, Shadow::GetColor({ 1.f, 1.f, 1.f, 1.f }), demos[i].name);
+                        }
+
+                        // 第二行：AddRect 描边线框各种圆角标志演示
+                        Shadow::Text("2. Outlined Rounded Rectangles (AddRect):");
+                        Shadow::Dummy({ 0.f, 75.f });
+                        Vec2 row2_pos = { Shadow::GetCursorScreenPos().x, Shadow::GetCursorScreenPos().y - 70.f };
+
+                        for (int i = 0; i < 5; ++i) {
+                            Vec2 p = { row2_pos.x + i * (box_w + spacing_x), row2_pos.y };
+                            dl->AddRect(p, { box_w, box_h }, Shadow::GetColor({ 0.95f, 0.65f - i * 0.1f, 0.2f + i * 0.15f, 1.0f }), demo_thickness, demo_rounding, demos[i].flags);
+                            dl->AddText({ p.x + 6.f, p.y + box_h * 0.35f }, Shadow::GetColor({ 0.95f, 0.95f, 0.95f, 1.f }), demos[i].name);
+                        }
+
+                        Shadow::HelpMarker("AddRect & AddRectFilled support corner flags: All, Top, Bottom, Left, Right or custom combinations.");
                     }
                     Shadow::TreePop();
 

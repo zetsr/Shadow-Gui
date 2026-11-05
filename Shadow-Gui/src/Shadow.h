@@ -35,6 +35,9 @@ namespace Shadow {
         constexpr int32_t DEFAULT_FONT_SIZE = 0;
         constexpr int32_t MIN_VALID_FONT_SIZE = 1;
 
+        // 圆角边框折线拟合段数（每个角），配置越大越圆滑
+        constexpr int RECT_ROUNDING_SEGMENTS = 6;
+
         // UFunction 标志位定义
         constexpr int32_t FUNCTION_FLAG_NATIVE = 0x00000400; // FUNC_Native
 
@@ -857,6 +860,7 @@ namespace Shadow {
         bool textOutline;
         bool noSDF;
         SDK::UTexture* texture = nullptr;
+        float rounding = 0.f;
     };
 
     struct ShadowDrawList {
@@ -896,8 +900,8 @@ namespace Shadow {
         void ChannelsMerge();
 
         void AddLine(Vec2 start, Vec2 end, Color color, float thickness = 1.0f);
-        void AddRect(Vec2 pos, Vec2 size, Color color, float thickness = 1.0f);
-        void AddRectFilled(Vec2 pos, Vec2 size, Color color);
+        void AddRect(Vec2 pos, Vec2 size, Color color, float thickness = 1.0f, float rounding = 0.f);
+        void AddRectFilled(Vec2 pos, Vec2 size, Color color, float rounding = 0.f);
         void AddCircleFilled(Vec2 center, float radius, Color color);
         void AddTexture(Vec2 pos, Vec2 size, Color color, SDK::UTexture* texture = nullptr);
         void AddTriangle(Vec2 p1, Vec2 p2, Vec2 p3, Color color, float thickness = 1.0f);
@@ -2270,7 +2274,7 @@ namespace Shadow {
         );
     }
 
-    inline void InternalDrawRect(Vec2 pos, Vec2 size, Color color, float thickness, bool clipEnabled, Vec2 clipMin, Vec2 clipMax, SDK::UTexture* texture = nullptr) {
+    inline void InternalDrawRect(Vec2 pos, Vec2 size, Color color, float thickness, bool clipEnabled, Vec2 clipMin, Vec2 clipMax, float rounding, SDK::UTexture* texture = nullptr) {
         if (!g_Ctx.Canvas) return;
         if (size.x <= 0.f || size.y <= 0.f) return;
 
@@ -2281,28 +2285,196 @@ namespace Shadow {
                 return;
         }
 
-        float halfThick = thickness * 0.5f;
+        // 如果没有圆角，直接使用最朴素的高效直线绘制
+        if (rounding <= 0.0f) {
+            float halfThick = thickness * 0.5f;
+            InternalDrawLine({ pos.x - halfThick, pos.y }, { pos.x + size.x + halfThick, pos.y }, color, thickness, clipEnabled, clipMin, clipMax, texture);
+            InternalDrawLine({ pos.x - halfThick, pos.y + size.y }, { pos.x + size.x + halfThick, pos.y + size.y }, color, thickness, clipEnabled, clipMin, clipMax, texture);
+            InternalDrawLine({ pos.x, pos.y + halfThick }, { pos.x, pos.y + size.y - halfThick }, color, thickness, clipEnabled, clipMin, clipMax, texture);
+            InternalDrawLine({ pos.x + size.x, pos.y + halfThick }, { pos.x + size.x, pos.y + size.y - halfThick }, color, thickness, clipEnabled, clipMin, clipMax, texture);
+            return;
+        }
 
-        // 1. 上边 (水平线)
-        InternalDrawLine({ pos.x - halfThick, pos.y }, { pos.x + size.x + halfThick, pos.y }, color, thickness, clipEnabled, clipMin, clipMax, texture);
+        // 2. 处理圆角边框
+        float r = std::min(rounding, std::min(size.x, size.y) * 0.5f);
 
-        // 2. 下边 (水平线)
-        InternalDrawLine({ pos.x - halfThick, pos.y + size.y }, { pos.x + size.x + halfThick, pos.y + size.y }, color, thickness, clipEnabled, clipMin, clipMax, texture);
+        // 画四条直边（避开圆角所占的区域）
+        InternalDrawLine({ pos.x + r, pos.y }, { pos.x + size.x - r, pos.y }, color, thickness, clipEnabled, clipMin, clipMax, texture); // 上
+        InternalDrawLine({ pos.x + r, pos.y + size.y }, { pos.x + size.x - r, pos.y + size.y }, color, thickness, clipEnabled, clipMin, clipMax, texture); // 下
+        InternalDrawLine({ pos.x, pos.y + r }, { pos.x, pos.y + size.y - r }, color, thickness, clipEnabled, clipMin, clipMax, texture); // 左
+        InternalDrawLine({ pos.x + size.x, pos.y + r }, { pos.x + size.x, pos.y + size.y - r }, color, thickness, clipEnabled, clipMin, clipMax, texture); // 右
 
-        // 3. 左边 (垂直线)
-        InternalDrawLine({ pos.x, pos.y + halfThick }, { pos.x, pos.y + size.y - halfThick }, color, thickness, clipEnabled, clipMin, clipMax, texture);
+        // 画四个圆角（利用折线拟合）
+        constexpr float PI = 3.14159265358979323846f;
+        int segments = Detail::RECT_ROUNDING_SEGMENTS;
 
-        // 4. 右边 (垂直线)
-        InternalDrawLine({ pos.x + size.x, pos.y + halfThick }, { pos.x + size.x, pos.y + size.y - halfThick }, color, thickness, clipEnabled, clipMin, clipMax, texture);
+        Vec2 centerTL = { pos.x + r, pos.y + r };
+        Vec2 centerTR = { pos.x + size.x - r, pos.y + r };
+        Vec2 centerBL = { pos.x + r, pos.y + size.y - r };
+        Vec2 centerBR = { pos.x + size.x - r, pos.y + size.y - r };
+
+        for (int i = 0; i < segments; ++i) {
+            float t0 = (float)i / segments;
+            float t1 = (float)(i + 1) / segments;
+
+            // 左上角: 角度从 PI/2 到 PI
+            float a0_tl = PI / 2.0f + t0 * (PI / 2.0f);
+            float a1_tl = PI / 2.0f + t1 * (PI / 2.0f);
+            InternalDrawLine(
+                { centerTL.x + r * std::cos(a0_tl), centerTL.y - r * std::sin(a0_tl) },
+                { centerTL.x + r * std::cos(a1_tl), centerTL.y - r * std::sin(a1_tl) },
+                color, thickness, clipEnabled, clipMin, clipMax, texture
+            );
+
+            // 右上角: 角度从 0 到 PI/2
+            float a0_tr = 0.0f + t0 * (PI / 2.0f);
+            float a1_tr = 0.0f + t1 * (PI / 2.0f);
+            InternalDrawLine(
+                { centerTR.x + r * std::cos(a0_tr), centerTR.y - r * std::sin(a0_tr) },
+                { centerTR.x + r * std::cos(a1_tr), centerTR.y - r * std::sin(a1_tr) },
+                color, thickness, clipEnabled, clipMin, clipMax, texture
+            );
+
+            // 左下角: 角度从 PI 到 3PI/2
+            float a0_bl = PI + t0 * (PI / 2.0f);
+            float a1_bl = PI + t1 * (PI / 2.0f);
+            InternalDrawLine(
+                { centerBL.x + r * std::cos(a0_bl), centerBL.y - r * std::sin(a0_bl) },
+                { centerBL.x + r * std::cos(a1_bl), centerBL.y - r * std::sin(a1_bl) },
+                color, thickness, clipEnabled, clipMin, clipMax, texture
+            );
+
+            // 右下角: 角度从 3PI/2 到 2PI
+            float a0_br = 3.0f * PI / 2.0f + t0 * (PI / 2.0f);
+            float a1_br = 3.0f * PI / 2.0f + t1 * (PI / 2.0f);
+            InternalDrawLine(
+                { centerBR.x + r * std::cos(a0_br), centerBR.y - r * std::sin(a0_br) },
+                { centerBR.x + r * std::cos(a1_br), centerBR.y - r * std::sin(a1_br) },
+                color, thickness, clipEnabled, clipMin, clipMax, texture
+            );
+        }
     }
 
-    inline void InternalDrawRectFilled(Vec2 pos, Vec2 size, Color color, bool clipEnabled, Vec2 clipMin, Vec2 clipMax, SDK::UTexture* texture = nullptr) {
+    inline SDK::UTexture2D* GetCircleTexture(float radius) {
+        if (radius <= 0.0f) return nullptr;
+        float diameter = radius * 2.0f;
+        if (diameter <= 16.0f) {
+            return LoadTextureFromBuffer(Shadow_Texture::CircleFilled_16, sizeof(Shadow_Texture::CircleFilled_16));
+        }
+        else if (diameter <= 32.0f) {
+            return LoadTextureFromBuffer(Shadow_Texture::CircleFilled_32, sizeof(Shadow_Texture::CircleFilled_32));
+        }
+        else if (diameter <= 64.0f) {
+            return LoadTextureFromBuffer(Shadow_Texture::CircleFilled_64, sizeof(Shadow_Texture::CircleFilled_64));
+        }
+        else if (diameter <= 128.0f) {
+            return LoadTextureFromBuffer(Shadow_Texture::CircleFilled_128, sizeof(Shadow_Texture::CircleFilled_128));
+        }
+        else if (diameter <= 256.0f) {
+            return LoadTextureFromBuffer(Shadow_Texture::CircleFilled_256, sizeof(Shadow_Texture::CircleFilled_256));
+        }
+        else if (diameter <= 512.0f) {
+            return LoadTextureFromBuffer(Shadow_Texture::CircleFilled_512, sizeof(Shadow_Texture::CircleFilled_512));
+        }
+        else {
+            return LoadTextureFromBuffer(Shadow_Texture::CircleFilled_1024, sizeof(Shadow_Texture::CircleFilled_1024));
+        }
+    }
+
+    inline void InternalDrawRectFilled(Vec2 pos, Vec2 size, Color color, bool clipEnabled, Vec2 clipMin, Vec2 clipMax, float rounding, SDK::UTexture* texture = nullptr) {
         if (!g_Ctx.Canvas) return;
+
+        // 仅在无自定义纹理时应用完美圆角
+        if (rounding > 0.0f && texture == nullptr) {
+            float r = std::min(rounding, std::min(size.x, size.y) * 0.5f);
+            SDK::UTexture2D* circleTex = GetCircleTexture(r);
+            if (circleTex) {
+                // 辅助 Lambda：负责精确裁剪和纹理绘制
+                auto DrawPiece = [&](float x, float y, float w, float h, float u0, float v0, float u1, float v1, SDK::UTexture* tex) {
+                    if (w <= 0.f || h <= 0.f) return;
+                    Vec2 drawPos = { pos.x + x, pos.y + y };
+                    Vec2 drawSize = { w, h };
+                    Vec2 drawUV0 = { u0, v0 };
+                    Vec2 drawUV1 = { u1, v1 };
+
+                    if (clipEnabled) {
+                        if (drawPos.x + drawSize.x <= clipMin.x || drawPos.x >= clipMax.x ||
+                            drawPos.y + drawSize.y <= clipMin.y || drawPos.y >= clipMax.y) return;
+
+                        // 在进行边界裁剪时同步调整 UV，避免纹理被拉伸变形
+                        if (drawPos.x < clipMin.x) {
+                            float cut = clipMin.x - drawPos.x;
+                            float cutUV = cut / drawSize.x * (drawUV1.x - drawUV0.x);
+                            drawUV0.x += cutUV;
+                            drawSize.x -= cut;
+                            drawPos.x = clipMin.x;
+                        }
+                        if (drawPos.y < clipMin.y) {
+                            float cut = clipMin.y - drawPos.y;
+                            float cutUV = cut / drawSize.y * (drawUV1.y - drawUV0.y);
+                            drawUV0.y += cutUV;
+                            drawSize.y -= cut;
+                            drawPos.y = clipMin.y;
+                        }
+                        if (drawPos.x + drawSize.x > clipMax.x) {
+                            float cut = drawPos.x + drawSize.x - clipMax.x;
+                            float cutUV = cut / drawSize.x * (drawUV1.x - drawUV0.x);
+                            drawUV1.x -= cutUV;
+                            drawSize.x = clipMax.x - drawPos.x;
+                        }
+                        if (drawPos.y + drawSize.y > clipMax.y) {
+                            float cut = drawPos.y + drawSize.y - clipMax.y;
+                            float cutUV = cut / drawSize.y * (drawUV1.y - drawUV0.y);
+                            drawUV1.y -= cutUV;
+                            drawSize.y = clipMax.y - drawPos.y;
+                        }
+                        if (drawSize.x <= 0.f || drawSize.y <= 0.f) return;
+                    }
+
+                    SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
+                    SDK::FVector2D uePos{ static_cast<float>(drawPos.x), static_cast<float>(drawPos.y) };
+                    SDK::FVector2D ueSize{ static_cast<float>(drawSize.x), static_cast<float>(drawSize.y) };
+                    SDK::FVector2D ueUV0{ static_cast<float>(drawUV0.x), static_cast<float>(drawUV0.y) };
+
+                    // Unreal 的 K2_DrawTexture 第五个参数是 UV 尺寸(Size)，而不是 UV 终点(End)
+                    SDK::FVector2D ueUVSize{ static_cast<float>(drawUV1.x - drawUV0.x), static_cast<float>(drawUV1.y - drawUV0.y) };
+
+                    g_Ctx.Canvas->K2_DrawTexture(
+                        tex, uePos, ueSize,
+                        ueUV0, ueUVSize,
+                        ueColor, SDK::EBlendMode::BLEND_Translucent, 0.0f, SDK::FVector2D{ 0.0f, 0.0f }
+                    );
+                    };
+
+                SDK::UTexture* defTex = g_Ctx.Canvas->DefaultTexture;
+
+                // 1-4. 四个圆角 (从圆纹理切片获取 UV)
+                DrawPiece(0, 0, r, r, 0.0f, 0.0f, 0.5f, 0.5f, circleTex);               // 左上
+                DrawPiece(size.x - r, 0, r, r, 0.5f, 0.0f, 1.0f, 0.5f, circleTex);       // 右上
+                DrawPiece(0, size.y - r, r, r, 0.0f, 0.5f, 0.5f, 1.0f, circleTex);       // 左下
+                DrawPiece(size.x - r, size.y - r, r, r, 0.5f, 0.5f, 1.0f, 1.0f, circleTex); // 右下
+
+                // 5-9. 填充中心十字区域 (使用默认纹理)
+                // 修复重叠变深问题：严格精确拼接，绝无任何重叠
+                float innerW = size.x - 2.f * r;
+                float innerH = size.y - 2.f * r;
+
+                DrawPiece(r, 0, innerW, r, 0.0f, 0.0f, 1.0f, 1.0f, defTex);                   // 上
+                DrawPiece(r, size.y - r, innerW, r, 0.0f, 0.0f, 1.0f, 1.0f, defTex);          // 下
+                DrawPiece(0, r, r, innerH, 0.0f, 0.0f, 1.0f, 1.0f, defTex);                   // 左
+                DrawPiece(size.x - r, r, r, innerH, 0.0f, 0.0f, 1.0f, 1.0f, defTex);          // 右
+                DrawPiece(r, r, innerW, innerH, 0.0f, 0.0f, 1.0f, 1.0f, defTex);              // 中心
+
+                return;
+            }
+        }
+
+        // 走原有的普通矩形逻辑
         SDK::UTexture* tex = texture ? texture : g_Ctx.Canvas->DefaultTexture;
         if (!tex) return;
 
         if (clipEnabled) {
-            if (pos.x + size.x < clipMin.x || pos.x > clipMax.x || pos.y + size.y < clipMin.y || pos.y > clipMax.y) return;
+            if (pos.x + size.x <= clipMin.x || pos.x >= clipMax.x || pos.y + size.y <= clipMin.y || pos.y >= clipMax.y) return;
             if (pos.x < clipMin.x) { size.x -= (clipMin.x - pos.x); pos.x = clipMin.x; }
             if (pos.y < clipMin.y) { size.y -= (clipMin.y - pos.y); pos.y = clipMin.y; }
             if (pos.x + size.x > clipMax.x) size.x = clipMax.x - pos.x;
@@ -2364,7 +2536,7 @@ namespace Shadow {
             float w = x_max - x_min + 1.0f;
 
             if (w > 0.0f) {
-                InternalDrawRectFilled({ x_min, static_cast<float>(y) }, { w, 1.0f }, color, clipEnabled, clipMin, clipMax, texture);
+                InternalDrawRectFilled({ x_min, static_cast<float>(y) }, { w, 1.0f }, color, clipEnabled, clipMin, clipMax, 0.0f, texture);
             }
         }
     }
@@ -2829,12 +3001,12 @@ namespace Shadow {
         GetCmdBuffer().push_back({ ShadowDrawCmdType::Line, start, end, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
     }
 
-    inline void ShadowDrawList::AddRect(Vec2 pos, Vec2 size, Color color, float thickness) {
-        GetCmdBuffer().push_back({ ShadowDrawCmdType::Rect, pos, size, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
+    inline void ShadowDrawList::AddRect(Vec2 pos, Vec2 size, Color color, float thickness, float rounding) {
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::Rect, pos, size, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr, rounding });
     }
 
-    inline void ShadowDrawList::AddRectFilled(Vec2 pos, Vec2 size, Color color) {
-        GetCmdBuffer().push_back({ ShadowDrawCmdType::RectFilled, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
+    inline void ShadowDrawList::AddRectFilled(Vec2 pos, Vec2 size, Color color, float rounding) {
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::RectFilled, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr, rounding });
     }
 
     inline void ShadowDrawList::AddTexture(Vec2 pos, Vec2 size, Color color, SDK::UTexture* texture) {
@@ -2853,33 +3025,10 @@ namespace Shadow {
     inline void ShadowDrawList::AddCircleFilled(Vec2 center, float radius, Color color) {
         if (radius <= 0.0f) return;
 
-        float diameter = radius * 2.0f;
-        SDK::UTexture2D* texture = nullptr;
-
-        if (diameter <= 16.0f) {
-            texture = LoadTextureFromBuffer(Shadow_Texture::CircleFilled_16, sizeof(Shadow_Texture::CircleFilled_16));
-        }
-        else if (diameter <= 32.0f) {
-            texture = LoadTextureFromBuffer(Shadow_Texture::CircleFilled_32, sizeof(Shadow_Texture::CircleFilled_32));
-        }
-        else if (diameter <= 64.0f) {
-            texture = LoadTextureFromBuffer(Shadow_Texture::CircleFilled_64, sizeof(Shadow_Texture::CircleFilled_64));
-        }
-        else if (diameter <= 128.0f) {
-            texture = LoadTextureFromBuffer(Shadow_Texture::CircleFilled_128, sizeof(Shadow_Texture::CircleFilled_128));
-        }
-        else if (diameter <= 256.0f) {
-            texture = LoadTextureFromBuffer(Shadow_Texture::CircleFilled_256, sizeof(Shadow_Texture::CircleFilled_256));
-        }
-        else if (diameter <= 512.0f) {
-            texture = LoadTextureFromBuffer(Shadow_Texture::CircleFilled_512, sizeof(Shadow_Texture::CircleFilled_512));
-        }
-        else {
-            texture = LoadTextureFromBuffer(Shadow_Texture::CircleFilled_1024, sizeof(Shadow_Texture::CircleFilled_1024));
-        }
-
+        SDK::UTexture2D* texture = GetCircleTexture(radius);
         if (!texture) return;
 
+        float diameter = radius * 2.0f;
         Vec2 pos = { center.x - radius, center.y - radius };
         Vec2 size = { diameter, diameter };
 
@@ -5470,11 +5619,11 @@ namespace Shadow {
                     InternalDrawLine(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
                     break;
                 case ShadowDrawCmdType::Rect:
-                    InternalDrawRect(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
+                    InternalDrawRect(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.rounding, cmd.texture);
                     break;
                 case ShadowDrawCmdType::RectFilled:
                 case ShadowDrawCmdType::Texture:
-                    InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
+                    InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.rounding, cmd.texture);
                     break;
                 case ShadowDrawCmdType::Text:
                     InternalDrawText(cmd.text, cmd.pos, cmd.color, cmd.font, cmd.fontScale, cmd.textShadowColor, cmd.textOutlineColor, cmd.textOutline, cmd.noSDF);

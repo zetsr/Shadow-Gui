@@ -194,6 +194,33 @@ namespace Hook {
 			// Shadow::PopTextPixelSnap();
 
             // bInit = true;
+
+            auto drawList = Shadow::GetBackgroundDrawList();
+            // 测试手动拼接圆角矩形
+            /*
+            drawList->AddCircleFilled({ 150.f, 200.f }, 50.f, { 1.f, 1.f, 1.f, 1.f }); // 1. 左半圆（实际画完整圆，靠矩形覆盖左半边或直接让它们重叠）
+            drawList->AddCircleFilled({ 350.f, 200.f }, 50.f, { 1.f, 1.f, 1.f, 1.f }); // 2. 右半圆
+            drawList->AddRectFilled({ 150.f, 150.f }, { 200.f, 100.f }, { 1.f, 1.f, 1.f, 1.f });   // 3. 中间矩形连接两端
+            */
+
+			// 圆角填充矩形和圆角矩形边框测试
+            drawList->AddRectFilled({ 150.f, 150.f }, { 200.f, 100.f }, { 1.f, 1.f, 1.f, 0.5f }, 55.f, Shadow::ShadowDrawFlags_RoundCornersTop);
+            drawList->AddRectFilled({ 550.f, 150.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 0.25f }, 25.f, Shadow::ShadowDrawFlags_RoundCornersLeft);
+            drawList->AddRectFilled({ 1050.f, 150.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 1.f }, 5.f, Shadow::ShadowDrawFlags_RoundCornersBottom);
+            drawList->AddRectFilled({ 1550.f, 150.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 1.f }, 10.f);
+
+            drawList->AddRectFilled({ 150.f, 350.f }, { 200.f, 100.f }, { 1.f, 1.f, 1.f, 0.5f });
+            drawList->AddRectFilled({ 550.f, 350.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 0.25f });
+            drawList->AddRectFilled({ 1050.f, 350.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 1.f }, 0.f);
+
+			drawList->AddRect({ 150.f, 550.f }, { 200.f, 100.f }, { 1.f, 1.f, 1.f, 0.5f }, 1.f, 55.f, Shadow::ShadowDrawFlags_RoundCornersTop);
+            drawList->AddRect({ 550.f, 550.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 0.25f }, 1.f, 25.f, Shadow::ShadowDrawFlags_RoundCornersLeft);
+            drawList->AddRect({ 1050.f, 550.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 1.f }, 1.f, 5.f, Shadow::ShadowDrawFlags_RoundCornersBottom);
+            drawList->AddRect({ 1550.f, 550.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 1.f }, 1.f, 10.f);
+
+            drawList->AddRect({ 150.f, 750.f }, { 200.f, 100.f }, { 1.f, 1.f, 1.f, 0.5f }, 1.f);
+            drawList->AddRect({ 550.f, 750.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 0.25f }, 1.f);
+            drawList->AddRect({ 1050.f, 750.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 1.f }, 1.f);
         }
 
         Shadow::PopStyleVar();

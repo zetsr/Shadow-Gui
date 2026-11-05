@@ -38,6 +38,9 @@ namespace Shadow {
         // 圆角边框折线拟合段数（每个角），配置越大越圆滑
         constexpr int RECT_ROUNDING_SEGMENTS = 6;
 
+        // ResizeGrip 圆角逐行扫描时的行高（像素）
+        constexpr float RESIZE_GRIP_SCANLINE_HEIGHT = 1.0f;
+
         // 默认圆角配置常量
         constexpr float DEFAULT_WINDOW_ROUNDING = 0.0f;
         constexpr float DEFAULT_CHILD_ROUNDING = 0.0f;
@@ -5265,6 +5268,41 @@ namespace Shadow {
         g_Ctx.InTooltip = false;
     }
 
+    inline void DrawResizeGripFilled(ShadowDrawList* drawList, Vec2 gripMin, Vec2 windowSize, float gripSize, float windowRounding, Color color) {
+        if (!drawList || gripSize <= 0.0f || windowSize.x <= 0.0f || windowSize.y <= 0.0f) {
+            return;
+        }
+
+        const float right = gripMin.x + gripSize;
+        const float bottom = gripMin.y + gripSize;
+        const float cornerRadius = std::clamp(windowRounding, 0.0f, std::min(windowSize.x, windowSize.y) * 0.5f);
+        const float rowHeight = Detail::RESIZE_GRIP_SCANLINE_HEIGHT;
+        const float x0 = gripMin.x;
+
+        for (float y = gripMin.y; y < bottom; y += rowHeight) {
+            const float rh = std::min(rowHeight, bottom - y);
+            const float yMid = y + rh * 0.5f;
+            const float xLeft = x0 + (bottom - yMid);
+
+            float xRight = right;
+            if (cornerRadius > 0.0f && yMid > bottom - cornerRadius) {
+                const float dy = yMid - (bottom - cornerRadius);
+                const float dx = std::sqrt(std::max(0.0f, cornerRadius * cornerRadius - dy * dy));
+                xRight = right - cornerRadius + dx;
+            }
+
+            if (xRight > xLeft) {
+                drawList->AddRectFilled(
+                    { xLeft, y },
+                    { xRight - xLeft, rh },
+                    color,
+                    0.0f,
+                    ShadowDrawFlags_RoundCornersNone
+                );
+            }
+        }
+    }
+
     inline void End() {
         g_Ctx.BeginStack--;
 
@@ -5314,12 +5352,7 @@ namespace Shadow {
                 ? GetColor(GuiCol_ResizeGripActive)
                 : (g_Ctx.IsHoveringResize ? GetColor(GuiCol_ResizeGripHovered) : GetColor(GuiCol_ResizeGrip));
 
-            float pad = g_Ctx.Style.ResizeGripPad;
-            Vec2 p1 = { x + pad, y + triSize - pad };
-            Vec2 p2 = { x + triSize - pad, y + triSize - pad };
-            Vec2 p3 = { x + triSize - pad, y + pad };
-
-            GetWindowDrawList()->AddTriangleFilled(p1, p2, p3, triColor);
+            DrawResizeGripFilled(GetWindowDrawList(), { x, y }, g_Ctx.WindowSize, triSize, g_Ctx.Style.WindowRounding, triColor);
         }
 
         if (!g_Ctx.MouseDown) g_Ctx.IsResizing = false;

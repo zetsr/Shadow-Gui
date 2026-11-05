@@ -6542,13 +6542,13 @@ namespace Shadow {
         float knobX = sliderPos.x + fillWidth - knobWidth * 0.5f;
         knobX = std::clamp(knobX, sliderPos.x, sliderPos.x + sliderWidth - knobWidth);
 
-        Color knobCol = GetColor(GuiCol_SliderKnob);
-        GetWindowDrawList()->AddRectFilled({ knobX, sliderPos.y }, { knobWidth, size.y }, knobCol, g_Ctx.Style.GrabRounding);
-
         if (g_Ctx.FocusedSliderId == id) {
             Color border = GetColor(GuiCol_Border);
             GetWindowDrawList()->AddRect(sliderPos, size, border, g_Ctx.Style.SliderFocusBorderThickness, g_Ctx.Style.FrameRounding);
         }
+
+        Color knobCol = GetColor(GuiCol_SliderKnob);
+        GetWindowDrawList()->AddRectFilled({ knobX, sliderPos.y }, { knobWidth, size.y }, knobCol, g_Ctx.Style.GrabRounding);
 
         bool changed = InputTextEx(sliderInputId, valBoxPos, valBoxSize, g_Ctx.InputBuffers[sliderInputId], ShadowInputTextFlags_CharsDecimal | ShadowInputTextFlags_AlignCenter);
 

@@ -3131,7 +3131,85 @@ namespace Shadow {
     }
 
     inline void ShadowDrawList::AddRect(Vec2 pos, Vec2 size, Color color, float thickness, float rounding, ShadowDrawFlags flags) {
-        GetCmdBuffer().push_back({ ShadowDrawCmdType::Rect, pos, size, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr, rounding, flags });
+        SDK::UTexture* tex = !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr;
+
+        bool roundTL = (flags & ShadowDrawFlags_RoundCornersTopLeft) && !(flags & ShadowDrawFlags_RoundCornersNone);
+        bool roundTR = (flags & ShadowDrawFlags_RoundCornersTopRight) && !(flags & ShadowDrawFlags_RoundCornersNone);
+        bool roundBL = (flags & ShadowDrawFlags_RoundCornersBottomLeft) && !(flags & ShadowDrawFlags_RoundCornersNone);
+        bool roundBR = (flags & ShadowDrawFlags_RoundCornersBottomRight) && !(flags & ShadowDrawFlags_RoundCornersNone);
+
+        bool noRound = (rounding <= 0.0f) || (!roundTL && !roundTR && !roundBL && !roundBR);
+
+        // 无圆角边框改用 4 个轴对齐填充条带，避免 InternalDrawRect 拆成旋转线段导致无法合批。
+        // 仅在没有自定义纹理时替换，避免自定义纹理边框的 UV 行为变化。
+        if (!tex && noRound && thickness > 0.0f && size.x > 0.0f && size.y > 0.0f) {
+            const float halfThick = thickness * 0.5f;
+
+            const float topBottomWidth = size.x + thickness;
+            const float sideHeight = size.y - thickness;
+
+            if (topBottomWidth > 0.0f) {
+                AddRectFilled(
+                    { pos.x - halfThick, pos.y - halfThick },
+                    { topBottomWidth, thickness },
+                    color,
+                    0.0f,
+                    ShadowDrawFlags_RoundCornersNone
+                );
+
+                AddRectFilled(
+                    { pos.x - halfThick, pos.y + size.y - halfThick },
+                    { topBottomWidth, thickness },
+                    color,
+                    0.0f,
+                    ShadowDrawFlags_RoundCornersNone
+                );
+            }
+
+            if (sideHeight > 0.0f) {
+                AddRectFilled(
+                    { pos.x - halfThick, pos.y + halfThick },
+                    { thickness, sideHeight },
+                    color,
+                    0.0f,
+                    ShadowDrawFlags_RoundCornersNone
+                );
+
+                AddRectFilled(
+                    { pos.x + size.x - halfThick, pos.y + halfThick },
+                    { thickness, sideHeight },
+                    color,
+                    0.0f,
+                    ShadowDrawFlags_RoundCornersNone
+                );
+            }
+
+            return;
+        }
+
+        GetCmdBuffer().push_back({
+            ShadowDrawCmdType::Rect,
+            pos,
+            size,
+            color,
+            thickness,
+            "",
+            nullptr,
+            1.0f,
+            g_Ctx.ClippingEnabled,
+            g_Ctx.ClipMin,
+            g_Ctx.ClipMax,
+            { 0, 0 },
+            { 0, 0 },
+            { 0, 0 },
+            { 0, 0, 0, 0 },
+            { 0, 0, 0, 0 },
+            false,
+            false,
+            tex,
+            rounding,
+            flags
+            });
     }
 
     inline void ShadowDrawList::AddRectFilled(Vec2 pos, Vec2 size, Color color, float rounding, ShadowDrawFlags flags) {

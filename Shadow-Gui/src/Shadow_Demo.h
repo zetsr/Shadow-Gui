@@ -3,6 +3,18 @@
 #include "../misc/textures/Shadow_Titlebar.h"
 
 namespace Shadow {
+    // DrawList 圆角矩形自适应演示配置常量
+    constexpr float ROUNDED_RECT_DEMO_PADDING_X = 16.0f;
+    constexpr float ROUNDED_RECT_DEMO_PADDING_Y = 10.0f;
+    constexpr float ROUNDED_RECT_DEMO_MIN_WIDTH = 90.0f;
+    constexpr float ROUNDED_RECT_DEMO_MIN_HEIGHT = 44.0f;
+    constexpr float ROUNDED_RECT_DEMO_ITEM_SPACING_X = 12.0f;
+    constexpr float ROUNDED_RECT_DEMO_ITEM_SPACING_Y = 10.0f;
+    constexpr float ROUNDED_RECT_DEMO_DEFAULT_ROUNDING = 12.0f;
+    constexpr float ROUNDED_RECT_DEMO_MAX_ROUNDING = 30.0f;
+    constexpr float ROUNDED_RECT_DEMO_DEFAULT_THICKNESS = 2.0f;
+    constexpr float ROUNDED_RECT_DEMO_MAX_THICKNESS = 8.0f;
+
     // HelpMarker
     inline void HelpMarker(std::string_view desc, float TextWrap = 200.f) {
         Shadow::SameLine();
@@ -1056,13 +1068,14 @@ namespace Shadow {
 
                         Shadow::Separator();
                         Shadow::Text("Rounding Metrics");
-                        Shadow::Slider("WindowRounding", &style.WindowRounding, 0.f, 20.f, 1.f);
-                        Shadow::Slider("ChildRounding", &style.ChildRounding, 0.f, 20.f, 1.f);
-                        Shadow::Slider("PopupRounding", &style.PopupRounding, 0.f, 20.f, 1.f);
-                        Shadow::Slider("FrameRounding", &style.FrameRounding, 0.f, 20.f, 1.f);
-                        Shadow::Slider("ScrollbarRounding", &style.ScrollbarRounding, 0.f, 20.f, 1.f);
-                        Shadow::Slider("GrabRounding", &style.GrabRounding, 0.f, 20.f, 1.f);
-                        Shadow::Slider("TabRounding", &style.TabRounding, 0.f, 20.f, 1.f);
+						static float rounding_min = 0.f, rounding_max = 90.f;
+                        Shadow::Slider("WindowRounding", &style.WindowRounding, rounding_min, rounding_max, 1.f);
+                        Shadow::Slider("ChildRounding", &style.ChildRounding, rounding_min, rounding_max, 1.f);
+                        Shadow::Slider("PopupRounding", &style.PopupRounding, rounding_min, rounding_max, 1.f);
+                        Shadow::Slider("FrameRounding", &style.FrameRounding, rounding_min, rounding_max, 1.f);
+                        Shadow::Slider("ScrollbarRounding", &style.ScrollbarRounding, rounding_min, rounding_max, 1.f);
+                        Shadow::Slider("GrabRounding", &style.GrabRounding, rounding_min, rounding_max, 1.f);
+                        Shadow::Slider("TabRounding", &style.TabRounding, rounding_min, rounding_max, 1.f);
 
                         Shadow::HelpMarker("Style metrics editor using GetStyle().");
                     }
@@ -1137,18 +1150,13 @@ namespace Shadow {
                     Shadow::TreePop();
 
                     if (Shadow::TreeNode("DrawList Rounded Rectangles")) {
-                        static float demo_rounding = 12.0f;
-                        static float demo_thickness = 2.0f;
+                        static float demo_rounding = ROUNDED_RECT_DEMO_DEFAULT_ROUNDING;
+                        static float demo_thickness = ROUNDED_RECT_DEMO_DEFAULT_THICKNESS;
 
-                        Shadow::Slider("Demo Rounding##RR", &demo_rounding, 0.0f, 30.0f, 1.0f);
-                        Shadow::Slider("Demo Thickness##RR", &demo_thickness, 1.0f, 8.0f, 0.5f);
+                        Shadow::Slider("Demo Rounding##RR", &demo_rounding, 0.0f, ROUNDED_RECT_DEMO_MAX_ROUNDING, 1.0f);
+                        Shadow::Slider("Demo Thickness##RR", &demo_thickness, 1.0f, ROUNDED_RECT_DEMO_MAX_THICKNESS, 0.5f);
 
                         ShadowDrawList* dl = Shadow::GetWindowDrawList();
-
-                        // 第一行：AddRectFilled 填充矩形各种圆角标志演示
-                        Shadow::Text("1. Filled Rounded Rectangles (AddRectFilled):");
-                        Shadow::Dummy({ 0.f, 75.f });
-                        Vec2 row1_pos = { Shadow::GetCursorScreenPos().x, Shadow::GetCursorScreenPos().y - 70.f };
 
                         struct CornerDemo {
                             const char* name;
@@ -1163,28 +1171,68 @@ namespace Shadow {
                             { "Right Only", ShadowDrawFlags_RoundCornersRight }
                         };
 
-                        float box_w = 90.f;
-                        float box_h = 55.f;
-                        float spacing_x = 12.f;
+                        auto RenderAdaptiveRow = [&](bool is_filled) {
+                            float start_x = Shadow::GetCursorScreenPos().x;
+                            float max_x = Shadow::g_Ctx.WindowPos.x + Shadow::g_Ctx.WindowSize.x - Shadow::GetRightMargin();
+                            float cur_x = start_x;
+                            float cur_y = Shadow::GetCursorScreenPos().y;
+                            float current_row_h = 0.f;
 
-                        for (int i = 0; i < 5; ++i) {
-                            Vec2 p = { row1_pos.x + i * (box_w + spacing_x), row1_pos.y };
-                            dl->AddRectFilled(p, { box_w, box_h }, Shadow::GetColor({ 0.15f + i * 0.15f, 0.45f, 0.85f - i * 0.1f, 0.9f }), demo_rounding, demos[i].flags);
-                            dl->AddText({ p.x + 6.f, p.y + box_h * 0.35f }, Shadow::GetColor({ 1.f, 1.f, 1.f, 1.f }), demos[i].name);
-                        }
+                            for (size_t i = 0; i < sizeof(demos) / sizeof(demos[0]); ++i) {
+                                // 1. 根据文字测量尺寸，自适应计算矩形宽高（留出圆角与内边距保护空间）
+                                Vec2 txt_sz = Shadow::MeasureTextSize(demos[i].name);
+                                float box_w = std::max(ROUNDED_RECT_DEMO_MIN_WIDTH, txt_sz.x + ROUNDED_RECT_DEMO_PADDING_X * 2.0f + demo_rounding * 0.5f);
+                                float box_h = std::max(ROUNDED_RECT_DEMO_MIN_HEIGHT, txt_sz.y + ROUNDED_RECT_DEMO_PADDING_Y * 2.0f);
 
-                        // 第二行：AddRect 描边线框各种圆角标志演示
+                                // 2. 窗口宽度不足时，自动流式换行
+                                if (cur_x + box_w > max_x && cur_x > start_x) {
+                                    cur_x = start_x;
+                                    cur_y += current_row_h + ROUNDED_RECT_DEMO_ITEM_SPACING_Y;
+                                    current_row_h = 0.f;
+                                }
+
+                                Vec2 box_pos = { cur_x, cur_y };
+                                Vec2 box_size = { box_w, box_h };
+
+                                // 3. 绘制填充矩形或线框矩形
+                                if (is_filled) {
+                                    Color bg_col = Shadow::GetColor({ 0.15f + i * 0.15f, 0.45f, 0.85f - i * 0.1f, 0.9f });
+                                    dl->AddRectFilled(box_pos, box_size, bg_col, demo_rounding, demos[i].flags);
+                                }
+                                else {
+                                    Color outline_col = Shadow::GetColor({ 0.95f, 0.65f - i * 0.1f, 0.2f + i * 0.15f, 1.0f });
+                                    dl->AddRect(box_pos, box_size, outline_col, demo_thickness, demo_rounding, demos[i].flags);
+                                }
+
+                                // 4. 文本在矩形几何中心严格居中绘制
+                                Vec2 txt_pos = {
+                                    box_pos.x + (box_size.x - txt_sz.x) * 0.5f,
+                                    box_pos.y + (box_size.y - txt_sz.y) * 0.5f
+                                };
+                                Color txt_col = is_filled ? Shadow::GetColor({ 1.0f, 1.0f, 1.0f, 1.0f }) : Shadow::GetColor({ 0.95f, 0.95f, 0.95f, 1.0f });
+                                dl->AddText(txt_pos, txt_col, demos[i].name);
+
+                                // 5. 推进当前行光标并记录行最大高度
+                                cur_x += box_w + ROUNDED_RECT_DEMO_ITEM_SPACING_X;
+                                current_row_h = std::max(current_row_h, box_h);
+                            }
+
+                            // 计算总高度并同步推进 Shadow GUI 内部布局光标
+                            float total_h = (cur_y + current_row_h) - Shadow::GetCursorScreenPos().y;
+                            Shadow::Dummy({ 0.f, total_h });
+                            };
+
+                        // 1. 填充圆角矩形演示
+                        Shadow::Text("1. Filled Rounded Rectangles (AddRectFilled):");
+                        RenderAdaptiveRow(true);
+
+                        Shadow::Spacing();
+
+                        // 2. 线框圆角矩形演示
                         Shadow::Text("2. Outlined Rounded Rectangles (AddRect):");
-                        Shadow::Dummy({ 0.f, 75.f });
-                        Vec2 row2_pos = { Shadow::GetCursorScreenPos().x, Shadow::GetCursorScreenPos().y - 70.f };
+                        RenderAdaptiveRow(false);
 
-                        for (int i = 0; i < 5; ++i) {
-                            Vec2 p = { row2_pos.x + i * (box_w + spacing_x), row2_pos.y };
-                            dl->AddRect(p, { box_w, box_h }, Shadow::GetColor({ 0.95f, 0.65f - i * 0.1f, 0.2f + i * 0.15f, 1.0f }), demo_thickness, demo_rounding, demos[i].flags);
-                            dl->AddText({ p.x + 6.f, p.y + box_h * 0.35f }, Shadow::GetColor({ 0.95f, 0.95f, 0.95f, 1.f }), demos[i].name);
-                        }
-
-                        Shadow::HelpMarker("AddRect & AddRectFilled support corner flags: All, Top, Bottom, Left, Right or custom combinations.");
+                        Shadow::HelpMarker("Rectangles adapt size to text and padding, center labels, and wrap automatically when window shrinks.");
                     }
                     Shadow::TreePop();
 

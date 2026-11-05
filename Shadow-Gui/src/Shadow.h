@@ -50,6 +50,9 @@ namespace Shadow {
         constexpr float DEFAULT_GRAB_ROUNDING = 0.0f;
         constexpr float DEFAULT_TAB_ROUNDING = 0.0f;
 
+        // 纹理退役池初始预留容量。
+        constexpr size_t TEXTURE_RETIRED_POOL_RESERVE = 64;
+
         // UFunction 标志位定义
         constexpr int32_t FUNCTION_FLAG_NATIVE = 0x00000400; // FUNC_Native
 
@@ -221,6 +224,7 @@ namespace Shadow {
 
             InternalSolidifyBase(Texture);
             Texture->bTemporarilyDisableStreaming = 1;
+            Texture->NeverStream = 1; // 永久禁止流送系统卸载纹理资源
             Texture->LODGroup = SDK::ETextureGroup::TEXTUREGROUP_UI;
         }
 
@@ -266,12 +270,26 @@ namespace Shadow {
         static SDK::UWorld* s_CachedWorld = nullptr;
         static std::unordered_map<const void*, SDK::UTexture2D*> s_BufferTextureCache;
         static std::unordered_map<std::wstring, SDK::UTexture2D*> s_FileTextureCache;
+        static std::vector<SDK::UTexture2D*> s_RetiredTextures;
 
         // 字体是全局且免疫 GC 的，使用独立永生池
         static std::unordered_set<std::wstring> s_PermanentPathPool;
         static std::unordered_map<std::wstring, SDK::UFont*> s_FileFontCache;
         static std::unordered_map<const void*, SDK::UFont*> s_BufferFontCache;
         static std::deque<SDK::FTypefaceEntry> s_PermanentTypefaceEntries;
+
+        // 将旧缓存中的纹理指针移入退役池。
+        static void RetireTexturePointer(SDK::UTexture2D* Texture) {
+            if (!Texture) {
+                return;
+            }
+
+            if (s_RetiredTextures.capacity() < TEXTURE_RETIRED_POOL_RESERVE) {
+                s_RetiredTextures.reserve(TEXTURE_RETIRED_POOL_RESERVE);
+            }
+
+            s_RetiredTextures.push_back(Texture);
+        }
 
         // 检查并自动维护 World 变动（关卡切换时清空易失的 Texture 显存缓存）
         static SDK::UWorld* GetReadyWorld() {
@@ -283,12 +301,12 @@ namespace Shadow {
             if (CurrentWorld != s_CachedWorld) {
                 s_CachedWorld = CurrentWorld;
                 for (auto& Pair : s_BufferTextureCache) {
-                    UnsolidifyTexture(Pair.second);
+                    RetireTexturePointer(Pair.second);
                 }
                 s_BufferTextureCache.clear();
 
                 for (auto& Pair : s_FileTextureCache) {
-                    UnsolidifyTexture(Pair.second);
+                    RetireTexturePointer(Pair.second);
                 }
                 s_FileTextureCache.clear();
             }
@@ -349,10 +367,7 @@ namespace Shadow {
             if (Detail::IsObjectAliveAndValid(It->second)) {
                 return It->second;
             }
-            else {
-                Detail::UnsolidifyTexture(It->second);
-                Detail::s_BufferTextureCache.erase(It);
-            }
+            Detail::s_BufferTextureCache.erase(It);
         }
 
         SDK::UTexture2D* LoadedTexture = Detail::ImportBufferAsTexture2D(World, BufferData, BufferSize);
@@ -377,13 +392,7 @@ namespace Shadow {
 
         auto It = Detail::s_FileTextureCache.find(FilePath);
         if (It != Detail::s_FileTextureCache.end()) {
-            if (Detail::IsObjectAliveAndValid(It->second)) {
-                return It->second;
-            }
-            else {
-                Detail::UnsolidifyTexture(It->second);
-                Detail::s_FileTextureCache.erase(It);
-            }
+            return It->second;
         }
 
         SDK::FString PathStr(FilePath);
@@ -2418,11 +2427,15 @@ namespace Shadow {
         if (rounding > 0.0f && texture == nullptr && (roundTL || roundTR || roundBL || roundBR)) {
             float r = std::min(rounding, std::min(size.x, size.y) * 0.5f);
             SDK::UTexture2D* circleTex = GetCircleTexture(r);
-            if (circleTex) {
+            if (circleTex && Detail::IsObjectAliveAndValid(circleTex)) {
                 float w = size.x;
                 float h = size.y;
 
+                SDK::UTexture* defTex = g_Ctx.Canvas->DefaultTexture;
+                if (!defTex) return;
+
                 auto DrawPiece = [&](float x, float y, float piece_w, float piece_h, float u0, float v0, float u1, float v1, SDK::UTexture* tex) {
+                    if (!tex) return;
                     if (piece_w <= 0.f || piece_h <= 0.f) return;
                     Vec2 drawPos = { pos.x + x, pos.y + y };
                     Vec2 drawSize = { piece_w, piece_h };
@@ -2474,8 +2487,6 @@ namespace Shadow {
                         ueColor, SDK::EBlendMode::BLEND_Translucent, 0.0f, SDK::FVector2D{ 0.0f, 0.0f }
                     );
                     };
-
-                SDK::UTexture* defTex = g_Ctx.Canvas->DefaultTexture;
 
                 // 1. 左上角
                 if (roundTL) {

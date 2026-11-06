@@ -46,7 +46,7 @@
 #### 完整集成示例 (`ZClientViewport.cpp`)
 
 <details open>
-<summary>点击展开查看完整代码</summary>
+<summary>Show code</summary>
 
 ```cpp
 #include "ZClientViewport.h"

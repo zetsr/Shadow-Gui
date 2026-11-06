@@ -180,7 +180,12 @@ namespace Shadow {
 
         FUObjectItemInternal* Item = GetObjectItem(Obj);
         if (Item) {
-            if (Item->Object != Obj || (Item->Flags & INTERNAL_FLAGS_GARBAGE_MASK)) {
+            // 如果对象被 GhostObject 隐藏过，Item->Object 会变为 nullptr。
+            // 只要它没有被其他新对象占用，我们就认为该对象依然存活。
+            if (Item->Object != nullptr && Item->Object != Obj) {
+                return false;
+            }
+            if (Item->Flags & INTERNAL_FLAGS_GARBAGE_MASK) {
                 return false;
             }
         }
@@ -204,6 +209,19 @@ namespace Shadow {
         }
     }
 
+    // 将对象从全局池中抹除，使引擎在退出时彻底忽略它，阻止 FMemory::Free 释放 CRT 内存
+    inline void GhostObject(SDK::UObject* Obj) {
+        if (!Obj) {
+            return;
+        }
+
+        FUObjectItemInternal* Item = GetObjectItem(Obj);
+        if (Item && Item->Object == Obj) {
+            Item->Object = nullptr; // 引擎从此失去对该对象的记忆
+            Item->Flags = 0;
+        }
+    }
+
     // 针对 Texture2D 的专用固化（包含显存流送与 UI 组别锁定）
     inline void SolidifyTexture(SDK::UTexture2D* Texture) {
         if (!Texture) {
@@ -214,6 +232,9 @@ namespace Shadow {
         Texture->bTemporarilyDisableStreaming = 1;
         Texture->NeverStream = 1; // 永久禁止流送系统卸载纹理资源
         Texture->LODGroup = SDK::ETextureGroup::TEXTUREGROUP_UI;
+
+        // 将纹理从全局对象数组中隐藏，防止引擎 GC 回收其内存并复用地址导致纹理互换
+        GhostObject(Texture);
     }
 
     // 移除 Standalone 与 RootSet 标志，允许引擎 GC 正常回收对象
@@ -239,19 +260,6 @@ namespace Shadow {
 
         InternalUnsolidifyBase(Texture);
         Texture->bTemporarilyDisableStreaming = 0;
-    }
-
-    // 将对象从全局池中抹除，使引擎在退出时彻底忽略它，阻止 FMemory::Free 释放 CRT 内存
-    inline void GhostObject(SDK::UObject* Obj) {
-        if (!Obj) {
-            return;
-        }
-
-        FUObjectItemInternal* Item = GetObjectItem(Obj);
-        if (Item && Item->Object == Obj) {
-            Item->Object = nullptr; // 引擎从此失去对该对象的记忆
-            Item->Flags = 0;
-        }
     }
 
     // 将旧缓存中的纹理指针移入退役池。

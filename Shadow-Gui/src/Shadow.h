@@ -6,7 +6,16 @@ Credit:
 */
 
 #pragma once
+
+#if defined(SHADOW_USE_UE_NATIVE)
+#include "CoreMinimal.h"
+#include "HAL/PlatformApplicationMisc.h"
+#include "Windows/WindowsHWrapper.h"
+#else
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#endif
+
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -1319,10 +1328,15 @@ namespace Shadow {
 
     inline std::wstring ToWString(std::string_view utf8_str) {
         if (utf8_str.empty()) return L"";
+#if defined(SHADOW_USE_UE_NATIVE)
+        FUTF8ToTCHAR Conv(utf8_str.data(), static_cast<int32>(utf8_str.size()));
+        return std::wstring(Conv.Get(), Conv.Length());
+#else
         int size_needed = MultiByteToWideChar(CP_UTF8, 0, utf8_str.data(), static_cast<int>(utf8_str.size()), nullptr, 0);
         std::wstring wstr(size_needed, 0);
         MultiByteToWideChar(CP_UTF8, 0, utf8_str.data(), static_cast<int>(utf8_str.size()), &wstr[0], size_needed);
         return wstr;
+#endif
     }
 
     // VK键码转字符串名称
@@ -1501,7 +1515,10 @@ namespace Shadow {
             g_Ctx.KeyPressed[vk] = true; // 仅在初次按下的那一帧置为 true
             g_Ctx.KeyPressTime[vk] = g_Ctx.RealTimeSeconds;
         }
-        // 移除对 isRepeat 的 KeyPressed 赋值，完全交由框架的高精度时钟接管连发
+        else if (isRepeat) {
+            // 当接收到操作系统/引擎发出的重复按键事件时，触发单帧脉冲以支持长按连发
+            g_Ctx.KeyPressed[vk] = true;
+        }
         g_Ctx.KeyStates[vk] = true;
         return false;
     }
@@ -2552,8 +2569,11 @@ namespace Shadow {
         _ChannelsCount = 1;
     }
 
-    // --- 剪贴板操作 ---
+    // 剪贴板操作
     inline void SetClipboardText(const std::string& text) {
+#if defined(SHADOW_USE_UE_NATIVE)
+        FPlatformApplicationMisc::ClipboardCopy(*FString(UTF8_TO_TCHAR(text.c_str())));
+#else
         if (OpenClipboard(nullptr)) {
             EmptyClipboard();
             HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, text.size() + 1);
@@ -2572,9 +2592,15 @@ namespace Shadow {
             }
             CloseClipboard();
         }
+#endif
     }
 
     inline std::string GetClipboardText() {
+#if defined(SHADOW_USE_UE_NATIVE)
+        FString Dest;
+        FPlatformApplicationMisc::ClipboardPaste(Dest);
+        return std::string(TCHAR_TO_UTF8(*Dest));
+#else
         std::string result;
         if (OpenClipboard(nullptr)) {
             HANDLE hData = GetClipboardData(CF_TEXT);
@@ -2588,6 +2614,7 @@ namespace Shadow {
             CloseClipboard();
         }
         return result;
+#endif
     }
 
     inline float GetControlOffsetX() {

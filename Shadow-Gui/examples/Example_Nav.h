@@ -17,7 +17,7 @@
 namespace Example_Nav {
     void DrawLogoFromBuffer()
     {
-        SDK::UTexture2D* Texture = Shadow::LoadTextureFromBuffer(Shadow_Titlebar::Logo, sizeof(Shadow_Titlebar::Logo));
+        Shadow::ShadowTexture Texture = Shadow::LoadTextureFromBuffer(Shadow_Titlebar::Logo, sizeof(Shadow_Titlebar::Logo));
 
         if (Texture)
         {
@@ -27,7 +27,7 @@ namespace Example_Nav {
 
     void DrawLogoFromFile()
     {
-        SDK::UTexture2D* Texture = Shadow::LoadTextureFromFile(L"C:\\Shadow_Titlebar.png");
+        Shadow::ShadowTexture Texture = Shadow::LoadTextureFromFile(L"C:\\Shadow_Titlebar.png");
 
         if (Texture)
         {
@@ -41,11 +41,11 @@ namespace Example_Nav {
         // SDK::UFont* Icon = Shadow::LoadFontFromBuffer(Example_Font::Icon, sizeof(Example_Font::Icon));
 
         // 文件
-        SDK::UFont* msyh = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\msyh.ttc");
+        Shadow::ShadowFont msyh = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\msyh.ttc");
 
-		SDK::UFont* tahoma_bold = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\tahomabd.ttf");
+        Shadow::ShadowFont tahoma_bold = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\tahomabd.ttf");
 
-		SDK::UFont* verdana_bold = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\verdanab.ttf");
+        Shadow::ShadowFont verdana_bold = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\verdanab.ttf");
 
         /*
         if (Icon)

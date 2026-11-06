@@ -137,6 +137,9 @@
     <ClInclude Include="src\Shadow_Demo.h">
       <Filter>Shadow-Gui\src</Filter>
     </ClInclude>
+    <ClInclude Include="src\Backend_Dumper7.h">
+      <Filter>Shadow-Gui\src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="external\CppSDK\Assertions.inl">

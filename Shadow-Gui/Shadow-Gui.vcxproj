@@ -47,6 +47,7 @@
     <ClInclude Include="external\MinHook\src\trampoline.h" />
     <ClInclude Include="misc\fonts\CangErShuYuanTi_W03.h" />
     <ClInclude Include="misc\textures\Shadow_Titlebar.h" />
+    <ClInclude Include="src\Backend_Dumper7.h" />
     <ClInclude Include="src\Shadow.h" />
     <ClInclude Include="src\Shadow_Demo.h" />
     <ClInclude Include="src\Shadow_Nav.h" />

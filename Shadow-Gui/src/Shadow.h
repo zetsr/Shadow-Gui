@@ -26,458 +26,50 @@ Credit:
 #include <filesystem>
 #include <deque>
 
-#include "../external/CppSDK/SDK.hpp"
-#include "Shadow_Texture.h"
-
 namespace Shadow {
-    namespace Detail {
-        // 字体相关默认配置常量
-        constexpr int32_t DEFAULT_FONT_SIZE = 0;
-        constexpr int32_t MIN_VALID_FONT_SIZE = 1;
-
-        // 圆角边框折线拟合段数（每个角），配置越大越圆滑
-        constexpr int RECT_ROUNDING_SEGMENTS = 6;
-
-        // ResizeGrip 圆角逐行扫描时的行高（像素）
-        constexpr float RESIZE_GRIP_SCANLINE_HEIGHT = 1.0f;
-
-        // 默认圆角配置常量
-        constexpr float DEFAULT_WINDOW_ROUNDING = 0.0f;
-        constexpr float DEFAULT_CHILD_ROUNDING = 0.0f;
-        constexpr float DEFAULT_POPUP_ROUNDING = 0.0f;
-        constexpr float DEFAULT_FRAME_ROUNDING = 0.0f;
-        constexpr float DEFAULT_SCROLLBAR_ROUNDING = 0.0f;
-        constexpr float DEFAULT_GRAB_ROUNDING = 0.0f;
-        constexpr float DEFAULT_TAB_ROUNDING = 0.0f;
-
-        // 纹理退役池初始预留容量。
-        constexpr size_t TEXTURE_RETIRED_POOL_RESERVE = 64;
-
-        // UFunction 标志位定义
-        constexpr int32_t FUNCTION_FLAG_NATIVE = 0x00000400; // FUNC_Native
-
-        // 通用标志位定义 (UObject Flags & Internal GC Flags)
-        constexpr uint32_t OBJECT_FLAG_PUBLIC = 0x00000001; // RF_Public
-        constexpr uint32_t OBJECT_FLAG_STANDALONE = 0x00000002; // RF_Standalone
-        constexpr uint32_t OBJECT_FLAG_TRANSIENT = 0x00000040; // RF_Transient
-        constexpr uint32_t OBJECT_FLAG_TAG_GARBAGE_TEMP = 0x00000100; // RF_TagGarbageTemp
-        constexpr uint32_t OBJECT_FLAG_DESTROYED_MASK = 0x40000000 | 0x80000000; // RF_BeginDestroyed | RF_FinishDestroyed
-
-        constexpr int32_t INTERNAL_FLAG_NONE = 0;
-        constexpr int32_t INTERNAL_FLAG_GARBAGE = 1 << 27; // 0x08000000
-        constexpr int32_t INTERNAL_FLAG_PERSISTENT_GARBAGE = 1 << 28; // 0x10000000
-        constexpr int32_t INTERNAL_FLAG_ROOTSET = 1 << 30; // 0x40000000
-        constexpr int32_t INTERNAL_FLAG_PENDING_KILL = 1 << 31; // 0x80000000
-
-        constexpr int32_t INTERNAL_FLAGS_GARBAGE_MASK =
-            INTERNAL_FLAG_GARBAGE |
-            INTERNAL_FLAG_PERSISTENT_GARBAGE |
-            INTERNAL_FLAG_PENDING_KILL;
-
-        // 通用底层 FUObjectItem 映射与探针
-        struct FUObjectItemInternal {
-            SDK::UObject* Object;
-            int32_t       Flags;
-            int32_t       ClusterRootIndex;
-            int32_t       SerialNumber;
-        };
-
-        static_assert(sizeof(FUObjectItemInternal) == sizeof(SDK::FUObjectItem),
-            "FUObjectItem size mismatch! Please verify SDK::FUObjectItem");
-
-        // 虚幻引擎原生底层 FScriptArray 内存布局映射 (16 字节)
-        struct FScriptArrayHelper {
-            void* Data = nullptr;
-            int32_t NumElements = 0;
-            int32_t MaxElements = 0;
-        };
-        static_assert(sizeof(FScriptArrayHelper) == 0x10, "FScriptArrayHelper size mismatch!");
-
-        // 映射 UKismetRenderingLibrary::ImportBufferAsTexture2D 调用的原生 Parms 结构体 (32 字节)
-        struct FImportBufferAsTexture2DParams {
-            SDK::UObject* WorldContextObject;
-            FScriptArrayHelper ImageBuffer;
-            SDK::UTexture2D* ReturnValue;
-        };
-        static_assert(sizeof(FImportBufferAsTexture2DParams) == 0x20, "FImportBufferAsTexture2DParams size mismatch!");
-
-        // 避开 Dumper-7 的 SDK::TArray 内存泄露，直接构造虚幻引擎底层参数布局调用 ProcessEvent
-        static SDK::UTexture2D* ImportBufferAsTexture2D(SDK::UWorld* World, const unsigned char* BufferData, size_t BufferSize) {
-            if (!World || !BufferData || BufferSize == 0) {
-                return nullptr;
-            }
-
-            static SDK::UFunction* Func = nullptr;
-            if (!Func) {
-                SDK::UClass* Clazz = SDK::UKismetRenderingLibrary::StaticClass();
-                if (Clazz) {
-                    Func = Clazz->GetFunction("KismetRenderingLibrary", "ImportBufferAsTexture2D");
-                }
-                if (!Func) {
-                    Func = static_cast<SDK::UFunction*>(SDK::UObject::FindObjectFastImpl("ImportBufferAsTexture2D"));
-                }
-            }
-
-            if (!Func) {
-                return nullptr;
-            }
-
-            SDK::UObject* DefaultObj = SDK::UKismetRenderingLibrary::GetDefaultObj();
-            if (!DefaultObj) {
-                return nullptr;
-            }
-
-            FImportBufferAsTexture2DParams Parms{};
-            Parms.WorldContextObject = World;
-            Parms.ImageBuffer.Data = const_cast<unsigned char*>(BufferData);
-            Parms.ImageBuffer.NumElements = static_cast<int32_t>(BufferSize);
-            Parms.ImageBuffer.MaxElements = static_cast<int32_t>(BufferSize);
-            Parms.ReturnValue = nullptr;
-
-            const auto OriginalFlags = Func->FunctionFlags;
-            Func->FunctionFlags |= FUNCTION_FLAG_NATIVE;
-
-            DefaultObj->ProcessEvent(Func, &Parms);
-
-            Func->FunctionFlags = OriginalFlags;
-
-            return Parms.ReturnValue;
-        }
-
-        static FUObjectItemInternal* GetObjectItem(SDK::UObject* Obj) {
-            if (!Obj) {
-                return nullptr;
-            }
-
-            SDK::TUObjectArray* ObjectsArray = SDK::UObject::GObjects.GetTypedPtr();
-            if (!ObjectsArray) {
-                return nullptr;
-            }
-
-            const int32_t Index = Obj->Index;
-            if (Index < 0 || Index >= ObjectsArray->NumElements) {
-                return nullptr;
-            }
-
-            const int32_t ChunkIndex = Index / SDK::TUObjectArray::ElementsPerChunk;
-            const int32_t InChunkIdx = Index % SDK::TUObjectArray::ElementsPerChunk;
-
-            if (ObjectsArray->NumChunks > 0 && ChunkIndex >= ObjectsArray->NumChunks) {
-                return nullptr;
-            }
-
-            SDK::FUObjectItem** DecryptedChunks = ObjectsArray->GetDecrytedObjPtr();
-            if (!DecryptedChunks) {
-                return nullptr;
-            }
-
-            SDK::FUObjectItem* ChunkPtr = DecryptedChunks[ChunkIndex];
-            if (!ChunkPtr) {
-                return nullptr;
-            }
-
-            return reinterpret_cast<FUObjectItemInternal*>(&ChunkPtr[InChunkIdx]);
-        }
-
-        // 判断 Texture 是否处于存活可渲染状态
-        static bool IsObjectAliveAndValid(SDK::UObject* Obj) {
-            if (!Obj) {
-                return false;
-            }
-
-            const uint32_t ObjFlags = *reinterpret_cast<uint32_t*>(&Obj->Flags);
-            if (ObjFlags & OBJECT_FLAG_DESTROYED_MASK) {
-                return false;
-            }
-
-            FUObjectItemInternal* Item = GetObjectItem(Obj);
-            if (Item) {
-                if (Item->Object != Obj || (Item->Flags & INTERNAL_FLAGS_GARBAGE_MASK)) {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        // 剔除瞬态标志，打上 Standalone 与 RootSet
-        static void InternalSolidifyBase(SDK::UObject* Obj) {
-            if (!Obj) {
-                return;
-            }
-
-            *(uint32_t*)(&Obj->Flags) &= ~(OBJECT_FLAG_TRANSIENT | OBJECT_FLAG_TAG_GARBAGE_TEMP);
-            *(uint32_t*)(&Obj->Flags) |= (OBJECT_FLAG_PUBLIC | OBJECT_FLAG_STANDALONE);
-
-            FUObjectItemInternal* Item = GetObjectItem(Obj);
-            if (Item && Item->Object == Obj) {
-                Item->Flags &= ~INTERNAL_FLAGS_GARBAGE_MASK;
-                Item->Flags |= INTERNAL_FLAG_ROOTSET;
-            }
-        }
-
-        // 针对 Texture2D 的专用固化（包含显存流送与 UI 组别锁定）
-        static void SolidifyTexture(SDK::UTexture2D* Texture) {
-            if (!Texture) {
-                return;
-            }
-
-            InternalSolidifyBase(Texture);
-            Texture->bTemporarilyDisableStreaming = 1;
-            Texture->NeverStream = 1; // 永久禁止流送系统卸载纹理资源
-            Texture->LODGroup = SDK::ETextureGroup::TEXTUREGROUP_UI;
-        }
-
-        // 移除 Standalone 与 RootSet 标志，允许引擎 GC 正常回收对象
-        static void InternalUnsolidifyBase(SDK::UObject* Obj) {
-            if (!Obj) {
-                return;
-            }
-
-            *(uint32_t*)(&Obj->Flags) &= ~(OBJECT_FLAG_PUBLIC | OBJECT_FLAG_STANDALONE);
-            *(uint32_t*)(&Obj->Flags) |= OBJECT_FLAG_TRANSIENT;
-
-            FUObjectItemInternal* Item = GetObjectItem(Obj);
-            if (Item && Item->Object == Obj) {
-                Item->Flags &= ~INTERNAL_FLAG_ROOTSET;
-            }
-        }
-
-        // 针对 Texture2D 的解除固化（恢复显存流送限制并允许 GC 回收）
-        static void UnsolidifyTexture(SDK::UTexture2D* Texture) {
-            if (!Texture) {
-                return;
-            }
-
-            InternalUnsolidifyBase(Texture);
-            Texture->bTemporarilyDisableStreaming = 0;
-        }
-
-        // 将对象从全局池中抹除，使引擎在退出时彻底忽略它，阻止 FMemory::Free 释放 CRT 内存
-        static void GhostObject(SDK::UObject* Obj) {
-            if (!Obj) {
-                return;
-            }
-
-            FUObjectItemInternal* Item = GetObjectItem(Obj);
-            if (Item && Item->Object == Obj) {
-                Item->Object = nullptr; // 引擎从此失去对该对象的记忆
-                Item->Flags = 0;
-            }
-        }
-
-        // 上下文、环境检查与持久数据池
-        static SDK::UWorld* s_CachedWorld = nullptr;
-        static std::unordered_map<const void*, SDK::UTexture2D*> s_BufferTextureCache;
-        static std::unordered_map<std::wstring, SDK::UTexture2D*> s_FileTextureCache;
-        static std::vector<SDK::UTexture2D*> s_RetiredTextures;
-
-        // 字体是全局且免疫 GC 的，使用独立永生池
-        static std::unordered_set<std::wstring> s_PermanentPathPool;
-        static std::unordered_map<std::wstring, SDK::UFont*> s_FileFontCache;
-        static std::unordered_map<const void*, SDK::UFont*> s_BufferFontCache;
-        static std::deque<SDK::FTypefaceEntry> s_PermanentTypefaceEntries;
-
-        // 将旧缓存中的纹理指针移入退役池。
-        static void RetireTexturePointer(SDK::UTexture2D* Texture) {
-            if (!Texture) {
-                return;
-            }
-
-            if (s_RetiredTextures.capacity() < TEXTURE_RETIRED_POOL_RESERVE) {
-                s_RetiredTextures.reserve(TEXTURE_RETIRED_POOL_RESERVE);
-            }
-
-            s_RetiredTextures.push_back(Texture);
-        }
-
-        // 检查并自动维护 World 变动（关卡切换时清空易失的 Texture 显存缓存）
-        static SDK::UWorld* GetReadyWorld() {
-            SDK::UWorld* CurrentWorld = SDK::UWorld::GetWorld();
-            if (!CurrentWorld || !CurrentWorld->OwningGameInstance || !CurrentWorld->PersistentLevel) {
-                return nullptr;
-            }
-
-            if (CurrentWorld != s_CachedWorld) {
-                s_CachedWorld = CurrentWorld;
-                for (auto& Pair : s_BufferTextureCache) {
-                    RetireTexturePointer(Pair.second);
-                }
-                s_BufferTextureCache.clear();
-
-                for (auto& Pair : s_FileTextureCache) {
-                    RetireTexturePointer(Pair.second);
-                }
-                s_FileTextureCache.clear();
-            }
-
-            return CurrentWorld;
-        }
-
-        // 获取持久化 Outer 容器
-        static SDK::UObject* GetPersistentOuter() {
-            SDK::UObject* TransientPkg = SDK::UObject::FindObjectFastImpl("Transient");
-            if (TransientPkg) {
-                return TransientPkg;
-            }
-
-            SDK::UWorld* World = SDK::UWorld::GetWorld();
-            if (World && World->OwningGameInstance) {
-                return World->OwningGameInstance;
-            }
-
-            return World;
-        }
-
-        // 永久缓存字符串指针，杜绝 FreeType 读取到悬垂路径
-        static const wchar_t* GetPermanentPathPtr(const std::wstring& Path) {
-            auto Pair = s_PermanentPathPool.insert(Path);
-            return Pair.first->c_str();
-        }
-
-        // 创建 Slate 专用的全局持久 Runtime UFont 实例
-        static SDK::UFont* CreatePermanentRuntimeFont() {
-            SDK::UClass* FontClass = SDK::UFont::StaticClass();
-            if (!FontClass) {
-                return nullptr;
-            }
-
-            SDK::UObject* Outer = GetPersistentOuter();
-            if (!Outer) {
-                return nullptr;
-            }
-
-            SDK::UObject* NewObj = SDK::UGameplayStatics::SpawnObject(FontClass, Outer);
-            return static_cast<SDK::UFont*>(NewObj);
-        }
-    } // namespace Detail
-
-    static SDK::UTexture2D* LoadTextureFromBuffer(const unsigned char* BufferData, size_t BufferSize) {
-        if (!BufferData || BufferSize == 0) {
-            return nullptr;
-        }
-
-        SDK::UWorld* World = Detail::GetReadyWorld();
-        if (!World) {
-            return nullptr;
-        }
-
-        auto It = Detail::s_BufferTextureCache.find(BufferData);
-        if (It != Detail::s_BufferTextureCache.end()) {
-            if (Detail::IsObjectAliveAndValid(It->second)) {
-                return It->second;
-            }
-            Detail::s_BufferTextureCache.erase(It);
-        }
-
-        SDK::UTexture2D* LoadedTexture = Detail::ImportBufferAsTexture2D(World, BufferData, BufferSize);
-
-        if (LoadedTexture) {
-            Detail::SolidifyTexture(LoadedTexture);
-            Detail::s_BufferTextureCache[BufferData] = LoadedTexture;
-        }
-
-        return LoadedTexture;
-    }
-
-    static SDK::UTexture2D* LoadTextureFromFile(const wchar_t* FilePath) {
-        if (!FilePath) {
-            return nullptr;
-        }
-
-        SDK::UWorld* World = Detail::GetReadyWorld();
-        if (!World) {
-            return nullptr;
-        }
-
-        auto It = Detail::s_FileTextureCache.find(FilePath);
-        if (It != Detail::s_FileTextureCache.end()) {
-            return It->second;
-        }
-
-        SDK::FString PathStr(FilePath);
-        SDK::UTexture2D* LoadedTexture = SDK::UKismetRenderingLibrary::ImportFileAsTexture2D(World, PathStr);
-        if (LoadedTexture) {
-            Detail::SolidifyTexture(LoadedTexture);
-            Detail::s_FileTextureCache[FilePath] = LoadedTexture;
-        }
-
-        return LoadedTexture;
-    }
-
-    static SDK::UFont* LoadFontFromFile(const wchar_t* FilePath, int32_t FontSize = Detail::DEFAULT_FONT_SIZE) {
-        if (!FilePath) {
-            return nullptr;
-        }
-
-        // 字体已幽灵化，永不被 GC 且终生有效，直接返回命中缓存即可
-        auto It = Detail::s_FileFontCache.find(FilePath);
-        if (It != Detail::s_FileFontCache.end()) {
-            return It->second;
-        }
-
-        SDK::UFont* NewFont = Detail::CreatePermanentRuntimeFont();
-        if (!NewFont) {
-            return nullptr;
-        }
-
-        NewFont->FontCacheType = SDK::EFontCacheType::Runtime;
-
-        if (FontSize >= Detail::MIN_VALID_FONT_SIZE) {
-            NewFont->LegacyFontSize = FontSize;
-        }
-
-        const wchar_t* SafePathPtr = Detail::GetPermanentPathPtr(FilePath);
-
-        // deque 就地构造指针
-        SDK::FTypefaceEntry& Entry = Detail::s_PermanentTypefaceEntries.emplace_back();
-        Entry.Name = SDK::FName();
-        Entry.Font.FontFilename = SDK::FString(SafePathPtr);
-        Entry.Font.Hinting = SDK::EFontHinting::Default;
-        Entry.Font.LoadingPolicy = SDK::EFontLoadingPolicy::LazyLoad;
-        Entry.Font.SubFaceIndex = 0;
-        Entry.Font.FontFaceAsset = nullptr;
-
-        *reinterpret_cast<Detail::FScriptArrayHelper*>(&NewFont->CompositeFont.DefaultTypeface.Fonts) = { &Entry, 1, 1 };
-
-        // 将其变成幽灵对象，切断引擎退出时对该 CRT 内存的所有销毁链路
-        Detail::GhostObject(NewFont);
-
-        Detail::s_FileFontCache[FilePath] = NewFont;
-
-        return NewFont;
-    }
-
-    static SDK::UFont* LoadFontFromBuffer(const unsigned char* BufferData, size_t BufferSize, int32_t FontSize = Detail::DEFAULT_FONT_SIZE) {
-        if (!BufferData || BufferSize == 0) {
-            return nullptr;
-        }
-
-        auto It = Detail::s_BufferFontCache.find(BufferData);
-        if (It != Detail::s_BufferFontCache.end()) {
-            return It->second;
-        }
-
-        std::filesystem::path TempDir = std::filesystem::temp_directory_path();
-        std::wstring TempFileName = L"mod_font_" + std::to_wstring(reinterpret_cast<uintptr_t>(BufferData)) + L".ttf";
-        std::filesystem::path TempFilePath = TempDir / TempFileName;
-
-        if (!std::filesystem::exists(TempFilePath)) {
-            std::ofstream Out(TempFilePath, std::ios::binary);
-            if (!Out.is_open()) {
-                return nullptr;
-            }
-            Out.write(reinterpret_cast<const char*>(BufferData), BufferSize);
-            Out.close();
-        }
-
-        SDK::UFont* LoadedFont = LoadFontFromFile(TempFilePath.c_str(), FontSize);
-        if (LoadedFont) {
-            Detail::s_BufferFontCache[BufferData] = LoadedFont;
-        }
-
-        return LoadedFont;
-    }
+    struct Vec2 { float x, y; };
+    struct Color { float r, g, b, a; };
+
+    struct ShadowFont {
+        void* NativePtr = nullptr;
+        constexpr ShadowFont() = default;
+        constexpr ShadowFont(void* ptr) : NativePtr(ptr) {}
+        constexpr operator void* () const { return NativePtr; }
+        constexpr explicit operator bool() const { return NativePtr != nullptr; }
+        auto operator<=>(const ShadowFont&) const = default;
+        bool operator==(const ShadowFont& other) const = default;
+    };
+
+    struct ShadowTexture {
+        void* NativePtr = nullptr;
+        constexpr ShadowTexture() = default;
+        constexpr ShadowTexture(void* ptr) : NativePtr(ptr) {}
+        constexpr operator void* () const { return NativePtr; }
+        constexpr explicit operator bool() const { return NativePtr != nullptr; }
+        auto operator<=>(const ShadowTexture&) const = default;
+        bool operator==(const ShadowTexture& other) const = default;
+    };
+
+    using MeasureTextFn = Vec2(*)(ShadowFont font, float fontScale, bool noSDF, std::string_view text);
+
+    // 字体相关默认配置常量
+    constexpr int32_t DEFAULT_FONT_SIZE = 0;
+    constexpr int32_t MIN_VALID_FONT_SIZE = 1;
+
+    // 圆角边框折线拟合段数（每个角），配置越大越圆滑
+    constexpr int RECT_ROUNDING_SEGMENTS = 6;
+
+    // ResizeGrip 圆角逐行扫描时的行高（像素）
+    constexpr float RESIZE_GRIP_SCANLINE_HEIGHT = 1.0f;
+
+    // 默认圆角配置常量
+    constexpr float DEFAULT_WINDOW_ROUNDING = 0.0f;
+    constexpr float DEFAULT_CHILD_ROUNDING = 0.0f;
+    constexpr float DEFAULT_POPUP_ROUNDING = 0.0f;
+    constexpr float DEFAULT_FRAME_ROUNDING = 0.0f;
+    constexpr float DEFAULT_SCROLLBAR_ROUNDING = 0.0f;
+    constexpr float DEFAULT_GRAB_ROUNDING = 0.0f;
+    constexpr float DEFAULT_TAB_ROUNDING = 0.0f;
 
     enum class HotkeyMode {
         None,
@@ -486,9 +78,6 @@ namespace Shadow {
         HoldOff,
         AlwaysOn
     };
-
-    struct Vec2 { float x, y; };
-    struct Color { float r, g, b, a; };
 
     // 颜色枚举与样式
     enum GuiCol_ {
@@ -727,13 +316,13 @@ namespace Shadow {
         float TabExtraWidth = 20.f;          // Tab标签额外预留宽度
 
         // 圆角控制配置
-        float WindowRounding = Detail::DEFAULT_WINDOW_ROUNDING;       // 窗口圆角半径
-        float ChildRounding = Detail::DEFAULT_CHILD_ROUNDING;         // 子窗口/ListBox圆角半径
-        float PopupRounding = Detail::DEFAULT_POPUP_ROUNDING;         // 弹窗与Tooltip圆角半径
-        float FrameRounding = Detail::DEFAULT_FRAME_ROUNDING;         // 控件/按钮/输入框圆角半径
-        float ScrollbarRounding = Detail::DEFAULT_SCROLLBAR_ROUNDING; // 滚动条滑块与轨道圆角半径
-        float GrabRounding = Detail::DEFAULT_GRAB_ROUNDING;           // 滑块手柄圆角半径
-        float TabRounding = Detail::DEFAULT_TAB_ROUNDING;             // Tab标签顶部圆角半径
+        float WindowRounding = DEFAULT_WINDOW_ROUNDING;       // 窗口圆角半径
+        float ChildRounding = DEFAULT_CHILD_ROUNDING;         // 子窗口/ListBox圆角半径
+        float PopupRounding = DEFAULT_POPUP_ROUNDING;         // 弹窗与Tooltip圆角半径
+        float FrameRounding = DEFAULT_FRAME_ROUNDING;         // 控件/按钮/输入框圆角半径
+        float ScrollbarRounding = DEFAULT_SCROLLBAR_ROUNDING; // 滚动条滑块与轨道圆角半径
+        float GrabRounding = DEFAULT_GRAB_ROUNDING;           // 滑块手柄圆角半径
+        float TabRounding = DEFAULT_TAB_ROUNDING;             // Tab标签顶部圆角半径
 
         // 控件特定配置
         float ControlOffsetMin = 120.f;      // 右侧互动控件对齐的最小偏移量
@@ -869,14 +458,14 @@ namespace Shadow {
         Vec2 pos;
         Vec2 size;
         std::string display;
-        SDK::UFont* font = nullptr;
+        ShadowFont font{};
         float fontScale = 1.0f;
         bool noSDF = false;
     };
 
     struct FontContext {
-        SDK::UFont* Font;
-        float Scale;
+        ShadowFont Font{};
+        float Scale = 1.0f;
         bool NoSDF = false;
     };
 
@@ -892,7 +481,8 @@ namespace Shadow {
         Text,
         TriangleFilled,
         Triangle,
-        Texture
+        Texture,
+        CircleFilled
     };
 
     struct ShadowDrawCmd {
@@ -902,7 +492,7 @@ namespace Shadow {
         Color color;
         float thickness;
         std::string text;
-        SDK::UFont* font;
+        ShadowFont font{};
         float fontScale;
         bool clippingEnabled;
         Vec2 clipMin;
@@ -912,7 +502,7 @@ namespace Shadow {
         Color textOutlineColor;
         bool textOutline;
         bool noSDF;
-        SDK::UTexture* texture = nullptr;
+        ShadowTexture texture{};
         float rounding = 0.f;
         ShadowDrawFlags flags = ShadowDrawFlags_RoundCornersAll;
     };
@@ -957,12 +547,29 @@ namespace Shadow {
         void AddRect(Vec2 pos, Vec2 size, Color color, float thickness = 1.0f, float rounding = 0.f, ShadowDrawFlags flags = ShadowDrawFlags_RoundCornersAll);
         void AddRectFilled(Vec2 pos, Vec2 size, Color color, float rounding = 0.f, ShadowDrawFlags flags = ShadowDrawFlags_RoundCornersAll);
         void AddCircleFilled(Vec2 center, float radius, Color color);
-        void AddTexture(Vec2 pos, Vec2 size, Color color, SDK::UTexture* texture = nullptr);
+        void AddTexture(Vec2 pos, Vec2 size, Color color, ShadowTexture texture = {});
         void AddTriangle(Vec2 p1, Vec2 p2, Vec2 p3, Color color, float thickness = 1.0f);
         void AddTriangleFilled(Vec2 p1, Vec2 p2, Vec2 p3, Color color);
         void AddText(Vec2 pos, Color color, std::string_view text);
-        void AddText(SDK::UFont* font, float fontScale, Color shadowColor, Color outlineColor, Vec2 pos, Color color, std::string_view text, bool outline = false, bool noSDF = false);
+        void AddText(ShadowFont font, float fontScale, Color shadowColor, Color outlineColor, Vec2 pos, Color color, std::string_view text, bool outline = false, bool noSDF = false);
     };
+
+    struct ShadowDrawData {
+        bool Valid = false;
+        std::vector<ShadowDrawList*> CmdLists;
+        Vec2 DisplaySize{ 0.f, 0.f };
+
+        void Clear() {
+            CmdLists.clear();
+            Valid = false;
+        }
+    };
+
+    inline ShadowDrawData g_DrawData;
+
+    inline ShadowDrawData* GetDrawData() {
+        return g_DrawData.Valid ? &g_DrawData : nullptr;
+    }
 
     struct ListBoxState {
         Vec2 ParentWindowPos;
@@ -1053,8 +660,8 @@ namespace Shadow {
     };
 
     struct GuiContext {
-        SDK::UCanvas* Canvas = nullptr;
-        SDK::UFont* DefaultFont = nullptr;
+        ShadowFont DefaultFont{};
+        MeasureTextFn TextSizeFn = nullptr;
 
         GuiStyle Style;
         bool StyleInitialized = false;
@@ -1112,9 +719,8 @@ namespace Shadow {
         Vec2 WindowSizeConstraintMax = { 10000.f, 10000.f };
 
         std::vector<FontContext> FontStack;
-        std::vector<SDK::UTexture*> TextureStack;
+        std::vector<ShadowTexture> TextureStack;
         std::vector<TextOutlineContext> TextOutlineStack;
-        std::unordered_map<SDK::UFont*, int32_t> FontOriginalSizes;
 
         int BeginStack = 0;
         int TabBarStack = 0;
@@ -1291,64 +897,9 @@ namespace Shadow {
 
     inline ShadowIO g_IO;
     inline GuiContext g_Ctx;
-    inline SDK::UFont*& DefaultFont = g_Ctx.DefaultFont;
-
-    struct ScopedFontScale {
-        SDK::UFont* Font = nullptr;
-        int32_t OriginalSize = 0;
-        bool NoSDF = false;
-        float CalculatedScale = 1.0f;
-
-        ScopedFontScale(SDK::UFont* font, float fontScale = 1.0f, bool noSDF = false) {
-            if (!font) return;
-            Font = font;
-            NoSDF = noSDF;
-
-            // 查找或记录该字体最初的未缩放基础字号
-            auto it = g_Ctx.FontOriginalSizes.find(font);
-            if (it == g_Ctx.FontOriginalSizes.end()) {
-                OriginalSize = font->LegacyFontSize;
-                g_Ctx.FontOriginalSizes[font] = OriginalSize;
-            }
-            else {
-                OriginalSize = it->second;
-            }
-
-            int32_t baseSize = OriginalSize > 0 ? OriginalSize : static_cast<int32_t>(g_Ctx.Style.FallbackFontSize);
-            float finalScale = fontScale * g_Ctx.Style.FontScaleDpi;
-
-            if (NoSDF) {
-                // 确保字号为 100（仅在不等于 100 时执行写入）
-                if (font->LegacyFontSize != static_cast<int32_t>(g_Ctx.Style.NoSDFFontBaseSize)) {
-                    font->LegacyFontSize = static_cast<int32_t>(g_Ctx.Style.NoSDFFontBaseSize);
-                }
-                // 计算期望尺寸并 clamp，计算出相对于 100pt 字体所需的缩放倍率
-                float desiredSize = std::clamp(static_cast<float>(baseSize) * finalScale, g_Ctx.Style.FontSizeMin, g_Ctx.Style.FontSizeMax);
-                CalculatedScale = desiredSize / g_Ctx.Style.NoSDFFontBaseSize;
-            }
-            else {
-                // 普通模式：直接修改 LegacyFontSize，scale 保持 1.0f
-                int32_t targetSize = std::clamp(static_cast<int32_t>(baseSize * finalScale), static_cast<int32_t>(g_Ctx.Style.FontSizeMin), static_cast<int32_t>(g_Ctx.Style.FontSizeMax));
-                font->LegacyFontSize = targetSize;
-                CalculatedScale = 1.0f;
-            }
-        }
-
-        ~ScopedFontScale() {
-            // 仅在非 NoSDF 模式退出作用域时恢复原始字号，NoSDF 保持 100
-            if (Font && !NoSDF) {
-                Font->LegacyFontSize = OriginalSize;
-            }
-        }
-    };
+    inline ShadowFont& DefaultFont = g_Ctx.DefaultFont;
 
     inline ShadowIO& GetIO() {
-        g_IO.DisplaySize = {
-            g_Ctx.Canvas ? static_cast<float>(g_Ctx.Canvas->SizeX) : 0.0f,
-            g_Ctx.Canvas ? static_cast<float>(g_Ctx.Canvas->SizeY) : 0.0f
-        };
-        g_IO.DeltaTime = static_cast<float>(g_Ctx.DeltaTime);
-
         return g_IO;
     }
 
@@ -2258,371 +1809,9 @@ namespace Shadow {
         if (size.y < 0.f) size.y = 0.f;
     }
 
-    inline void InternalDrawLine(Vec2 start, Vec2 end, Color color, float thickness, bool clipEnabled, Vec2 clipMin, Vec2 clipMax, SDK::UTexture* texture = nullptr) {
-        if (!g_Ctx.Canvas) return;
-        SDK::UTexture* tex = texture ? texture : (g_Ctx.Canvas ? g_Ctx.Canvas->DefaultTexture : nullptr);
-        if (!tex) return;
-
-        // 新增：Liang-Barsky 线段裁剪算法
-        // 如果开启了裁剪，对线段端点进行裁剪
-        if (clipEnabled) {
-            float dx = end.x - start.x;
-            float dy = end.y - start.y;
-            float t0 = 0.0f, t1 = 1.0f;
-
-            auto ClipTest = [](float p, float q, float& t0, float& t1) -> bool {
-                if (p == 0.0f) {
-                    // 线段平行于边界且位于边界外
-                    return q >= 0.0f;
-                }
-                float r = q / p;
-                if (p < 0.0f) {
-                    // 从外部进入
-                    if (r > t1) return false;
-                    if (r > t0) t0 = r;
-                }
-                else {
-                    // 从内部离开
-                    if (r < t0) return false;
-                    if (r < t1) t1 = r;
-                }
-                return true;
-                };
-
-            // 针对四条边界进行裁剪测试
-            if (!ClipTest(-dx, start.x - clipMin.x, t0, t1)) return;
-            if (!ClipTest(dx, clipMax.x - start.x, t0, t1)) return;
-            if (!ClipTest(-dy, start.y - clipMin.y, t0, t1)) return;
-            if (!ClipTest(dy, clipMax.y - start.y, t0, t1)) return;
-
-            // 如果 t1 < 1.0f，说明 end 点需要被裁剪
-            if (t1 < 1.0f) {
-                end.x = start.x + t1 * dx;
-                end.y = start.y + t1 * dy;
-            }
-            // 如果 t0 > 0.0f，说明 start 点需要被裁剪
-            if (t0 > 0.0f) {
-                start.x += t0 * dx;
-                start.y += t0 * dy;
-            }
-        }
-
-        // 重新计算 dx, dy，因为 start 和 end 可能已经被修改
-        float dx = end.x - start.x;
-        float dy = end.y - start.y;
-        float length = std::sqrt(dx * dx + dy * dy);
-        if (length <= 0.0f) return;
-
-        float angle = std::atan2(dy, dx) * (180.0f / 3.14159265358979323846f);
-
-        SDK::FVector2D uePos{ static_cast<float>(start.x), static_cast<float>(start.y) };
-        SDK::FVector2D ueSize{ static_cast<float>(length), static_cast<float>(thickness) };
-        SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
-
-        g_Ctx.Canvas->K2_DrawTexture(
-            tex,
-            uePos, ueSize,
-            SDK::FVector2D{ 0.0f, 0.0f }, SDK::FVector2D{ 1.0f, 1.0f },
-            ueColor, SDK::EBlendMode::BLEND_Translucent,
-            angle, SDK::FVector2D{ 0.0f, 0.5f }
-        );
-    }
-
-    inline void InternalDrawRect(Vec2 pos, Vec2 size, Color color, float thickness, bool clipEnabled, Vec2 clipMin, Vec2 clipMax, float rounding, ShadowDrawFlags flags, SDK::UTexture* texture = nullptr) {
-        if (!g_Ctx.Canvas) return;
-        if (size.x <= 0.f || size.y <= 0.f) return;
-
-        if (clipEnabled) {
-            if (pos.x + size.x < clipMin.x || pos.x > clipMax.x ||
-                pos.y + size.y < clipMin.y || pos.y > clipMax.y)
-                return;
-        }
-
-        bool roundTL = (flags & ShadowDrawFlags_RoundCornersTopLeft) && !(flags & ShadowDrawFlags_RoundCornersNone);
-        bool roundTR = (flags & ShadowDrawFlags_RoundCornersTopRight) && !(flags & ShadowDrawFlags_RoundCornersNone);
-        bool roundBL = (flags & ShadowDrawFlags_RoundCornersBottomLeft) && !(flags & ShadowDrawFlags_RoundCornersNone);
-        bool roundBR = (flags & ShadowDrawFlags_RoundCornersBottomRight) && !(flags & ShadowDrawFlags_RoundCornersNone);
-
-        if (rounding <= 0.0f || (!roundTL && !roundTR && !roundBL && !roundBR)) {
-            // 无圆角，直接绘制普通矩形
-            float halfThick = thickness * 0.5f;
-            InternalDrawLine({ pos.x - halfThick, pos.y }, { pos.x + size.x + halfThick, pos.y }, color, thickness, clipEnabled, clipMin, clipMax, texture);
-            InternalDrawLine({ pos.x - halfThick, pos.y + size.y }, { pos.x + size.x + halfThick, pos.y + size.y }, color, thickness, clipEnabled, clipMin, clipMax, texture);
-            InternalDrawLine({ pos.x, pos.y + halfThick }, { pos.x, pos.y + size.y - halfThick }, color, thickness, clipEnabled, clipMin, clipMax, texture);
-            InternalDrawLine({ pos.x + size.x, pos.y + halfThick }, { pos.x + size.x, pos.y + size.y - halfThick }, color, thickness, clipEnabled, clipMin, clipMax, texture);
-            return;
-        }
-
-        float r = std::min(rounding, std::min(size.x, size.y) * 0.5f);
-        float r_tl = roundTL ? r : 0.0f;
-        float r_tr = roundTR ? r : 0.0f;
-        float r_bl = roundBL ? r : 0.0f;
-        float r_br = roundBR ? r : 0.0f;
-
-        // 绘制四条直边（避开圆角区域）
-        InternalDrawLine({ pos.x + r_tl, pos.y }, { pos.x + size.x - r_tr, pos.y }, color, thickness, clipEnabled, clipMin, clipMax, texture);
-        InternalDrawLine({ pos.x + r_bl, pos.y + size.y }, { pos.x + size.x - r_br, pos.y + size.y }, color, thickness, clipEnabled, clipMin, clipMax, texture);
-        InternalDrawLine({ pos.x, pos.y + r_tl }, { pos.x, pos.y + size.y - r_bl }, color, thickness, clipEnabled, clipMin, clipMax, texture);
-        InternalDrawLine({ pos.x + size.x, pos.y + r_tr }, { pos.x + size.x, pos.y + size.y - r_br }, color, thickness, clipEnabled, clipMin, clipMax, texture);
-
-        // 绘制指定的圆角
-        constexpr float PI = 3.14159265358979323846f;
-        int segments = Detail::RECT_ROUNDING_SEGMENTS;
-
-        auto DrawCorner = [&](Vec2 center, float radius, float startAngle, float endAngle) {
-            if (radius <= 0.f) return;
-            for (int i = 0; i < segments; ++i) {
-                float t0 = (float)i / segments;
-                float t1 = (float)(i + 1) / segments;
-                float a0 = startAngle + t0 * (endAngle - startAngle);
-                float a1 = startAngle + t1 * (endAngle - startAngle);
-                InternalDrawLine(
-                    { center.x + radius * std::cos(a0), center.y - radius * std::sin(a0) },
-                    { center.x + radius * std::cos(a1), center.y - radius * std::sin(a1) },
-                    color, thickness, clipEnabled, clipMin, clipMax, texture
-                );
-            }
-            };
-
-        if (roundTL) DrawCorner({ pos.x + r, pos.y + r }, r, PI / 2.0f, PI);
-        if (roundTR) DrawCorner({ pos.x + size.x - r, pos.y + r }, r, 0.0f, PI / 2.0f);
-        if (roundBL) DrawCorner({ pos.x + r, pos.y + size.y - r }, r, PI, 3.0f * PI / 2.0f);
-        if (roundBR) DrawCorner({ pos.x + size.x - r, pos.y + size.y - r }, r, 3.0f * PI / 2.0f, 2.0f * PI);
-    }
-
-    inline SDK::UTexture2D* GetCircleTexture(float radius) {
-        if (radius <= 0.0f) return nullptr;
-        float diameter = radius * 2.0f;
-        if (diameter <= 16.0f) {
-            return LoadTextureFromBuffer(Shadow_Texture::CircleFilled_16, sizeof(Shadow_Texture::CircleFilled_16));
-        }
-        else if (diameter <= 32.0f) {
-            return LoadTextureFromBuffer(Shadow_Texture::CircleFilled_32, sizeof(Shadow_Texture::CircleFilled_32));
-        }
-        else if (diameter <= 64.0f) {
-            return LoadTextureFromBuffer(Shadow_Texture::CircleFilled_64, sizeof(Shadow_Texture::CircleFilled_64));
-        }
-        else if (diameter <= 128.0f) {
-            return LoadTextureFromBuffer(Shadow_Texture::CircleFilled_128, sizeof(Shadow_Texture::CircleFilled_128));
-        }
-        else if (diameter <= 256.0f) {
-            return LoadTextureFromBuffer(Shadow_Texture::CircleFilled_256, sizeof(Shadow_Texture::CircleFilled_256));
-        }
-        else if (diameter <= 512.0f) {
-            return LoadTextureFromBuffer(Shadow_Texture::CircleFilled_512, sizeof(Shadow_Texture::CircleFilled_512));
-        }
-        else {
-            return LoadTextureFromBuffer(Shadow_Texture::CircleFilled_1024, sizeof(Shadow_Texture::CircleFilled_1024));
-        }
-    }
-
-    inline void InternalDrawRectFilled(Vec2 pos, Vec2 size, Color color, bool clipEnabled, Vec2 clipMin, Vec2 clipMax, float rounding, ShadowDrawFlags flags, SDK::UTexture* texture = nullptr) {
-        if (!g_Ctx.Canvas) return;
-
-        bool roundTL = (flags & ShadowDrawFlags_RoundCornersTopLeft) && !(flags & ShadowDrawFlags_RoundCornersNone);
-        bool roundTR = (flags & ShadowDrawFlags_RoundCornersTopRight) && !(flags & ShadowDrawFlags_RoundCornersNone);
-        bool roundBL = (flags & ShadowDrawFlags_RoundCornersBottomLeft) && !(flags & ShadowDrawFlags_RoundCornersNone);
-        bool roundBR = (flags & ShadowDrawFlags_RoundCornersBottomRight) && !(flags & ShadowDrawFlags_RoundCornersNone);
-
-        if (rounding > 0.0f && texture == nullptr && (roundTL || roundTR || roundBL || roundBR)) {
-            float r = std::min(rounding, std::min(size.x, size.y) * 0.5f);
-            SDK::UTexture2D* circleTex = GetCircleTexture(r);
-            if (circleTex && Detail::IsObjectAliveAndValid(circleTex)) {
-                float w = size.x;
-                float h = size.y;
-
-                SDK::UTexture* defTex = g_Ctx.Canvas->DefaultTexture;
-                if (!defTex) return;
-
-                auto DrawPiece = [&](float x, float y, float piece_w, float piece_h, float u0, float v0, float u1, float v1, SDK::UTexture* tex) {
-                    if (!tex) return;
-                    if (piece_w <= 0.f || piece_h <= 0.f) return;
-                    Vec2 drawPos = { pos.x + x, pos.y + y };
-                    Vec2 drawSize = { piece_w, piece_h };
-                    Vec2 drawUV0 = { u0, v0 };
-                    Vec2 drawUV1 = { u1, v1 };
-
-                    if (clipEnabled) {
-                        if (drawPos.x + drawSize.x <= clipMin.x || drawPos.x >= clipMax.x ||
-                            drawPos.y + drawSize.y <= clipMin.y || drawPos.y >= clipMax.y) return;
-
-                        if (drawPos.x < clipMin.x) {
-                            float cut = clipMin.x - drawPos.x;
-                            float cutUV = cut / drawSize.x * (drawUV1.x - drawUV0.x);
-                            drawUV0.x += cutUV;
-                            drawSize.x -= cut;
-                            drawPos.x = clipMin.x;
-                        }
-                        if (drawPos.y < clipMin.y) {
-                            float cut = clipMin.y - drawPos.y;
-                            float cutUV = cut / drawSize.y * (drawUV1.y - drawUV0.y);
-                            drawUV0.y += cutUV;
-                            drawSize.y -= cut;
-                            drawPos.y = clipMin.y;
-                        }
-                        if (drawPos.x + drawSize.x > clipMax.x) {
-                            float cut = drawPos.x + drawSize.x - clipMax.x;
-                            float cutUV = cut / drawSize.x * (drawUV1.x - drawUV0.x);
-                            drawUV1.x -= cutUV;
-                            drawSize.x = clipMax.x - drawPos.x;
-                        }
-                        if (drawPos.y + drawSize.y > clipMax.y) {
-                            float cut = drawPos.y + drawSize.y - clipMax.y;
-                            float cutUV = cut / drawSize.y * (drawUV1.y - drawUV0.y);
-                            drawUV1.y -= cutUV;
-                            drawSize.y = clipMax.y - drawPos.y;
-                        }
-                        if (drawSize.x <= 0.f || drawSize.y <= 0.f) return;
-                    }
-
-                    SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
-                    SDK::FVector2D uePos{ static_cast<float>(drawPos.x), static_cast<float>(drawPos.y) };
-                    SDK::FVector2D ueSize{ static_cast<float>(drawSize.x), static_cast<float>(drawSize.y) };
-                    SDK::FVector2D ueUV0{ static_cast<float>(drawUV0.x), static_cast<float>(drawUV0.y) };
-                    SDK::FVector2D ueUVSize{ static_cast<float>(drawUV1.x - drawUV0.x), static_cast<float>(drawUV1.y - drawUV0.y) };
-
-                    g_Ctx.Canvas->K2_DrawTexture(
-                        tex, uePos, ueSize,
-                        ueUV0, ueUVSize,
-                        ueColor, SDK::EBlendMode::BLEND_Translucent, 0.0f, SDK::FVector2D{ 0.0f, 0.0f }
-                    );
-                    };
-
-                // 1. 左上角
-                if (roundTL) {
-                    DrawPiece(0, 0, r, r, 0.0f, 0.0f, 0.5f, 0.5f, circleTex);
-                }
-                else {
-                    DrawPiece(0, 0, r, r, 0.0f, 0.0f, 1.0f, 1.0f, defTex);
-                }
-
-                // 2. 右上角
-                if (roundTR) {
-                    DrawPiece(w - r, 0, r, r, 0.5f, 0.0f, 1.0f, 0.5f, circleTex);
-                }
-                else {
-                    DrawPiece(w - r, 0, r, r, 0.0f, 0.0f, 1.0f, 1.0f, defTex);
-                }
-
-                // 3. 左下角
-                if (roundBL) {
-                    DrawPiece(0, h - r, r, r, 0.0f, 0.5f, 0.5f, 1.0f, circleTex);
-                }
-                else {
-                    DrawPiece(0, h - r, r, r, 0.0f, 0.0f, 1.0f, 1.0f, defTex);
-                }
-
-                // 4. 右下角
-                if (roundBR) {
-                    DrawPiece(w - r, h - r, r, r, 0.5f, 0.5f, 1.0f, 1.0f, circleTex);
-                }
-                else {
-                    DrawPiece(w - r, h - r, r, r, 0.0f, 0.0f, 1.0f, 1.0f, defTex);
-                }
-
-                // 5. 上边缘
-                if (w - 2 * r > 0) {
-                    DrawPiece(r, 0, w - 2 * r, r, 0.0f, 0.0f, 1.0f, 1.0f, defTex);
-                }
-
-                // 6. 下边缘
-                if (w - 2 * r > 0) {
-                    DrawPiece(r, h - r, w - 2 * r, r, 0.0f, 0.0f, 1.0f, 1.0f, defTex);
-                }
-
-                // 7. 左边缘
-                if (h - 2 * r > 0) {
-                    DrawPiece(0, r, r, h - 2 * r, 0.0f, 0.0f, 1.0f, 1.0f, defTex);
-                }
-
-                // 8. 右边缘
-                if (h - 2 * r > 0) {
-                    DrawPiece(w - r, r, r, h - 2 * r, 0.0f, 0.0f, 1.0f, 1.0f, defTex);
-                }
-
-                // 9. 中心区域
-                if (w - 2 * r > 0 && h - 2 * r > 0) {
-                    DrawPiece(r, r, w - 2 * r, h - 2 * r, 0.0f, 0.0f, 1.0f, 1.0f, defTex);
-                }
-
-                return;
-            }
-        }
-
-        // 无圆角，直接绘制矩形
-        SDK::UTexture* tex = texture ? texture : g_Ctx.Canvas->DefaultTexture;
-        if (!tex) return;
-
-        if (clipEnabled) {
-            if (pos.x + size.x <= clipMin.x || pos.x >= clipMax.x || pos.y + size.y <= clipMin.y || pos.y >= clipMax.y) return;
-            if (pos.x < clipMin.x) { size.x -= (clipMin.x - pos.x); pos.x = clipMin.x; }
-            if (pos.y < clipMin.y) { size.y -= (clipMin.y - pos.y); pos.y = clipMin.y; }
-            if (pos.x + size.x > clipMax.x) size.x = clipMax.x - pos.x;
-            if (pos.y + size.y > clipMax.y) size.y = clipMax.y - pos.y;
-            if (size.x <= 0.f || size.y <= 0.f) return;
-        }
-
-        SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
-        SDK::FVector2D uePos{ static_cast<float>(pos.x), static_cast<float>(pos.y) };
-        SDK::FVector2D ueSize{ static_cast<float>(size.x), static_cast<float>(size.y) };
-
-        g_Ctx.Canvas->K2_DrawTexture(
-            tex, uePos, ueSize,
-            SDK::FVector2D{ 0.0f, 0.0f }, SDK::FVector2D{ 1.0f, 1.0f },
-            ueColor, SDK::EBlendMode::BLEND_Translucent, 0.0f, SDK::FVector2D{ 0.0f, 0.0f }
-        );
-    }
-
-    inline void InternalDrawText(const std::string& text, Vec2 pos, Color color, SDK::UFont* font, float fontScale, Color textShadowColor, Color textOutlineColor, bool textOutline, bool noSDF = false) {
-        if (!g_Ctx.Canvas || !font) return;
-
-        ScopedFontScale fontGuard(font, fontScale, noSDF);
-
-        SDK::FVector2D scale{ fontGuard.CalculatedScale, fontGuard.CalculatedScale };
-        SDK::FLinearColor ueColor{ color.r, color.g, color.b, color.a };
-        SDK::FVector2D uePos{ static_cast<float>(pos.x), static_cast<float>(pos.y) };
-
-        SDK::FLinearColor shadow{ textShadowColor.r, textShadowColor.g, textShadowColor.b, textShadowColor.a };
-        SDK::FLinearColor outline{ textOutlineColor.r, textOutlineColor.g, textOutlineColor.b, textOutlineColor.a };
-        SDK::FVector2D shadowOff{ g_Ctx.Style.TextShadowOffsetX, g_Ctx.Style.TextShadowOffsetY };
-
-        std::wstring wstr = ToWString(text);
-        g_Ctx.Canvas->K2_DrawText(font, SDK::FString(wstr.c_str()), uePos, scale, ueColor, 0.0f, shadow, shadowOff, false, false, textOutline, outline);
-    }
-
-    inline void InternalDrawTriangleFilled(Vec2 p1, Vec2 p2, Vec2 p3, Color color, bool clipEnabled, Vec2 clipMin, Vec2 clipMax, SDK::UTexture* texture = nullptr) {
-        Vec2 v[3] = { p1, p2, p3 };
-        if (v[0].y > v[1].y) std::swap(v[0], v[1]);
-        if (v[0].y > v[2].y) std::swap(v[0], v[2]);
-        if (v[1].y > v[2].y) std::swap(v[1], v[2]);
-        if (std::abs(v[0].y - v[2].y) < 0.5f) return;
-
-        auto interpolateX = [](float y, const Vec2& a, const Vec2& b) {
-            if (std::abs(a.y - b.y) < 0.001f) return (a.x + b.x) * 0.5f;
-            return a.x + (b.x - a.x) * (y - a.y) / (b.y - a.y);
-            };
-
-        int startY = static_cast<int>(std::round(v[0].y));
-        int endY = static_cast<int>(std::round(v[2].y));
-
-        for (int y = startY; y < endY; ++y) {
-            float fy = static_cast<float>(y) + 0.5f;
-            float xa = interpolateX(fy, v[0], v[2]);
-            float xb = (fy < v[1].y) ? interpolateX(fy, v[0], v[1]) : interpolateX(fy, v[1], v[2]);
-            if (xa > xb) std::swap(xa, xb);
-
-            float x_min = std::ceil(xa - 0.5f);
-            float x_max = std::floor(xb - 0.5f);
-            float w = x_max - x_min + 1.0f;
-
-            if (w > 0.0f) {
-                InternalDrawRectFilled({ x_min, static_cast<float>(y) }, { w, 1.0f }, color, clipEnabled, clipMin, clipMax, 0.0f, ShadowDrawFlags_RoundCornersNone, texture);
-            }
-        }
-    }
-
-    inline Vec2 MeasureTextSize(std::wstring_view text) {
-        SDK::UFont* font = g_Ctx.DefaultFont;
+    inline Vec2 MeasureTextSize(std::string_view text) {
+        if (text.empty()) return { 0.f, 0.f };
+        ShadowFont font = g_Ctx.DefaultFont;
         float scaleVal = 1.0f;
         bool noSDF = false;
         if (!g_Ctx.FontStack.empty()) {
@@ -2630,19 +1819,18 @@ namespace Shadow {
             scaleVal = g_Ctx.FontStack.back().Scale;
             noSDF = g_Ctx.FontStack.back().NoSDF;
         }
-        if (!g_Ctx.Canvas || !font) return { 0.f, 0.f };
-
-        ScopedFontScale fontGuard(font, scaleVal, noSDF);
-
-        SDK::FVector2D scale{ fontGuard.CalculatedScale, fontGuard.CalculatedScale };
-
-        std::wstring wstr(text);
-        SDK::FVector2D size = g_Ctx.Canvas->K2_TextSize(font, SDK::FString(wstr.c_str()), scale);
-        return { static_cast<float>(size.X), static_cast<float>(size.Y) };
+        if (g_Ctx.TextSizeFn && font) {
+            return g_Ctx.TextSizeFn(font, scaleVal, noSDF, text);
+        }
+        return { 0.f, 0.f };
     }
 
-    inline Vec2 MeasureTextSize(std::string_view text) {
-        return MeasureTextSize(ToWString(text));
+    inline Vec2 MeasureTextSize(std::wstring_view text) {
+        if (text.empty()) return { 0.f, 0.f };
+        int size_needed = WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), nullptr, 0, nullptr, nullptr);
+        std::string utf8(size_needed, 0);
+        WideCharToMultiByte(CP_UTF8, 0, text.data(), static_cast<int>(text.size()), &utf8[0], size_needed, nullptr, nullptr);
+        return MeasureTextSize(utf8);
     }
 
     inline float MeasureCharWidth(wchar_t ch) {
@@ -2661,7 +1849,7 @@ namespace Shadow {
         g_Ctx.ItemHeight = charSize.y > 0.f ? charSize.y + g_Ctx.Style.FramePadding.y * 2.f : g_Ctx.Style.DefaultItemHeight;
     }
 
-    inline void PushFont(SDK::UFont* font, float scale = 1.0f) {
+    inline void PushFont(ShadowFont font, float scale = 1.0f) {
         g_Ctx.FontStack.push_back({ font, scale, false });
         UpdateItemHeight();
     }
@@ -2673,23 +1861,12 @@ namespace Shadow {
         }
     }
 
-    inline void PushFontNoSDF(SDK::UFont* font, float scale = 1.0f) {
-        if (font) {
-            // 备份目标字体的原始 LegacyFontSize（若尚未备份）
-            auto it = g_Ctx.FontOriginalSizes.find(font);
-            if (it == g_Ctx.FontOriginalSizes.end()) {
-                g_Ctx.FontOriginalSizes[font] = font->LegacyFontSize;
-            }
-            // 仅在 LegacyFontSize 不等于 100 时执行一次设置
-            if (font->LegacyFontSize != 100) {
-                font->LegacyFontSize = 100;
-            }
-        }
+    inline void PushFontNoSDF(ShadowFont font, float scale = 1.0f) {
         g_Ctx.FontStack.push_back({ font, scale, true });
         UpdateItemHeight();
     }
 
-    inline void PushTexture(SDK::UTexture* texture) {
+    inline void PushTexture(ShadowTexture texture) {
         g_Ctx.TextureStack.push_back(texture);
     }
 
@@ -3120,18 +2297,12 @@ namespace Shadow {
         return result;
     }
 
-    inline void InternalDrawTriangle(Vec2 p1, Vec2 p2, Vec2 p3, Color color, float thickness, bool clipEnabled, Vec2 clipMin, Vec2 clipMax, SDK::UTexture* texture = nullptr) {
-        InternalDrawLine(p1, p2, color, thickness, clipEnabled, clipMin, clipMax, texture);
-        InternalDrawLine(p2, p3, color, thickness, clipEnabled, clipMin, clipMax, texture);
-        InternalDrawLine(p3, p1, color, thickness, clipEnabled, clipMin, clipMax, texture);
-    }
-
     inline void ShadowDrawList::AddLine(Vec2 start, Vec2 end, Color color, float thickness) {
-        GetCmdBuffer().push_back({ ShadowDrawCmdType::Line, start, end, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::Line, start, end, color, thickness, "", ShadowFont{}, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax,{ 0,0 },{ 0,0 },{ 0,0 },{ 0,0,0,0 },{ 0,0,0,0 }, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : ShadowTexture{} });
     }
 
     inline void ShadowDrawList::AddRect(Vec2 pos, Vec2 size, Color color, float thickness, float rounding, ShadowDrawFlags flags) {
-        SDK::UTexture* tex = !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr;
+        ShadowTexture tex = !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : ShadowTexture{};
 
         bool roundTL = (flags & ShadowDrawFlags_RoundCornersTopLeft) && !(flags & ShadowDrawFlags_RoundCornersNone);
         bool roundTR = (flags & ShadowDrawFlags_RoundCornersTopRight) && !(flags & ShadowDrawFlags_RoundCornersNone);
@@ -3140,11 +2311,8 @@ namespace Shadow {
 
         bool noRound = (rounding <= 0.0f) || (!roundTL && !roundTR && !roundBL && !roundBR);
 
-        // 无圆角边框改用 4 个轴对齐填充条带，避免 InternalDrawRect 拆成旋转线段导致无法合批。
-        // 仅在没有自定义纹理时替换，避免自定义纹理边框的 UV 行为变化。
         if (!tex && noRound && thickness > 0.0f && size.x > 0.0f && size.y > 0.0f) {
             const float halfThick = thickness * 0.5f;
-
             const float topBottomWidth = size.x + thickness;
             const float sideHeight = size.y - thickness;
 
@@ -3194,7 +2362,7 @@ namespace Shadow {
             color,
             thickness,
             "",
-            nullptr,
+            ShadowFont{},
             1.0f,
             g_Ctx.ClippingEnabled,
             g_Ctx.ClipMin,
@@ -3213,33 +2381,47 @@ namespace Shadow {
     }
 
     inline void ShadowDrawList::AddRectFilled(Vec2 pos, Vec2 size, Color color, float rounding, ShadowDrawFlags flags) {
-        GetCmdBuffer().push_back({ ShadowDrawCmdType::RectFilled, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr, rounding, flags });
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::RectFilled, pos, size, color, 1.0f, "", ShadowFont{}, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax,{ 0,0 },{ 0,0 },{ 0,0 },{ 0,0,0,0 },{ 0,0,0,0 }, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : ShadowTexture{}, rounding, flags });
     }
 
-    inline void ShadowDrawList::AddTexture(Vec2 pos, Vec2 size, Color color, SDK::UTexture* texture) {
-        SDK::UTexture* tex = texture ? texture : (!g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr);
-        GetCmdBuffer().push_back({ ShadowDrawCmdType::Texture, pos, size, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, {0,0,0,0}, {0,0,0,0}, false, false, tex });
+    inline void ShadowDrawList::AddTexture(Vec2 pos, Vec2 size, Color color, ShadowTexture texture) {
+        ShadowTexture tex = texture ? texture : (!g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : ShadowTexture{});
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::Texture, pos, size, color, 1.0f, "", ShadowFont{}, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax,{ 0,0 },{ 0,0 },{ 0,0 },{ 0,0,0,0 },{ 0,0,0,0 }, false, false, tex });
     }
 
     inline void ShadowDrawList::AddTriangle(Vec2 p1, Vec2 p2, Vec2 p3, Color color, float thickness) {
-        GetCmdBuffer().push_back({ ShadowDrawCmdType::Triangle, {0,0}, {0,0}, color, thickness, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, p1, p2, p3, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::Triangle,{ 0,0 },{ 0,0 }, color, thickness, "", ShadowFont{}, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, p1, p2, p3,{ 0,0,0,0 },{ 0,0,0,0 }, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : ShadowTexture{} });
     }
 
     inline void ShadowDrawList::AddTriangleFilled(Vec2 p1, Vec2 p2, Vec2 p3, Color color) {
-        GetCmdBuffer().push_back({ ShadowDrawCmdType::TriangleFilled, {0,0}, {0,0}, color, 1.0f, "", nullptr, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, p1, p2, p3, {0,0,0,0}, {0,0,0,0}, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : nullptr });
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::TriangleFilled,{ 0,0 },{ 0,0 }, color, 1.0f, "", ShadowFont{}, 1.0f, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, p1, p2, p3,{ 0,0,0,0 },{ 0,0,0,0 }, false, false, !g_Ctx.TextureStack.empty() ? g_Ctx.TextureStack.back() : ShadowTexture{} });
     }
 
     inline void ShadowDrawList::AddCircleFilled(Vec2 center, float radius, Color color) {
         if (radius <= 0.0f) return;
-
-        SDK::UTexture2D* texture = GetCircleTexture(radius);
-        if (!texture) return;
-
-        float diameter = radius * 2.0f;
-        Vec2 pos = { center.x - radius, center.y - radius };
-        Vec2 size = { diameter, diameter };
-
-        AddTexture(pos, size, color, texture);
+        GetCmdBuffer().push_back({
+            ShadowDrawCmdType::CircleFilled,
+            center,
+            { radius, radius },
+            color,
+            1.0f,
+            "",
+            ShadowFont{},
+            1.0f,
+            g_Ctx.ClippingEnabled,
+            g_Ctx.ClipMin,
+            g_Ctx.ClipMax,
+            { 0, 0 },
+            { 0, 0 },
+            { 0, 0 },
+            { 0, 0, 0, 0 },
+            { 0, 0, 0, 0 },
+            false,
+            false,
+            ShadowTexture{},
+            0.f,
+            ShadowDrawFlags_RoundCornersAll
+            });
     }
 
     inline void ShadowDrawList::AddText(Vec2 pos, Color color, std::string_view text) {
@@ -3248,7 +2430,7 @@ namespace Shadow {
             pos.y = std::round(pos.y);
         }
 
-        SDK::UFont* font = g_Ctx.DefaultFont;
+        ShadowFont font = g_Ctx.DefaultFont;
         float scaleVal = 1.0f;
         bool noSDF = false;
         if (!g_Ctx.FontStack.empty()) {
@@ -3256,7 +2438,7 @@ namespace Shadow {
             scaleVal = g_Ctx.FontStack.back().Scale;
             noSDF = g_Ctx.FontStack.back().NoSDF;
         }
-        if (!g_Ctx.Canvas || !font) return;
+        if (!font) return;
         Vec2 clippedPos = pos;
         bool shouldDraw = true;
         std::string clippedText = ClipTextString(text, pos, clippedPos, shouldDraw);
@@ -3270,11 +2452,11 @@ namespace Shadow {
         }
 
         Vec2 textSize = MeasureTextSize(clippedText);
-        GetCmdBuffer().push_back({ ShadowDrawCmdType::Text, clippedPos, textSize, color, 1.0f, clippedText, font, scaleVal, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, GetColor(GuiCol_TextShadow), outlineColor, outline, noSDF, nullptr });
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::Text, clippedPos, textSize, color, 1.0f, clippedText, font, scaleVal, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax,{ 0,0 },{ 0,0 },{ 0,0 }, GetColor(GuiCol_TextShadow), outlineColor, outline, noSDF, ShadowTexture{} });
     }
 
-    inline void ShadowDrawList::AddText(SDK::UFont* font, float fontScale, Color shadowColor, Color outlineColor, Vec2 pos, Color color, std::string_view text, bool outline, bool noSDF) {
-        if (!g_Ctx.Canvas || !font) return;
+    inline void ShadowDrawList::AddText(ShadowFont font, float fontScale, Color shadowColor, Color outlineColor, Vec2 pos, Color color, std::string_view text, bool outline, bool noSDF) {
+        if (!font) return;
 
         if (!g_Ctx.TextPixelSnapStack.empty() && g_Ctx.TextPixelSnapStack.back()) {
             pos.x = std::round(pos.x);
@@ -3286,13 +2468,8 @@ namespace Shadow {
         std::string clippedText = ClipTextString(text, pos, clippedPos, shouldDraw);
         if (!shouldDraw || clippedText.empty()) return;
 
-        ScopedFontScale fontGuard(font, fontScale, noSDF);
-        SDK::FVector2D scale{ fontGuard.CalculatedScale, fontGuard.CalculatedScale };
-        std::wstring wstr = ToWString(clippedText);
-        SDK::FVector2D s = g_Ctx.Canvas->K2_TextSize(font, SDK::FString(wstr.c_str()), scale);
-        Vec2 textSize = { static_cast<float>(s.X), static_cast<float>(s.Y) };
-
-        GetCmdBuffer().push_back({ ShadowDrawCmdType::Text, clippedPos, textSize, color, 1.0f, clippedText, font, fontScale, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax, {0,0}, {0,0}, {0,0}, shadowColor, outlineColor, outline, noSDF, nullptr });
+        Vec2 textSize = MeasureTextSize(clippedText);
+        GetCmdBuffer().push_back({ ShadowDrawCmdType::Text, clippedPos, textSize, color, 1.0f, clippedText, font, fontScale, g_Ctx.ClippingEnabled, g_Ctx.ClipMin, g_Ctx.ClipMax,{ 0,0 },{ 0,0 },{ 0,0 }, shadowColor, outlineColor, outline, noSDF, ShadowTexture{} });
     }
 
     inline void ShadowDrawList::ChannelsSplit(int count) {
@@ -4875,18 +4052,7 @@ namespace Shadow {
         GetWindowDrawList()->AddText({ pos.x, pos.y + g_Ctx.Style.FramePadding.y + (itemHeight - g_Ctx.ItemHeight) * 0.5f }, drawColor, text);
     }
 
-    inline void NewFrame(SDK::UCanvas* Canvas) {
-        g_Ctx.Canvas = Canvas;
-
-        if (auto world = SDK::UWorld::GetWorld()) {
-            g_Ctx.RealTimeSeconds = SDK::UGameplayStatics::GetRealTimeSeconds(world);
-            g_Ctx.DeltaTime = SDK::UGameplayStatics::GetWorldDeltaSeconds(world);
-        }
-        else {
-            g_Ctx.RealTimeSeconds = 0.0;
-            g_Ctx.DeltaTime = 0.0;
-        }
-
+    inline void NewFrame() {
         // 高精度时钟接管长按连发脉冲触发
         if (g_Ctx.Style.KeyRepeatRate > 0.0f) {
             for (int vk = 0; vk < 256; ++vk) {
@@ -4905,10 +4071,6 @@ namespace Shadow {
         }
 
         uint64_t currentMS = static_cast<uint64_t>(g_Ctx.RealTimeSeconds * 1000.0);
-
-        if (!g_Ctx.DefaultFont) {
-            if (SDK::UEngine::GetEngine()) { g_Ctx.DefaultFont = SDK::UEngine::GetEngine()->LargeFont; }
-        }
 
         if (!g_Ctx.StyleInitialized) {
             StyleColorsOcean();
@@ -5029,9 +4191,6 @@ namespace Shadow {
         if (currentMS > g_Ctx.SharedDelayExpirationTime) {
             g_Ctx.SharedDelayActive = false;
         }
-
-        g_IO.DisplaySize = { Canvas ? static_cast<float>(Canvas->SizeX) : 0.0f, Canvas ? static_cast<float>(Canvas->SizeY) : 0.0f };
-        g_IO.DeltaTime = static_cast<float>(g_Ctx.DeltaTime);
     }
 
     inline bool Begin(std::string_view name, ShadowWindowFlags flags = ShadowWindowFlags_None) {
@@ -5365,7 +4524,7 @@ namespace Shadow {
         const float right = gripMin.x + gripSize;
         const float bottom = gripMin.y + gripSize;
         const float cornerRadius = std::clamp(windowRounding, 0.0f, std::min(windowSize.x, windowSize.y) * 0.5f);
-        const float rowHeight = Detail::RESIZE_GRIP_SCANLINE_HEIGHT;
+        const float rowHeight = RESIZE_GRIP_SCANLINE_HEIGHT;
         const float x0 = gripMin.x;
 
         for (float y = gripMin.y; y < bottom; y += rowHeight) {
@@ -5764,7 +4923,7 @@ namespace Shadow {
         // 【新增】暂时弹出 BeginTabBar 压入的专属内容剪裁框，回到不受限的层级以便绘制 Header
         PopClipRect();
 
-        SDK::UFont* currentFont = g_Ctx.DefaultFont;
+        ShadowFont currentFont = g_Ctx.DefaultFont;
         float currentScale = 1.0f;
         bool currentNoSDF = false;
         if (!g_Ctx.FontStack.empty()) {
@@ -5849,38 +5008,16 @@ namespace Shadow {
     inline void Render() {
         CheckAndDrawErrors();
 
-        auto ExecCmds = [](const std::vector<ShadowDrawCmd>& cmds) {
-            for (const auto& cmd : cmds) {
-                switch (cmd.type) {
-                case ShadowDrawCmdType::Line:
-                    InternalDrawLine(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
-                    break;
-                case ShadowDrawCmdType::Rect:
-                    InternalDrawRect(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.rounding, cmd.flags, cmd.texture);
-                    break;
-                case ShadowDrawCmdType::RectFilled:
-                case ShadowDrawCmdType::Texture:
-                    InternalDrawRectFilled(cmd.pos, cmd.size, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.rounding, cmd.flags, cmd.texture);
-                    break;
-                case ShadowDrawCmdType::Text:
-                    InternalDrawText(cmd.text, cmd.pos, cmd.color, cmd.font, cmd.fontScale, cmd.textShadowColor, cmd.textOutlineColor, cmd.textOutline, cmd.noSDF);
-                    break;
-                case ShadowDrawCmdType::TriangleFilled:
-                    InternalDrawTriangleFilled(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
-                    break;
-                case ShadowDrawCmdType::Triangle:
-                    InternalDrawTriangle(cmd.p1, cmd.p2, cmd.p3, cmd.color, cmd.thickness, cmd.clippingEnabled, cmd.clipMin, cmd.clipMax, cmd.texture);
-                    break;
-                }
-            }
-            };
+        g_DrawData.Clear();
+        g_DrawData.Valid = true;
+        g_DrawData.DisplaySize = g_IO.DisplaySize;
 
-        ExecCmds(g_Ctx.BackgroundDrawList.CmdBuffer);
+        g_DrawData.CmdLists.push_back(&g_Ctx.BackgroundDrawList);
 
         for (size_t id : g_Ctx.WindowDisplayOrder) {
             auto it = g_Ctx.Windows.find(id);
             if (it != g_Ctx.Windows.end()) {
-                ExecCmds(it->second.DrawList.CmdBuffer);
+                g_DrawData.CmdLists.push_back(&it->second.DrawList);
             }
         }
 
@@ -5888,12 +5025,12 @@ namespace Shadow {
         for (size_t id : g_Ctx.ActivePopups) {
             auto it = g_Ctx.Windows.find(id);
             if (it != g_Ctx.Windows.end()) {
-                ExecCmds(it->second.DrawList.CmdBuffer);
+                g_DrawData.CmdLists.push_back(&it->second.DrawList);
             }
         }
 
-        ExecCmds(g_Ctx.TooltipDrawList.CmdBuffer);
-        ExecCmds(g_Ctx.ForegroundDrawList.CmdBuffer);
+        g_DrawData.CmdLists.push_back(&g_Ctx.TooltipDrawList);
+        g_DrawData.CmdLists.push_back(&g_Ctx.ForegroundDrawList);
 
         g_Ctx.MouseClicked = false;
         g_Ctx.RightMouseClicked = false;
@@ -6373,7 +5510,7 @@ namespace Shadow {
         return clicked;
     }
 
-    inline void Image(SDK::UTexture* texture, Vec2 size, Color color = { 1.f, 1.f, 1.f, 1.f }) {
+    inline void Image(ShadowTexture texture, Vec2 size, Color color = { 1.f, 1.f, 1.f, 1.f }) {
         if (!g_Ctx.InActiveTab) return;
         g_Ctx.WidgetCount++;
 
@@ -6392,7 +5529,7 @@ namespace Shadow {
         GetWindowDrawList()->AddTexture(pos, size, drawColor, texture);
     }
 
-    inline bool ImageButton(std::string_view name, SDK::UTexture* texture, Vec2 size) {
+    inline bool ImageButton(std::string_view name, ShadowTexture texture, Vec2 size) {
         if (!g_Ctx.InActiveTab) return false;
         std::string_view display; size_t id; ParseLabel(name, display, id);
         g_Ctx.WidgetCount++;

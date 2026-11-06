@@ -33,7 +33,7 @@ namespace Shadow {
         static bool show_demo = true;
         if (!show_demo) return;
 
-        SDK::UFont* font_arialbd = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\arialbd.ttf", 32);
+        Shadow::ShadowFont font_arialbd = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\arialbd.ttf", 32);
 
         static Shadow::ShadowWindowFlags win_flags = Shadow::ShadowWindowFlags_MenuBar;
         static Shadow::ShadowTabBarFlags tab_flags = Shadow::ShadowTabBarFlags_Reorderable | Shadow::ShadowTabBarFlags_FittingPolicyScroll;
@@ -138,7 +138,7 @@ namespace Shadow {
                     Shadow::TreePop();
 
                     if (Shadow::TreeNode("Images & Image Buttons")) {
-                        SDK::UTexture2D* demoTex = Shadow::LoadTextureFromBuffer(Shadow_Titlebar::Logo, sizeof(Shadow_Titlebar::Logo));
+                        Shadow::ShadowTexture demoTex = Shadow::LoadTextureFromBuffer(Shadow_Titlebar::Logo, sizeof(Shadow_Titlebar::Logo));
 
                         // 1. Shadow::Image 基础与不同参数用法演示
                         Shadow::Text("Shadow::Image");
@@ -1237,7 +1237,7 @@ namespace Shadow {
                     Shadow::TreePop();
 
                     if (Shadow::TreeNode("DrawList Texture & PushTexture")) {
-                        SDK::UTexture2D* TitlebarTex = Shadow::LoadTextureFromBuffer(Shadow_Titlebar::Logo, sizeof(Shadow_Titlebar::Logo));
+                        Shadow::ShadowTexture TitlebarTex = Shadow::LoadTextureFromBuffer(Shadow_Titlebar::Logo, sizeof(Shadow_Titlebar::Logo));
 
                         Vec2 p = Shadow::g_Ctx.Cursor;
                         Shadow::Dummy({ 200.f, 80.f });
@@ -1260,7 +1260,7 @@ namespace Shadow {
                         Shadow::InputText("Texture Path", tex_path);
                         Shadow::InputText("Font Path", font_path);
                         if (Shadow::Button("Load Texture")) {
-                            SDK::UTexture2D* tex = Shadow::LoadTextureFromFile(Shadow::ToWString(tex_path).c_str());
+                            Shadow::ShadowTexture tex = Shadow::LoadTextureFromFile(Shadow::ToWString(tex_path).c_str());
                             if (tex) {
                                 Shadow::Text("Texture loaded!");
                             }
@@ -1270,7 +1270,7 @@ namespace Shadow {
                         }
                         Shadow::SameLine();
                         if (Shadow::Button("Load Font")) {
-                            SDK::UFont* font = Shadow::LoadFontFromFile(Shadow::ToWString(font_path).c_str());
+                            Shadow::ShadowFont font = Shadow::LoadFontFromFile(Shadow::ToWString(font_path).c_str());
                             if (font) {
                                 Shadow::Text("Font loaded!");
                             }
@@ -1281,7 +1281,7 @@ namespace Shadow {
                         static std::vector<unsigned char> font_buffer;
                         if (Shadow::Button("Load Font from Buffer")) {
                             if (!font_buffer.empty()) {
-                                SDK::UFont* font = Shadow::LoadFontFromBuffer(font_buffer.data(), font_buffer.size());
+                                Shadow::ShadowFont font = Shadow::LoadFontFromBuffer(font_buffer.data(), font_buffer.size());
                                 if (font) {
                                     Shadow::Text("Font from buffer loaded!");
                                 }

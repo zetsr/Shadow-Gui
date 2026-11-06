@@ -4,6 +4,7 @@
 #include "external/MinHook/include/MinHook.h"
 #include "external/CppSDK/SDK.hpp"
 #include "src/Shadow.h"
+#include "src/Backend_Dumper7.h"
 #include "src/Shadow_Demo.h"
 #include "examples/Example.h"
 #include "examples/Example_Nav.h"
@@ -135,8 +136,8 @@ namespace Hook {
             bWasAnimating = false;
         }
         */
-
-        Shadow::NewFrame(canvas);
+        Shadow::Dumper7_NewFrame(canvas);
+        Shadow::NewFrame();
         Shadow::UpdateAllHotkeyStates();
 
         float dt = Shadow::GetIO().DeltaTime;
@@ -173,7 +174,7 @@ namespace Hook {
             }
             */
 
-			SDK::UFont* font = Shadow::LoadFontFromBuffer(g_Fonts::CangErShuYuanTi_W03, sizeof(g_Fonts::CangErShuYuanTi_W03));
+			Shadow::ShadowFont font = Shadow::LoadFontFromBuffer(g_Fonts::CangErShuYuanTi_W03, sizeof(g_Fonts::CangErShuYuanTi_W03));
 
             // Shadow::StyleColorsOcean();
             // Shadow::PushFont(font, G_SIZE);
@@ -228,10 +229,11 @@ namespace Hook {
         Shadow::PopStyleVar();
 
         Shadow::Render();
+        Shadow::Dumper7_RenderDrawData(Shadow::GetDrawData());
     }
 
     void FindPostRender() {
-        std::string pattern = "8B C2 35 ? ? ? ? 44";
+        std::string pattern = "40 55 53 57 48 8D AC 24 ? ? ? ? 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 48 33 C4 48 89 85 ? ? ? ? 48 8B FA 48 8B D9 E8 ? ? ? ? 48 85";
 
              // ASA 8B C2 35 ? ? ? ? 44
         // DRACONIA 48 8B 01 48 FF A0 ?? ?? ?? ?? CC CC CC CC CC CC 40 53 48 83 EC ?? 48 89

@@ -33,25 +33,212 @@
 
 ## 使用方法 / Usage
 
-### 快速开始 / Quick Start
+从 `v1.9.0` 开始，Shadow Gui 变更为 **后端无关** 的工作模式：
+* **UE 原生工程后端 (`Backend_Native.h`)**：直接编译打包进虚幻引擎项目，适用于游戏开发。
+* **Dumper-7 后端 (`Backend_Dumper7.h`)**：搭配 `Dumper-7` 生成的 `CppSDK` 使用，适用于 DLL 注入、Mod 开发等场景。
 
-#### 中文
+---
+
+### 方案一：UE 原生工程集成 / UE Native Integration
+
+在你的 UE 项目中的 `UGameViewportClient` 子类引入 `Backend_Native.h` 即可直接使用。
+
+#### 完整集成示例 (`ZClientViewport.cpp`)
+
+<details open>
+<summary>点击展开查看完整代码</summary>
+
+```cpp
+#include "ZClientViewport.h"
+#include "Engine/Canvas.h"
+#include "Engine/Engine.h"
+#include "Engine/Font.h"
+#include "RHI.h"
+#include "GameFramework/PlayerController.h"
+
+// 引入 Shadow Gui Native 后端与字体文件
+#include "Shadow-Gui/src/Backend_Native.h"
+#include "Shadow-Gui/misc/fonts/CangErShuYuanTi_W03.h"
+
+// 常量配置
+namespace ViewportConfig {
+    static const FKey MENU_TOGGLE_KEY = EKeys::F1;
+    constexpr float FPS_UPDATE_INTERVAL = 1.0f;
+    constexpr float DELTA_UPDATE_INTERVAL = 0.05f;
+    constexpr float STATS_POS_X = 25.0f;
+    constexpr float STATS_POS_Y = 25.0f;
+    constexpr int32 STATS_FONT_SIZE = 20;
+    constexpr float MENU_FONT_SCALE = 1.5f;
+}
+
+void UZClientViewport::SetMenuVisible(bool bVisible) {
+    bShowMenu = bVisible;
+    UpdateMouseCursorState();
+}
+
+void UZClientViewport::UpdateMouseCursorState() {
+    UWorld* CurrentWorld = GetWorld();
+    if (!CurrentWorld) {
+        return;
+    }
+
+    APlayerController* PC = CurrentWorld->GetFirstPlayerController();
+    if (!PC){
+        return;
+    }
+
+    PC->bShowMouseCursor = bShowMenu;
+    PC->bEnableClickEvents = bShowMenu;
+    PC->bEnableMouseOverEvents = bShowMenu;
+
+    if (bShowMenu) {
+        FInputModeGameAndUI InputMode;
+        InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+        InputMode.SetHideCursorDuringCapture(false);
+        PC->SetInputMode(InputMode);
+    } 
+    else {
+        FInputModeGameOnly InputMode;
+        PC->SetInputMode(InputMode);
+    }
+}
+
+void UZClientViewport::PostRender(UCanvas* Canvas) {
+    Super::PostRender(Canvas);
+
+    if (!Canvas || !GEngine) {
+        return;
+    }
+
+    // 1. 获取单帧 DeltaSeconds
+    float RealtimeDeltaSeconds = 0.0f;
+    if (UWorld* CurrentWorld = GetWorld()) {
+        RealtimeDeltaSeconds = CurrentWorld->GetDeltaSeconds();
+    }
+    else {
+        RealtimeDeltaSeconds = FApp::GetDeltaTime();
+    }
+
+    // 2. 调度计时
+    FPSTimer += RealtimeDeltaSeconds;
+    FPSFrames++;
+    if (FPSTimer >= ViewportConfig::FPS_UPDATE_INTERVAL) {
+        CachedFPS = static_cast<float>(FPSFrames) / FPSTimer;
+        FPSTimer = 0.0f;
+        FPSFrames = 0;
+    }
+
+    DeltaTimer += RealtimeDeltaSeconds;
+    if (DeltaTimer >= ViewportConfig::DELTA_UPDATE_INTERVAL) {
+        CachedDeltaTime = RealtimeDeltaSeconds * 1000.0f;
+        DeltaTimer = 0.0f;
+    }
+
+    uint32 RealtimeDrawCalls = GNumDrawCallsRHI[0];
+
+    // 5. 执行 Shadow GUI 驱动与渲染 (传入当前视口以保证光标坐标 100% 精确跟踪)
+    Shadow::Native_NewFrame(Canvas, Viewport);
+    Shadow::NewFrame();
+
+    // 更新全局热键激活状态
+    Shadow::UpdateAllHotkeyStates();
+
+    // 加载自定义字体
+    Shadow::ShadowFont font = Shadow::LoadFontFromBuffer(g_Fonts::CangErShuYuanTi_W03, sizeof(g_Fonts::CangErShuYuanTi_W03));
+
+    // 3. 组装性能统计文本
+    std::string PerfStatsText = std::format("FPS: {:.1f}\nDeltaTime: {:.3f} ms\nDrawCalls: {}", CachedFPS, CachedDeltaTime, RealtimeDrawCalls);
+
+    // 4. 准备文本绘制项并渲染
+    Shadow::GetBackgroundDrawList()->AddText(
+        font,
+        ViewportConfig::MENU_FONT_SCALE,
+        { 0.f, 0.f, 0.f, 0.8f },
+        { 0.f, 0.f, 0.f, 0.8f },
+        { ViewportConfig::STATS_POS_X, ViewportConfig::STATS_POS_Y },
+        { 1.f, 1.f, 1.f, 0.8f },
+        PerfStatsText,
+        true,
+        false
+    );
+
+    if (bShowMenu) {
+        // 保证光标在菜单打开状态下持续保持呼出
+        UpdateMouseCursorState();
+        Shadow::PushFont(font, ViewportConfig::MENU_FONT_SCALE);
+        Shadow::PushTextPixelSnap();
+        RenderShadowUI();
+        Shadow::PopTextPixelSnap();
+        Shadow::PopFont();
+    }
+
+    Shadow::Render();
+    Shadow::Native_RenderDrawData(Shadow::GetDrawData());
+}
+
+void UZClientViewport::RenderShadowUI() {
+    Shadow::ShowDemoWindow();
+}
+
+bool UZClientViewport::InputKey(const FInputKeyEventArgs& EventArgs) {
+    // 菜单开闭快捷键
+    if (EventArgs.Key == ViewportConfig::MENU_TOGGLE_KEY && EventArgs.Event == IE_Pressed) {
+        SetMenuVisible(!bShowMenu);
+        return true;
+    }
+
+    // 调用 Native 后端统一输入处理函数
+    if (Shadow::Native_InputKey(EventArgs, bShowMenu)) {
+        return true;
+    }
+
+    return Super::InputKey(EventArgs);
+}
+
+bool UZClientViewport::InputAxis(FViewport* InViewport, FInputDeviceId InputDevice, FKey Key, float Delta, float DeltaTime, int32 NumSamples, bool bGamepad) {
+    // 调用 Native 后端统一输入处理函数
+    if (Shadow::Native_InputAxis(InViewport, InputDevice, Key, Delta, DeltaTime, NumSamples, bGamepad, bShowMenu)) {
+        return true;
+    }
+
+    return Super::InputAxis(InViewport, InputDevice, Key, Delta, DeltaTime, NumSamples, bGamepad);
+}
+
+bool UZClientViewport::InputChar(FViewport* InViewport, int32 ControllerId, TCHAR Character) {
+    // 调用 Native 后端统一输入处理函数
+    if (Shadow::Native_InputChar(InViewport, ControllerId, Character, bShowMenu)) {
+        return true;
+    }
+
+    return Super::InputChar(InViewport, ControllerId, Character);
+}
+```
+
+</details>
+
+---
+
+### 方案二：DLL 注入集成 / DLL Hook Integration
+
+#### 快速开始 / Quick Start
+
+##### 中文
 * `#include "src/Shadow.h"`
-* `#include "src/Shadow_Texture.h"`
+* `#include "src/Backend_Dumper7.h"`
 * `#include "src/Shadow_Nav.h" // 如果需要 Nav UI`
 * `#include "src/Shadow_Demo.h" // 如果需要 Demo Menu`
-* 修改 `Shadow.h` 的 `#include "../external/CppSDK/SDK.hpp"` 为实际路径
-* 在 `UGameViewportClient::PostRender` 运行 `Shadow::NewFrame(Canvas);`
-* 在 `Shadow::NewFrame(Canvas);` 之后添加 `Shadow::Render();`
+* 确保包含 Dumper-7 生成的 `CppSDK` 并配置好相关头文件包含路径
+* 在 Hook 的 `PostRender` 中调用 `Shadow::Dumper7_NewFrame(Canvas);` 与 `Shadow::NewFrame();`
+* 绘制菜单后调用 `Shadow::Render();` 与 `Shadow::Dumper7_RenderDrawData(Shadow::GetDrawData());`
 
-#### English
+##### English
 * `#include "src/Shadow.h"`
-* `#include "src/Shadow_Texture.h"`
+* `#include "src/Backend_Dumper7.h"`
 * `#include "src/Shadow_Nav.h" // if you need Nav UI`
 * `#include "src/Shadow_Demo.h" // if you need Demo Menu`
-* Modify `#include "../external/CppSDK/SDK.hpp"` in `Shadow.h` to the actual path
-* Run `Shadow::NewFrame(Canvas);` in `UGameViewportClient::PostRender`
-* Run `Shadow::Render();` after `Shadow::NewFrame(Canvas);`
+* Make sure the Dumper-7 generated `CppSDK` is included in your include path
+* Call `Shadow::Dumper7_NewFrame(Canvas);` and `Shadow::NewFrame();` in your hooked `PostRender`
+* After drawing widgets, call `Shadow::Render();` and `Shadow::Dumper7_RenderDrawData(Shadow::GetDrawData());`
 
 ---
 
@@ -72,98 +259,91 @@ Shadow::HotKey("TestKey", &g_Config::kTestKey, &g_Config::bTestKey, &g_Config::e
 
 ---
 
-#### 输入处理 / Input Processing
+#### 输入处理 / Input Processing (WndProc Hook)
 
 <details>
 <summary>Show code</summary>
 
 ```cpp
-    LRESULT APIENTRY WndProcHook(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-        // 始终处理全局热键（菜单打开或关闭都需要）
-        Shadow::ProcessGlobalHotkeys(hwnd, uMsg, wParam, lParam);
+LRESULT APIENTRY WndProcHook(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    // 始终处理全局热键（菜单打开或关闭都需要）
+    Shadow::ProcessGlobalHotkeys(hwnd, uMsg, wParam, lParam);
 
-        // 菜单切换键处理（如果正在分配热键，则不切换菜单）
-        if (uMsg == WM_KEYDOWN && wParam == keyMenu && !Shadow::g_Ctx.AssigningHotkey) {
-            bool isFirstPress = ((lParam & (1 << 30)) == 0);
-            if (isFirstPress) {
-                bShowMenu = !bShowMenu;
-            }
+    // 菜单切换键处理（如果正在分配热键，则不切换菜单）
+    if (uMsg == WM_KEYDOWN && wParam == keyMenu && !Shadow::g_Ctx.AssigningHotkey) {
+        bool isFirstPress = ((lParam & (1 << 30)) == 0);
+        if (isFirstPress) {
+            bShowMenu = !bShowMenu;
         }
+    }
 
-        if (bShowMenu || currentAlpha > 0.001f) {
-            // 键盘消息处理
-            if (uMsg == WM_KEYDOWN || uMsg == WM_KEYUP || uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP || uMsg == WM_CHAR) {
-                // 如果是切换键本身，放行给游戏（防止菜单无法关闭）
-                if (wParam == keyMenu) {
-                    return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
-                }
-
-                // 如果是已注册的全局热键，放行给游戏（热键状态已在 ProcessGlobalHotkeys 中更新）
-                if (Shadow::IsHotkeyRegistered(static_cast<int>(wParam))) {
-                    return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
-                }
-
-                // 先让框架处理按键（更新 KeyPressed, KeyStates 等）
-                Shadow::Input(hwnd, uMsg, wParam, lParam);
-
-                // 如果是允许放行的按键，再转发给游戏
-                if (Shadow::IsKeyAllowed(static_cast<int>(wParam))) {
-                    // 注意：这里不能再次调用 Shadow::Input，因为上面已经调用过了
-                    return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
-                }
-
-                // 非允许按键，被菜单吃掉
-                return 1;
+    if (bShowMenu || currentAlpha > 0.001f) {
+        // 键盘消息处理
+        if (uMsg == WM_KEYDOWN || uMsg == WM_KEYUP || uMsg == WM_SYSKEYDOWN || uMsg == WM_SYSKEYUP || uMsg == WM_CHAR) {
+            // 如果是切换键本身，放行给游戏（防止菜单无法关闭）
+            if (wParam == keyMenu) {
+                return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
             }
 
-            // 如果是鼠标消息，且不在白名单里，直接阻塞
-            if (!Shadow::IsMouseMsgAllowed(uMsg)) {
-                Shadow::Input(hwnd, uMsg, wParam, lParam);
-                return 1;
+            // 如果是已注册的全局热键，放行给游戏（热键状态已在 ProcessGlobalHotkeys 中更新）
+            if (Shadow::IsHotkeyRegistered(static_cast<int>(wParam))) {
+                return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
             }
 
-            // 鼠标消息在白名单里，也需要先处理，再放行
+            // 先让框架处理按键（更新 KeyPressed, KeyStates 等）
             Shadow::Input(hwnd, uMsg, wParam, lParam);
-            return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
+
+            // 如果是允许放行的按键，再转发给游戏
+            if (Shadow::IsKeyAllowed(static_cast<int>(wParam))) {
+                return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
+            }
+
+            // 非允许按键，被菜单吃掉
+            return 1;
         }
 
-        // 菜单关闭时，也要处理输入以更新全局鼠标状态
+        // 如果是鼠标消息，且不在白名单里，直接阻塞
+        if (!Shadow::IsMouseMsgAllowed(uMsg)) {
+            Shadow::Input(hwnd, uMsg, wParam, lParam);
+            return 1;
+        }
+
+        // 鼠标消息在白名单里，也需要先处理，再放行
         Shadow::Input(hwnd, uMsg, wParam, lParam);
         return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
     }
+
+    // 菜单关闭时，也要处理输入以更新全局鼠标状态
+    Shadow::Input(hwnd, uMsg, wParam, lParam);
+    return CallWindowProc(oWndProc, hwnd, uMsg, wParam, lParam);
+}
 ```
 
 </details>
 
 ---
 
-#### 创建菜单 / Creating Menu
+#### 渲染挂钩 / Render Hook (hkPostRender)
 
 <details>
 <summary>Show code</summary>
 
 ```cpp
 void __fastcall hkPostRender(SDK::UGameViewportClient* rcx, SDK::UCanvas* canvas) {
-
     // 放行常用移动按键给游戏，避免菜单打开时玩家动不了
-    // Pass common movement keys through to the game to prevent players from getting stuck when the menu is open
     Shadow::SetAllowedKeys({ 'W', 'A', 'S', 'D', VK_SPACE });
 
-    // 开始新的一帧
-    // Begin a new frame
-    Shadow::NewFrame(canvas);
-
-    // 如果使用 Hotkey，需要先注册热键，虽然缺少手动注册也能用
-    // Shadow::RegisterHotkey(&g_Config::kTestKey, &g_Config::eTestKey, &g_Config::bTestKey);
+    // 初始化后端帧状态
+    Shadow::Dumper7_NewFrame(canvas);
+    Shadow::NewFrame();
 
     // 更新所有热键状态
-    // Update all hotkey states
     Shadow::UpdateAllHotkeyStates();
 
     if (Shadow::Begin("Main Menu##main_window", Shadow::ShadowWindowFlags_NoResize)) {
         if (Shadow::BeginTabBar("MainTabs##tabs", Shadow::ShadowTabBarFlags_Reorderable)) {
             if (Shadow::BeginTabItem("Misc##tab0")) {
-                Shadow::TextColored({ 0.0f, 1.0f, 0.0f, 1.0f }, U8("你好！"));
+                Shadow::TextColored({ 0.0f, 1.0f, 0.0f, 1.0f }, "你好！");
             }
             Shadow::EndTabItem();
         }
@@ -171,9 +351,10 @@ void __fastcall hkPostRender(SDK::UGameViewportClient* rcx, SDK::UCanvas* canvas
     }
     Shadow::End();
 
+    // 生成绘制命令并提交给 Dumper-7 后端渲染
     Shadow::Render();
+    Shadow::Dumper7_RenderDrawData(Shadow::GetDrawData());
 }
-
 ```
 
 </details>
@@ -225,7 +406,7 @@ void DrawLogoFromBuffer()
     {
         // 不要对 LoadTextureFromBuffer / LoadTextureFromFile 返回的指针进行跨帧保存。因为引擎GC会导致旧的指针得到一个损坏的UObject从而导致崩溃。
         // 每帧调用函数更新该指针即可，库内部会自动管理UObject的生命周期。
-        SDK::UTexture2D* Texture = Shadow::LoadTextureFromBuffer(Example_Texture::Logo, sizeof(Example_Texture::Logo));
+        Shadow::ShadowTexture Texture = Shadow::LoadTextureFromBuffer(Example_Texture::Logo, sizeof(Example_Texture::Logo));
 
         if (Texture)
         {
@@ -235,7 +416,7 @@ void DrawLogoFromBuffer()
 
     void DrawLogoFromFile()
     {
-        SDK::UTexture2D* Texture = Shadow::LoadTextureFromFile(L"C:\\Example_Texture.png");
+        Shadow::ShadowTexture Texture = Shadow::LoadTextureFromFile(L"C:\\Example_Texture.png");
 
         if (Texture)
         {
@@ -246,12 +427,12 @@ void DrawLogoFromBuffer()
     void DrawCustomText()
     {
         // 内存
-        SDK::UFont* Icon = Shadow::LoadFontFromBuffer(Example_Font::Icon, sizeof(Example_Font::Icon));
+        Shadow::ShadowFont Icon = Shadow::LoadFontFromBuffer(Example_Font::Icon, sizeof(Example_Font::Icon));
 
         // 文件
-        SDK::UFont* msyh = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\msyh.ttc");
-		SDK::UFont* tahoma_bold = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\tahomabd.ttf");
-		SDK::UFont* verdana_bold = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\verdanab.ttf");
+        Shadow::ShadowFont msyh = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\msyh.ttc");
+		Shadow::ShadowFont tahoma_bold = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\tahomabd.ttf");
+		Shadow::ShadowFont verdana_bold = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\verdanab.ttf");
     }
 ```
 
@@ -371,14 +552,14 @@ Shadow::End();
 
 ```cpp
 // 内存
-SDK::UFont* Icon = Shadow::LoadFontFromBuffer(Example_Font::Icon, sizeof(Example_Font::Icon));
+Shadow::ShadowFont Icon = Shadow::LoadFontFromBuffer(Example_Font::Icon, sizeof(Example_Font::Icon));
 
 // 文件
-SDK::UFont* msyh = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\msyh.ttc");
+Shadow::ShadowFont msyh = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\msyh.ttc");
 
-SDK::UFont* tahoma_bold = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\tahomabd.ttf");
+Shadow::ShadowFont tahoma_bold = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\tahomabd.ttf");
 
-SDK::UFont* verdana_bold = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\verdanab.ttf");
+Shadow::ShadowFont verdana_bold = Shadow::LoadFontFromFile(L"C:\\Windows\\Fonts\\verdanab.ttf");
 
 if (Icon)
 {

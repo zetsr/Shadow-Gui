@@ -51,6 +51,10 @@ namespace Shadow {
     };
 
     using MeasureTextFn = Vec2(*)(ShadowFont font, float fontScale, bool noSDF, std::string_view text);
+    using LoadTextureFromBufferFn = ShadowTexture(*)(const unsigned char* BufferData, size_t BufferSize);
+    using LoadTextureFromFileFn = ShadowTexture(*)(const wchar_t* FilePath);
+    using LoadFontFromFileFn = ShadowFont(*)(const wchar_t* FilePath, int32_t FontSize);
+    using LoadFontFromBufferFn = ShadowFont(*)(const unsigned char* BufferData, size_t BufferSize, int32_t FontSize);
 
     // 字体相关默认配置常量
     constexpr int32_t DEFAULT_FONT_SIZE = 0;
@@ -662,6 +666,10 @@ namespace Shadow {
     struct GuiContext {
         ShadowFont DefaultFont{};
         MeasureTextFn TextSizeFn = nullptr;
+        LoadTextureFromBufferFn LoadTextureFromBufferCallback = nullptr;
+        LoadTextureFromFileFn LoadTextureFromFileCallback = nullptr;
+        LoadFontFromFileFn LoadFontFromFileCallback = nullptr;
+        LoadFontFromBufferFn LoadFontFromBufferCallback = nullptr;
 
         GuiStyle Style;
         bool StyleInitialized = false;
@@ -1842,6 +1850,34 @@ namespace Shadow {
 
         Vec2 size = MeasureTextSize(text);
         return size.y;
+    }
+
+    inline ShadowTexture LoadTextureFromBuffer(const unsigned char* BufferData, size_t BufferSize) {
+        if (g_Ctx.LoadTextureFromBufferCallback) {
+            return g_Ctx.LoadTextureFromBufferCallback(BufferData, BufferSize);
+        }
+        return ShadowTexture{};
+    }
+
+    inline ShadowTexture LoadTextureFromFile(const wchar_t* FilePath) {
+        if (g_Ctx.LoadTextureFromFileCallback) {
+            return g_Ctx.LoadTextureFromFileCallback(FilePath);
+        }
+        return ShadowTexture{};
+    }
+
+    inline ShadowFont LoadFontFromFile(const wchar_t* FilePath, int32_t FontSize = DEFAULT_FONT_SIZE) {
+        if (g_Ctx.LoadFontFromFileCallback) {
+            return g_Ctx.LoadFontFromFileCallback(FilePath, FontSize);
+        }
+        return ShadowFont{};
+    }
+
+    inline ShadowFont LoadFontFromBuffer(const unsigned char* BufferData, size_t BufferSize, int32_t FontSize = DEFAULT_FONT_SIZE) {
+        if (g_Ctx.LoadFontFromBufferCallback) {
+            return g_Ctx.LoadFontFromBufferCallback(BufferData, BufferSize, FontSize);
+        }
+        return ShadowFont{};
     }
 
     inline void UpdateItemHeight() {

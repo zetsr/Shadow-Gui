@@ -373,7 +373,8 @@ namespace Shadow {
         }
     };
 
-    inline ShadowTexture LoadTextureFromBuffer(const unsigned char* BufferData, size_t BufferSize) {
+    // 后端资源加载真实实现函数
+    inline ShadowTexture Dumper7_LoadTextureFromBuffer(const unsigned char* BufferData, size_t BufferSize) {
         if (!BufferData || BufferSize == 0) {
             return ShadowTexture{};
         }
@@ -401,7 +402,7 @@ namespace Shadow {
         return ShadowTexture{ LoadedTexture };
     }
 
-    inline ShadowTexture LoadTextureFromFile(const wchar_t* FilePath) {
+    inline ShadowTexture Dumper7_LoadTextureFromFile(const wchar_t* FilePath) {
         if (!FilePath) {
             return ShadowTexture{};
         }
@@ -426,7 +427,7 @@ namespace Shadow {
         return ShadowTexture{ LoadedTexture };
     }
 
-    inline ShadowFont LoadFontFromFile(const wchar_t* FilePath, int32_t FontSize = DEFAULT_FONT_SIZE) {
+    inline ShadowFont Dumper7_LoadFontFromFile(const wchar_t* FilePath, int32_t FontSize = DEFAULT_FONT_SIZE) {
         if (!FilePath) {
             return ShadowFont{};
         }
@@ -465,7 +466,7 @@ namespace Shadow {
         return ShadowFont{ NewFont };
     }
 
-    inline ShadowFont LoadFontFromBuffer(const unsigned char* BufferData, size_t BufferSize, int32_t FontSize = DEFAULT_FONT_SIZE) {
+    inline ShadowFont Dumper7_LoadFontFromBuffer(const unsigned char* BufferData, size_t BufferSize, int32_t FontSize = DEFAULT_FONT_SIZE) {
         if (!BufferData || BufferSize == 0) {
             return ShadowFont{};
         }
@@ -488,25 +489,12 @@ namespace Shadow {
             Out.close();
         }
 
-        ShadowFont LoadedFont = LoadFontFromFile(TempFilePath.c_str(), FontSize);
+        ShadowFont LoadedFont = Dumper7_LoadFontFromFile(TempFilePath.c_str(), FontSize);
         if (LoadedFont) {
             s_BufferFontCache[BufferData] = static_cast<SDK::UFont*>(LoadedFont.NativePtr);
         }
 
         return LoadedFont;
-    }
-
-    inline ShadowTexture Dumper7_LoadTextureFromBuffer(const unsigned char* BufferData, size_t BufferSize) {
-        return LoadTextureFromBuffer(BufferData, BufferSize);
-    }
-    inline ShadowTexture Dumper7_LoadTextureFromFile(const wchar_t* FilePath) {
-        return LoadTextureFromFile(FilePath);
-    }
-    inline ShadowFont Dumper7_LoadFontFromFile(const wchar_t* FilePath, int32_t FontSize = DEFAULT_FONT_SIZE) {
-        return LoadFontFromFile(FilePath, FontSize);
-    }
-    inline ShadowFont Dumper7_LoadFontFromBuffer(const unsigned char* BufferData, size_t BufferSize, int32_t FontSize = DEFAULT_FONT_SIZE) {
-        return LoadFontFromBuffer(BufferData, BufferSize, FontSize);
     }
 
     // 后端文本尺寸测量实现
@@ -528,25 +516,25 @@ namespace Shadow {
         if (radius <= 0.0f) return nullptr;
         float diameter = radius * 2.0f;
         if (diameter <= 16.0f) {
-            return static_cast<SDK::UTexture2D*>(LoadTextureFromBuffer(Shadow_Texture::CircleFilled_16, sizeof(Shadow_Texture::CircleFilled_16)).NativePtr);
+            return static_cast<SDK::UTexture2D*>(Dumper7_LoadTextureFromBuffer(Shadow_Texture::CircleFilled_16, sizeof(Shadow_Texture::CircleFilled_16)).NativePtr);
         }
         else if (diameter <= 32.0f) {
-            return static_cast<SDK::UTexture2D*>(LoadTextureFromBuffer(Shadow_Texture::CircleFilled_32, sizeof(Shadow_Texture::CircleFilled_32)).NativePtr);
+            return static_cast<SDK::UTexture2D*>(Dumper7_LoadTextureFromBuffer(Shadow_Texture::CircleFilled_32, sizeof(Shadow_Texture::CircleFilled_32)).NativePtr);
         }
         else if (diameter <= 64.0f) {
-            return static_cast<SDK::UTexture2D*>(LoadTextureFromBuffer(Shadow_Texture::CircleFilled_64, sizeof(Shadow_Texture::CircleFilled_64)).NativePtr);
+            return static_cast<SDK::UTexture2D*>(Dumper7_LoadTextureFromBuffer(Shadow_Texture::CircleFilled_64, sizeof(Shadow_Texture::CircleFilled_64)).NativePtr);
         }
         else if (diameter <= 128.0f) {
-            return static_cast<SDK::UTexture2D*>(LoadTextureFromBuffer(Shadow_Texture::CircleFilled_128, sizeof(Shadow_Texture::CircleFilled_128)).NativePtr);
+            return static_cast<SDK::UTexture2D*>(Dumper7_LoadTextureFromBuffer(Shadow_Texture::CircleFilled_128, sizeof(Shadow_Texture::CircleFilled_128)).NativePtr);
         }
         else if (diameter <= 256.0f) {
-            return static_cast<SDK::UTexture2D*>(LoadTextureFromBuffer(Shadow_Texture::CircleFilled_256, sizeof(Shadow_Texture::CircleFilled_256)).NativePtr);
+            return static_cast<SDK::UTexture2D*>(Dumper7_LoadTextureFromBuffer(Shadow_Texture::CircleFilled_256, sizeof(Shadow_Texture::CircleFilled_256)).NativePtr);
         }
         else if (diameter <= 512.0f) {
-            return static_cast<SDK::UTexture2D*>(LoadTextureFromBuffer(Shadow_Texture::CircleFilled_512, sizeof(Shadow_Texture::CircleFilled_512)).NativePtr);
+            return static_cast<SDK::UTexture2D*>(Dumper7_LoadTextureFromBuffer(Shadow_Texture::CircleFilled_512, sizeof(Shadow_Texture::CircleFilled_512)).NativePtr);
         }
         else {
-            return static_cast<SDK::UTexture2D*>(LoadTextureFromBuffer(Shadow_Texture::CircleFilled_1024, sizeof(Shadow_Texture::CircleFilled_1024)).NativePtr);
+            return static_cast<SDK::UTexture2D*>(Dumper7_LoadTextureFromBuffer(Shadow_Texture::CircleFilled_1024, sizeof(Shadow_Texture::CircleFilled_1024)).NativePtr);
         }
     }
 
@@ -853,6 +841,23 @@ namespace Shadow {
         InternalDrawLine(p3, p1, color, thickness, clipEnabled, clipMin, clipMax, texture);
     }
 
+    // 后端函数注册表绑定
+    inline void Dumper7_RegisterBackendCallbacks() {
+        Shadow::g_Ctx.TextSizeFn = &Dumper7_MeasureText;
+        Shadow::g_Ctx.LoadTextureFromBufferCallback = &Dumper7_LoadTextureFromBuffer;
+        Shadow::g_Ctx.LoadTextureFromFileCallback = &Dumper7_LoadTextureFromFile;
+        Shadow::g_Ctx.LoadFontFromFileCallback = &Dumper7_LoadFontFromFile;
+        Shadow::g_Ctx.LoadFontFromBufferCallback = &Dumper7_LoadFontFromBuffer;
+    }
+
+    // 静态自动注册器：只要当前单元包含该头文件，便在进入 main/DllMain 阶段完成默认绑定
+    struct Dumper7_BackendAutoRegister {
+        Dumper7_BackendAutoRegister() {
+            Dumper7_RegisterBackendCallbacks();
+        }
+    };
+    inline Dumper7_BackendAutoRegister s_Dumper7_BackendAutoRegister;
+
     inline void Dumper7_NewFrame(SDK::UCanvas* Canvas) {
         s_CurrentCanvas = Canvas;
 
@@ -872,8 +877,8 @@ namespace Shadow {
             }
         }
 
-        // 注册后端文本测量回调函数
-        Shadow::g_Ctx.TextSizeFn = &Dumper7_MeasureText;
+        // 每次进入帧时确保绑定后端接口
+        Dumper7_RegisterBackendCallbacks();
 
         // 同步时间与显示尺寸参数
         Shadow::g_Ctx.RealTimeSeconds = s_RealTimeSeconds;

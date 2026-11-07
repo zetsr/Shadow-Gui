@@ -16,7 +16,7 @@ namespace DX11Hook {
     constexpr int TOGGLE_MENU_KEY = VK_F1;
     constexpr float MENU_FADE_SPEED = 5.0f;
     constexpr float MIN_VISIBLE_ALPHA = 0.001f;
-    constexpr float FONT_SIZE_DEFAULT = 20.0f;
+    constexpr int32_t FONT_SIZE_DEFAULT = 24;
 
     bool g_ShowMenu = true;
     float g_CurrentAlpha = 0.0f;
@@ -133,7 +133,7 @@ namespace DX11Hook {
                 Shadow::ShadowFont font = Shadow::LoadFontFromBuffer(
                     g_Fonts::CangErShuYuanTi_W03,
                     sizeof(g_Fonts::CangErShuYuanTi_W03),
-                    static_cast<int32_t>(FONT_SIZE_DEFAULT)
+                    FONT_SIZE_DEFAULT
                 );
                 Shadow::PushFont(font);
                 Shadow::PushTextPixelSnap();

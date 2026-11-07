@@ -644,6 +644,13 @@ namespace Shadow {
 
     // 稳健键码映射函数 (保证英文字母/数字/功能键精确转换)
     inline int32 Native_GetVirtualKey(const FKey& Key) {
+        // 0. 显式映射鼠标按键，确保与 Windows VK 码绝对一致
+        if (Key == EKeys::LeftMouseButton)   return VK_LBUTTON;
+        if (Key == EKeys::RightMouseButton)  return VK_RBUTTON;
+        if (Key == EKeys::MiddleMouseButton) return VK_MBUTTON;
+        if (Key == EKeys::ThumbMouseButton)  return VK_XBUTTON1;
+        if (Key == EKeys::ThumbMouseButton2) return VK_XBUTTON2;
+
         // 1. 优先从 FInputKeyManager 获取官方映射
         const uint32* KeyCode = nullptr;
         const uint32* CharCode = nullptr;
@@ -787,21 +794,16 @@ namespace Shadow {
     inline bool Native_InputKey(const FInputKeyEventArgs& EventArgs, bool bMenuOpen) {
         int32 WinVK = Native_GetVirtualKey(EventArgs.Key);
 
-        // 无论菜单开闭，统一响应全局注册热键
-        if (WinVK != 0 && WinVK < 256) {
-            if (IsHotkeyRegistered(WinVK)) {
+        // 菜单关闭时，响应已注册的全局热键状态更新并放行给游戏
+        if (!bMenuOpen) {
+            if (WinVK != 0 && WinVK < 256 && IsHotkeyRegistered(WinVK)) {
                 if (EventArgs.Event == IE_Pressed || EventArgs.Event == IE_Repeat) {
                     HandleKeyDown(WinVK, EventArgs.Event == IE_Repeat);
-                    return true;
                 }
                 else if (EventArgs.Event == IE_Released) {
                     HandleKeyUp(WinVK);
-                    return true;
                 }
             }
-        }
-
-        if (!bMenuOpen) {
             return false;
         }
 
@@ -813,13 +815,83 @@ namespace Shadow {
             Shadow::g_Ctx.KeyStates[VK_MENU] = ModifierKeys.IsAltDown();
         }
 
+        bool bIsMouseKey = (EventArgs.Key == EKeys::LeftMouseButton ||
+            EventArgs.Key == EKeys::RightMouseButton ||
+            EventArgs.Key == EKeys::MiddleMouseButton ||
+            EventArgs.Key == EKeys::ThumbMouseButton ||
+            EventArgs.Key == EKeys::ThumbMouseButton2);
+
+        // 鼠标按键处理
+        if (bIsMouseKey) {
+            if (EventArgs.Event == IE_Pressed || EventArgs.Event == IE_DoubleClick) {
+                Native_UpdateMousePos(EventArgs.Viewport);
+
+                // 先由 HandleKeyDown 处理；若当前处于分配热键状态，绑定成功后返回 true，直接吞掉本次点击
+                bool bKeyAssigned = (WinVK != 0 && WinVK < 256) ? HandleKeyDown(WinVK) : false;
+                if (bKeyAssigned) {
+                    return true;
+                }
+
+                if (EventArgs.Key == EKeys::LeftMouseButton) {
+                    bool wasDown = Shadow::g_Ctx.MouseDown;
+                    Shadow::g_Ctx.MouseDown = true;
+                    if (!wasDown) {
+                        Shadow::g_Ctx.MouseClicked = true;
+                    }
+                }
+                else if (EventArgs.Key == EKeys::RightMouseButton) {
+                    bool wasDown = Shadow::g_Ctx.RightMouseDown;
+                    Shadow::g_Ctx.RightMouseDown = true;
+                    if (!wasDown) {
+                        Shadow::g_Ctx.RightMouseClicked = true;
+                    }
+                }
+                else if (EventArgs.Key == EKeys::MiddleMouseButton) {
+                    bool wasDown = Shadow::g_Ctx.MiddleMouseDown;
+                    Shadow::g_Ctx.MiddleMouseDown = true;
+                    if (!wasDown) {
+                        Shadow::g_Ctx.MiddleMouseClicked = true;
+                    }
+                }
+            }
+            else if (EventArgs.Event == IE_Released) {
+                if (WinVK != 0 && WinVK < 256) {
+                    HandleKeyUp(WinVK);
+                }
+
+                if (EventArgs.Key == EKeys::LeftMouseButton) {
+                    Shadow::g_Ctx.MouseDown = false;
+                    Shadow::g_Ctx.IsDragging = false;
+                    Shadow::g_Ctx.IsResizing = false;
+                }
+                else if (EventArgs.Key == EKeys::RightMouseButton) {
+                    Shadow::g_Ctx.RightMouseDown = false;
+                }
+                else if (EventArgs.Key == EKeys::MiddleMouseButton) {
+                    Shadow::g_Ctx.MiddleMouseDown = false;
+                }
+            }
+
+            return true;
+        }
+
         // 键盘按键与连击事件处理
         if (WinVK != 0 && WinVK < 256) {
             if (EventArgs.Event == IE_Pressed || EventArgs.Event == IE_Repeat) {
-                HandleKeyDown(WinVK, EventArgs.Event == IE_Repeat);
-                if (WinVK == VK_LCONTROL || WinVK == VK_RCONTROL) HandleKeyDown(VK_CONTROL, EventArgs.Event == IE_Repeat);
-                if (WinVK == VK_LSHIFT || WinVK == VK_RSHIFT) HandleKeyDown(VK_SHIFT, EventArgs.Event == IE_Repeat);
-                if (WinVK == VK_LMENU || WinVK == VK_RMENU) HandleKeyDown(VK_MENU, EventArgs.Event == IE_Repeat);
+                bool isRepeat = (EventArgs.Event == IE_Repeat);
+                bool bKeyAssigned = HandleKeyDown(WinVK, isRepeat);
+                if (WinVK == VK_LCONTROL || WinVK == VK_RCONTROL) HandleKeyDown(VK_CONTROL, isRepeat);
+                if (WinVK == VK_LSHIFT || WinVK == VK_RSHIFT) HandleKeyDown(VK_SHIFT, isRepeat);
+                if (WinVK == VK_LMENU || WinVK == VK_RMENU) HandleKeyDown(VK_MENU, isRepeat);
+
+                if (bKeyAssigned) {
+                    return true;
+                }
+
+                if (IsKeyAllowed(WinVK)) {
+                    return false;
+                }
+                return true;
             }
             else if (EventArgs.Event == IE_Released) {
                 HandleKeyUp(WinVK);
@@ -838,40 +910,11 @@ namespace Shadow {
                         HandleKeyUp(VK_MENU);
                     }
                 }
-            }
-        }
 
-        // 鼠标按键处理并在点击瞬间立刻对齐光标
-        if (EventArgs.Key == EKeys::LeftMouseButton) {
-            if (EventArgs.Event == IE_Pressed) {
-                Native_UpdateMousePos(EventArgs.Viewport);
-                Shadow::g_Ctx.MouseDown = true;
-                Shadow::g_Ctx.MouseClicked = true;
-            }
-            else if (EventArgs.Event == IE_Released) {
-                Shadow::g_Ctx.MouseDown = false;
-                Shadow::g_Ctx.IsDragging = false;
-                Shadow::g_Ctx.IsResizing = false;
-            }
-        }
-        else if (EventArgs.Key == EKeys::RightMouseButton) {
-            if (EventArgs.Event == IE_Pressed) {
-                Native_UpdateMousePos(EventArgs.Viewport);
-                Shadow::g_Ctx.RightMouseDown = true;
-                Shadow::g_Ctx.RightMouseClicked = true;
-            }
-            else if (EventArgs.Event == IE_Released) {
-                Shadow::g_Ctx.RightMouseDown = false;
-            }
-        }
-        else if (EventArgs.Key == EKeys::MiddleMouseButton) {
-            if (EventArgs.Event == IE_Pressed) {
-                Native_UpdateMousePos(EventArgs.Viewport);
-                Shadow::g_Ctx.MiddleMouseDown = true;
-                Shadow::g_Ctx.MiddleMouseClicked = true;
-            }
-            else if (EventArgs.Event == IE_Released) {
-                Shadow::g_Ctx.MiddleMouseDown = false;
+                if (IsKeyAllowed(WinVK)) {
+                    return false;
+                }
+                return true;
             }
         }
 

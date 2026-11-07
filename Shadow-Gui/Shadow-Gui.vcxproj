@@ -19,7 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="dllmain_DX11.cpp" />
     <ClCompile Include="external\CppSDK\SDK\Basic.cpp" />
     <ClCompile Include="external\CppSDK\SDK\CoreUObject_functions.cpp" />
     <ClCompile Include="external\CppSDK\SDK\Engine_functions.cpp" />
@@ -47,7 +47,6 @@
     <ClInclude Include="external\MinHook\src\trampoline.h" />
     <ClInclude Include="misc\fonts\CangErShuYuanTi_W03.h" />
     <ClInclude Include="misc\textures\Shadow_Titlebar.h" />
-    <ClInclude Include="src\Backend_Dumper7.h" />
     <ClInclude Include="src\Shadow.h" />
     <ClInclude Include="src\Shadow_Demo.h" />
     <ClInclude Include="src\Shadow_Nav.h" />
@@ -165,7 +164,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
-      <PreprocessorDefinitions>NDEBUG;SHADOWGUI_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>NOMINMAX;NDEBUG;SHADOWGUI_EXPORTS;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp23</LanguageStandard>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>

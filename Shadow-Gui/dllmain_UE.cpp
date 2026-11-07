@@ -116,6 +116,26 @@ namespace Hook {
         oPostRender(rcx, canvas);
 
         Shadow::SetAllowedKeys({ 'W', 'A', 'S', 'D', VK_SPACE }); // 放行常用移动按键
+
+        /*
+        static bool bWasAnimating = false;
+        static bool gameOriginalCursorState = false;
+
+        bool isAnimating = (bShowMenu);
+
+        if (isAnimating) {
+            if (!bWasAnimating) {
+                gameOriginalCursorState = GetMouseCursorVisible();
+            }
+
+            // SetMouseCursorVisible(true);
+            bWasAnimating = true;
+        }
+        else if (bWasAnimating) {
+            // SetMouseCursorVisible(gameOriginalCursorState);
+            bWasAnimating = false;
+        }
+        */
         Shadow::Dumper7_NewFrame(canvas);
         Shadow::NewFrame();
         Shadow::UpdateAllHotkeyStates();
@@ -134,16 +154,76 @@ namespace Hook {
         Shadow::PushStyleVar(Shadow::GuiStyleVar_Alpha, currentAlpha);
 
         if (currentAlpha > 0.001f) {
-			Shadow::ShadowFont font = Shadow::LoadFontFromBuffer(g_Fonts::CangErShuYuanTi_W03, sizeof(g_Fonts::CangErShuYuanTi_W03), 14);
-            Shadow::PushFont(font);
+            static bool bInit = false;
+
+            /*
+            if (!bInit) {
+                Shadow::SetNextWindowPos({ 100.f, 100.f });
+            }
+            */
+
+            /*
+			Shadow::PushTextPixelSnap(true);
+            Shadow::StyleColorsDark();
+            Shadow::PushFont(Shadow::DefaultFont, G_SIZE);
+            Example::DrawGUI(); // 不知道为啥在某些游戏会杀死FPS，不过标准控件并没有问题。
+            Shadow::PopFont();
+
+            if (!bInit) {
+                Shadow::SetNextWindowPos({ 500.f, 100.f });
+            }
+            */
+
+			Shadow::ShadowFont font = Shadow::LoadFontFromBuffer(g_Fonts::CangErShuYuanTi_W03, sizeof(g_Fonts::CangErShuYuanTi_W03));
+
+            // Shadow::StyleColorsOcean();
+            // Shadow::PushFont(font, G_SIZE);
+			// Shadow::DefaultFont = font;
+
+            Shadow::PushFont(font, 1.5f);
             Shadow::PushTextPixelSnap();
-
             Shadow::ShowDemoWindow();
-            // Example_Nav::DrawGUI();
-            // Example::DrawGUI(); // 不知道为啥在某些游戏会杀死FPS，不过标准控件并没有问题。
-
             Shadow::PopTextPixelSnap();
             Shadow::PopFont();
+
+            // Shadow::PopFont();
+
+            // Shadow::StyleColorsGrey();
+            // Shadow::PushFont(Shadow::DefaultFont, G_SIZE);
+            // Example_Nav::DrawGUI();
+            // Shadow::PopFont();
+			// Shadow::PopTextPixelSnap();
+
+            // bInit = true;
+
+            auto drawList = Shadow::GetBackgroundDrawList();
+            // 测试手动拼接圆角矩形
+            /*
+            drawList->AddCircleFilled({ 150.f, 200.f }, 50.f, { 1.f, 1.f, 1.f, 1.f }); // 1. 左半圆（实际画完整圆，靠矩形覆盖左半边或直接让它们重叠）
+            drawList->AddCircleFilled({ 350.f, 200.f }, 50.f, { 1.f, 1.f, 1.f, 1.f }); // 2. 右半圆
+            drawList->AddRectFilled({ 150.f, 150.f }, { 200.f, 100.f }, { 1.f, 1.f, 1.f, 1.f });   // 3. 中间矩形连接两端
+            */
+
+			// 圆角填充矩形和圆角矩形边框测试
+            /*
+            drawList->AddRectFilled({ 150.f, 150.f }, { 200.f, 100.f }, { 1.f, 1.f, 1.f, 0.5f }, 55.f, Shadow::ShadowDrawFlags_RoundCornersTop);
+            drawList->AddRectFilled({ 550.f, 150.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 0.25f }, 25.f, Shadow::ShadowDrawFlags_RoundCornersLeft);
+            drawList->AddRectFilled({ 1050.f, 150.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 1.f }, 5.f, Shadow::ShadowDrawFlags_RoundCornersBottom);
+            drawList->AddRectFilled({ 1550.f, 150.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 1.f }, 10.f);
+
+            drawList->AddRectFilled({ 150.f, 350.f }, { 200.f, 100.f }, { 1.f, 1.f, 1.f, 0.5f });
+            drawList->AddRectFilled({ 550.f, 350.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 0.25f });
+            drawList->AddRectFilled({ 1050.f, 350.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 1.f }, 0.f);
+
+			drawList->AddRect({ 150.f, 550.f }, { 200.f, 100.f }, { 1.f, 1.f, 1.f, 0.5f }, 1.f, 55.f, Shadow::ShadowDrawFlags_RoundCornersTop);
+            drawList->AddRect({ 550.f, 550.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 0.25f }, 1.f, 25.f, Shadow::ShadowDrawFlags_RoundCornersLeft);
+            drawList->AddRect({ 1050.f, 550.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 1.f }, 1.f, 5.f, Shadow::ShadowDrawFlags_RoundCornersBottom);
+            drawList->AddRect({ 1550.f, 550.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 1.f }, 1.f, 10.f);
+
+            drawList->AddRect({ 150.f, 750.f }, { 200.f, 100.f }, { 1.f, 1.f, 1.f, 0.5f }, 1.f);
+            drawList->AddRect({ 550.f, 750.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 0.25f }, 1.f);
+            drawList->AddRect({ 1050.f, 750.f }, { 200.f, 100.f }, { 1.f, 0.f, 0.f, 1.f }, 1.f);
+            */
         }
 
         Shadow::PopStyleVar();

@@ -45,9 +45,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="dllmain.cpp">
-      <Filter>Shadow-Gui</Filter>
-    </ClCompile>
     <ClCompile Include="external\MinHook\src\buffer.c">
       <Filter>Shadow-Gui\external\MinHook\src</Filter>
     </ClCompile>
@@ -72,6 +69,7 @@
     <ClCompile Include="external\CppSDK\SDK\Engine_functions.cpp">
       <Filter>Shadow-Gui\external\CppSDK\SDK</Filter>
     </ClCompile>
+    <ClCompile Include="dllmain_DX11.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="external\AOBScan\AOBScan.hpp">
@@ -135,9 +133,6 @@
       <Filter>Shadow-Gui\src</Filter>
     </ClInclude>
     <ClInclude Include="src\Shadow_Demo.h">
-      <Filter>Shadow-Gui\src</Filter>
-    </ClInclude>
-    <ClInclude Include="src\Backend_Dumper7.h">
       <Filter>Shadow-Gui\src</Filter>
     </ClInclude>
   </ItemGroup>

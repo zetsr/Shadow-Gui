@@ -44,6 +44,8 @@ namespace Shadow {
     constexpr unsigned char COLOR_CHANNEL_MAX = 255;
     constexpr int MIN_TARGET_PIXEL_HEIGHT = 1;
     constexpr int DEFAULT_FALLBACK_FONT_SIZE = 14;
+    constexpr float MITER_MIN_DOT_THRESHOLD = 0.1f;
+    constexpr float MITER_MAX_LIMIT = 2.0f;
 
     // DX11 顶点格式
     struct DX11Vertex {
@@ -55,6 +57,14 @@ namespace Shadow {
     // 正交投影常量缓冲
     struct alignas(16) DX11ConstantBuffer {
         float mvp[4][4];
+    };
+
+    // 合并批次描述项
+    struct DX11DrawBatch {
+        uint32_t startIndex = 0;
+        uint32_t indexCount = 0;
+        ID3D11ShaderResourceView* pSRV = nullptr;
+        D3D11_RECT scissorRect{};
     };
 
     // 字形度量缓存项
@@ -84,7 +94,7 @@ namespace Shadow {
         }
     };
 
-    // 字体资源封装结构体 (支持全字号动态按需矢量光栅化)
+    // 字体资源封装结构体
     struct DX11FontResource {
         stbtt_fontinfo FontInfo{};
         std::vector<unsigned char> FontBuffer;
@@ -122,7 +132,7 @@ namespace Shadow {
 
     struct FontBufferCacheHasher {
         size_t operator()(const FontBufferCacheKey& k) const noexcept {
-            return std::hash<const void*>()(k.BufferPtr) ^ (std::hash<int32_t>()(k.FontSize) << 1);
+            return std::hash<const void*>()(k.BufferPtr) ^ (std::hash<int>()(k.FontSize) << 1);
         }
     };
 
@@ -136,7 +146,7 @@ namespace Shadow {
 
     struct FontFileCacheHasher {
         size_t operator()(const FontFileCacheKey& k) const noexcept {
-            return std::hash<std::wstring>()(k.FilePath) ^ (std::hash<int32_t>()(k.FontSize) << 1);
+            return std::hash<std::wstring>()(k.FilePath) ^ (std::hash<int>()(k.FontSize) << 1);
         }
     };
 
@@ -201,7 +211,7 @@ namespace Shadow {
         return c;
     }
 
-    // 根据目标物理像素高度按需光栅化矢量字形 (无损高清，杜绝位图缩放模糊)
+    // 根据目标物理像素高度按需光栅化矢量字形
     inline const DX11Glyph* DX11_GetOrBakeGlyph(DX11FontResource* font, uint32_t codepoint, int pixelHeight) {
         if (!font) return nullptr;
         if (pixelHeight < MIN_TARGET_PIXEL_HEIGHT) {
@@ -237,7 +247,6 @@ namespace Shadow {
         }
 
         if (font->CurrentShelfY + glyphHeight + ATLAS_PADDING >= font->AtlasHeight) {
-            // 图集满时重置并清空已缓存字形，触发全量重建
             font->Glyphs.clear();
             std::fill(font->AtlasRgbaPixels.begin(), font->AtlasRgbaPixels.end(), static_cast<unsigned char>(0));
             font->CurrentShelfX = ATLAS_PADDING;
@@ -325,7 +334,7 @@ namespace Shadow {
         font->AtlasDirty = false;
     }
 
-    // 准确文本尺寸测量（根据动态物理字号精确换算）
+    // 文本尺寸测量
     inline Vec2 DX11_MeasureText(ShadowFont shadowFont, float fontScale, bool noSDF, std::string_view text) {
         if (!shadowFont.NativePtr || text.empty()) {
             return { 0.f, 0.f };
@@ -435,7 +444,6 @@ namespace Shadow {
         return tex;
     }
 
-    // 字体装载实现（结合 TTC 偏移检测与矢量轮廓初始化）
     inline ShadowFont DX11_LoadFontFromBuffer(const unsigned char* BufferData, size_t BufferSize, int32_t FontSize = DEFAULT_FONT_SIZE) {
         if (!BufferData || BufferSize == 0) return ShadowFont{};
 
@@ -464,7 +472,6 @@ namespace Shadow {
 
         fontRes->AtlasRgbaPixels.resize(static_cast<size_t>(fontRes->AtlasWidth * fontRes->AtlasHeight * RGBA_BYTES_PER_PIXEL), 0);
 
-        // 预热基础 ASCII 字符
         for (uint32_t c = 32; c <= 126; ++c) {
             DX11_GetOrBakeGlyph(fontRes.get(), c, targetFontSize);
         }
@@ -773,10 +780,36 @@ namespace Shadow {
         }
     }
 
-    // 内部几何生成器
+    // 几何生成与批次合并构建器
     struct DX11MeshBuilder {
         std::vector<DX11Vertex> Vertices;
         std::vector<uint32_t> Indices;
+        std::vector<DX11DrawBatch> Batches;
+
+        void Clear() {
+            Vertices.clear();
+            Indices.clear();
+            Batches.clear();
+        }
+
+        void EnsureBatch(ID3D11ShaderResourceView* srv, const D3D11_RECT& scissor) {
+            if (!Batches.empty()) {
+                auto& last = Batches.back();
+                if (last.pSRV == srv &&
+                    last.scissorRect.left == scissor.left &&
+                    last.scissorRect.top == scissor.top &&
+                    last.scissorRect.right == scissor.right &&
+                    last.scissorRect.bottom == scissor.bottom) {
+                    return;
+                }
+            }
+            DX11DrawBatch newBatch{};
+            newBatch.startIndex = static_cast<uint32_t>(Indices.size());
+            newBatch.indexCount = 0;
+            newBatch.pSRV = srv;
+            newBatch.scissorRect = scissor;
+            Batches.push_back(newBatch);
+        }
 
         void AddVertex(Vec2 pos, Vec2 uv, Color col) {
             Vertices.push_back({ pos, uv, col });
@@ -786,6 +819,9 @@ namespace Shadow {
             Indices.push_back(i0);
             Indices.push_back(i1);
             Indices.push_back(i2);
+            if (!Batches.empty()) {
+                Batches.back().indexCount += 3;
+            }
         }
 
         void BuildThickLine(Vec2 p0, Vec2 p1, Color col, float thickness) {
@@ -805,6 +841,110 @@ namespace Shadow {
 
             AddTriangleIndices(idx, idx + 1, idx + 2);
             AddTriangleIndices(idx, idx + 2, idx + 3);
+        }
+
+        // 闭合折线均匀描边
+        void BuildPolylineStroke(const std::vector<Vec2>& points, Color col, float thickness) {
+            size_t count = points.size();
+            if (count < 3) return;
+
+            std::vector<Vec2> normals(count);
+            for (size_t i = 0; i < count; ++i) {
+                size_t next = (i + 1 == count) ? 0 : (i + 1);
+                float dx = points[next].x - points[i].x;
+                float dy = points[next].y - points[i].y;
+                float len = std::sqrt(dx * dx + dy * dy);
+                if (len > 0.0f) {
+                    normals[i] = { dy / len, -dx / len };
+                }
+                else {
+                    normals[i] = { 0.f, 0.f };
+                }
+            }
+
+            uint32_t baseIdx = static_cast<uint32_t>(Vertices.size());
+            float halfThickness = thickness * THICKNESS_HALF_RATIO;
+
+            for (size_t i = 0; i < count; ++i) {
+                size_t prev = (i == 0) ? (count - 1) : (i - 1);
+                float nx = normals[prev].x + normals[i].x;
+                float ny = normals[prev].y + normals[i].y;
+                float nlen = std::sqrt(nx * nx + ny * ny);
+                if (nlen > 0.0f) {
+                    nx /= nlen;
+                    ny /= nlen;
+                }
+
+                float dot = nx * normals[i].x + ny * normals[i].y;
+                float miter = (dot > MITER_MIN_DOT_THRESHOLD) ? (1.0f / dot) : 1.0f;
+                if (miter > MITER_MAX_LIMIT) miter = MITER_MAX_LIMIT;
+
+                float offX = nx * halfThickness * miter;
+                float offY = ny * halfThickness * miter;
+
+                AddVertex({ points[i].x + offX, points[i].y + offY }, { 0.f, 0.f }, col);
+                AddVertex({ points[i].x - offX, points[i].y - offY }, { 0.f, 0.f }, col);
+            }
+
+            for (size_t i = 0; i < count; ++i) {
+                uint32_t next = static_cast<uint32_t>((i + 1 == count) ? 0 : (i + 1));
+                uint32_t o0 = baseIdx + static_cast<uint32_t>(i * 2);
+                uint32_t i0 = o0 + 1;
+                uint32_t o1 = baseIdx + static_cast<uint32_t>(next * 2);
+                uint32_t i1 = o1 + 1;
+
+                AddTriangleIndices(o0, i0, i1);
+                AddTriangleIndices(o0, i1, o1);
+            }
+        }
+
+        // 圆角边框矩形绘制
+        void BuildRect(Vec2 pos, Vec2 size, Color col, float thickness, float rounding, ShadowDrawFlags flags) {
+            if (size.x <= 0.f || size.y <= 0.f || thickness <= 0.f) return;
+
+            bool roundTL = (flags & ShadowDrawFlags_RoundCornersTopLeft) && !(flags & ShadowDrawFlags_RoundCornersNone);
+            bool roundTR = (flags & ShadowDrawFlags_RoundCornersTopRight) && !(flags & ShadowDrawFlags_RoundCornersNone);
+            bool roundBL = (flags & ShadowDrawFlags_RoundCornersBottomLeft) && !(flags & ShadowDrawFlags_RoundCornersNone);
+            bool roundBR = (flags & ShadowDrawFlags_RoundCornersBottomRight) && !(flags & ShadowDrawFlags_RoundCornersNone);
+
+            bool noRound = (rounding <= 0.0f) || (!roundTL && !roundTR && !roundBL && !roundBR);
+
+            std::vector<Vec2> points;
+            points.reserve(noRound ? 4 : (CORNER_ROUNDING_SEGMENTS + 1) * 4);
+
+            if (noRound) {
+                points.push_back(pos);
+                points.push_back({ pos.x + size.x, pos.y });
+                points.push_back({ pos.x + size.x, pos.y + size.y });
+                points.push_back({ pos.x, pos.y + size.y });
+            }
+            else {
+                float r = std::min(rounding, std::min(size.x, size.y) * 0.5f);
+
+                auto AppendArc = [&](Vec2 center, float radius, float startAngle, float endAngle) {
+                    int segs = CORNER_ROUNDING_SEGMENTS;
+                    for (int i = 0; i <= segs; ++i) {
+                        float t = static_cast<float>(i) / static_cast<float>(segs);
+                        float a = startAngle + t * (endAngle - startAngle);
+                        points.push_back({ center.x + radius * std::cos(a), center.y - radius * std::sin(a) });
+                    }
+                    };
+
+                // 顺时针构建闭合多边形折线
+                if (roundTL) AppendArc({ pos.x + r, pos.y + r }, r, MATH_PI, MATH_PI * 0.5f);
+                else points.push_back(pos);
+
+                if (roundTR) AppendArc({ pos.x + size.x - r, pos.y + r }, r, MATH_PI * 0.5f, 0.0f);
+                else points.push_back({ pos.x + size.x, pos.y });
+
+                if (roundBR) AppendArc({ pos.x + size.x - r, pos.y + size.y - r }, r, 0.0f, -MATH_PI * 0.5f);
+                else points.push_back({ pos.x + size.x, pos.y + size.y });
+
+                if (roundBL) AppendArc({ pos.x + r, pos.y + size.y - r }, r, -MATH_PI * 0.5f, -MATH_PI);
+                else points.push_back({ pos.x, pos.y + size.y });
+            }
+
+            BuildPolylineStroke(points, col, thickness);
         }
 
         void BuildRectFilled(Vec2 pos, Vec2 size, Color col, float rounding, ShadowDrawFlags flags) {
@@ -877,7 +1017,7 @@ namespace Shadow {
         }
     };
 
-    // 渲染后端 DrawData 核心执行逻辑（集成预扫描按需矢量光栅化与 1:1 像素映射）
+    // 渲染后端DrawData
     inline void DX11_RenderDrawData(const ShadowDrawData* drawData) {
         if (!drawData || !drawData->Valid || !g_DX11_Context || !g_DX11_Device) return;
         if (drawData->DisplaySize.x <= 0.f || drawData->DisplaySize.y <= 0.f) return;
@@ -910,6 +1050,160 @@ namespace Shadow {
             }
         }
 
+        // 第三阶段：几何收集与顶点合并 (全局单实例复用，避免堆内存反复分配)
+        static DX11MeshBuilder s_GlobalMeshBuilder;
+        s_GlobalMeshBuilder.Clear();
+
+        for (const ShadowDrawList* cmdList : drawData->CmdLists) {
+            if (!cmdList) continue;
+            for (const auto& cmd : cmdList->CmdBuffer) {
+                D3D11_RECT scissor{ 0, 0, static_cast<LONG>(drawData->DisplaySize.x), static_cast<LONG>(drawData->DisplaySize.y) };
+                if (cmd.clippingEnabled) {
+                    scissor.left = std::max(0L, static_cast<LONG>(cmd.clipMin.x));
+                    scissor.top = std::max(0L, static_cast<LONG>(cmd.clipMin.y));
+                    scissor.right = std::min(static_cast<LONG>(drawData->DisplaySize.x), static_cast<LONG>(cmd.clipMax.x));
+                    scissor.bottom = std::min(static_cast<LONG>(drawData->DisplaySize.y), static_cast<LONG>(cmd.clipMax.y));
+                    if (scissor.right <= scissor.left || scissor.bottom <= scissor.top) continue;
+                }
+
+                ID3D11ShaderResourceView* texSRV = static_cast<ID3D11ShaderResourceView*>(cmd.texture.NativePtr);
+
+                switch (cmd.type) {
+                case ShadowDrawCmdType::Line:
+                    s_GlobalMeshBuilder.EnsureBatch(texSRV, scissor);
+                    s_GlobalMeshBuilder.BuildThickLine(cmd.pos, cmd.size, cmd.color, cmd.thickness);
+                    break;
+                case ShadowDrawCmdType::Rect:
+                    s_GlobalMeshBuilder.EnsureBatch(texSRV, scissor);
+                    s_GlobalMeshBuilder.BuildRect(cmd.pos, cmd.size, cmd.color, cmd.thickness, cmd.rounding, cmd.flags);
+                    break;
+                case ShadowDrawCmdType::RectFilled:
+                    s_GlobalMeshBuilder.EnsureBatch(texSRV, scissor);
+                    s_GlobalMeshBuilder.BuildRectFilled(cmd.pos, cmd.size, cmd.color, cmd.rounding, cmd.flags);
+                    break;
+                case ShadowDrawCmdType::Texture: {
+                    s_GlobalMeshBuilder.EnsureBatch(texSRV, scissor);
+                    uint32_t idx = static_cast<uint32_t>(s_GlobalMeshBuilder.Vertices.size());
+                    s_GlobalMeshBuilder.AddVertex(cmd.pos, { TEXTURE_DEFAULT_UV_MIN, TEXTURE_DEFAULT_UV_MIN }, cmd.color);
+                    s_GlobalMeshBuilder.AddVertex({ cmd.pos.x + cmd.size.x, cmd.pos.y }, { TEXTURE_DEFAULT_UV_MAX, TEXTURE_DEFAULT_UV_MIN }, cmd.color);
+                    s_GlobalMeshBuilder.AddVertex({ cmd.pos.x + cmd.size.x, cmd.pos.y + cmd.size.y }, { TEXTURE_DEFAULT_UV_MAX, TEXTURE_DEFAULT_UV_MAX }, cmd.color);
+                    s_GlobalMeshBuilder.AddVertex({ cmd.pos.x, cmd.pos.y + cmd.size.y }, { TEXTURE_DEFAULT_UV_MIN, TEXTURE_DEFAULT_UV_MAX }, cmd.color);
+                    s_GlobalMeshBuilder.AddTriangleIndices(idx, idx + 1, idx + 2);
+                    s_GlobalMeshBuilder.AddTriangleIndices(idx, idx + 2, idx + 3);
+                    break;
+                }
+                case ShadowDrawCmdType::CircleFilled:
+                    s_GlobalMeshBuilder.EnsureBatch(texSRV, scissor);
+                    s_GlobalMeshBuilder.BuildCircleFilled(cmd.pos, cmd.size.x, cmd.color);
+                    break;
+                case ShadowDrawCmdType::Triangle:
+                    s_GlobalMeshBuilder.EnsureBatch(texSRV, scissor);
+                    s_GlobalMeshBuilder.BuildThickLine(cmd.p1, cmd.p2, cmd.color, cmd.thickness);
+                    s_GlobalMeshBuilder.BuildThickLine(cmd.p2, cmd.p3, cmd.color, cmd.thickness);
+                    s_GlobalMeshBuilder.BuildThickLine(cmd.p3, cmd.p1, cmd.color, cmd.thickness);
+                    break;
+                case ShadowDrawCmdType::TriangleFilled: {
+                    s_GlobalMeshBuilder.EnsureBatch(texSRV, scissor);
+                    uint32_t idx = static_cast<uint32_t>(s_GlobalMeshBuilder.Vertices.size());
+                    s_GlobalMeshBuilder.AddVertex(cmd.p1, { 0.f, 0.f }, cmd.color);
+                    s_GlobalMeshBuilder.AddVertex(cmd.p2, { 0.f, 0.f }, cmd.color);
+                    s_GlobalMeshBuilder.AddVertex(cmd.p3, { 0.f, 0.f }, cmd.color);
+                    s_GlobalMeshBuilder.AddTriangleIndices(idx, idx + 1, idx + 2);
+                    break;
+                }
+                case ShadowDrawCmdType::Text: {
+                    if (!cmd.font.NativePtr || cmd.text.empty()) break;
+                    auto* font = static_cast<DX11FontResource*>(cmd.font.NativePtr);
+                    int targetPixelHeight = std::max(MIN_TARGET_PIXEL_HEIGHT, static_cast<int>(std::round(font->BaseFontSize * cmd.fontScale * globalStyle.FontScaleDpi)));
+
+                    s_GlobalMeshBuilder.EnsureBatch(font->AtlasSRV, scissor);
+
+                    auto DrawString = [&](Vec2 pos, Color col) {
+                        const char* p = cmd.text.data();
+                        const char* end = p + cmd.text.size();
+                        float curX = pos.x;
+                        float curY = pos.y;
+
+                        while (p < end) {
+                            uint32_t cp = DX11_DecodeUTF8(p, end);
+                            if (cp == 0) break;
+
+                            const DX11Glyph* g = DX11_GetOrBakeGlyph(font, cp, targetPixelHeight);
+                            if (g) {
+                                float x0 = std::floor(curX + g->xOff);
+                                float y0 = std::floor(curY + g->yOff);
+                                float x1 = x0 + g->width;
+                                float y1 = y0 + g->height;
+
+                                uint32_t vidx = static_cast<uint32_t>(s_GlobalMeshBuilder.Vertices.size());
+                                s_GlobalMeshBuilder.AddVertex({ x0, y0 }, { g->uv0.x, g->uv0.y }, col);
+                                s_GlobalMeshBuilder.AddVertex({ x1, y0 }, { g->uv1.x, g->uv0.y }, col);
+                                s_GlobalMeshBuilder.AddVertex({ x1, y1 }, { g->uv1.x, g->uv1.y }, col);
+                                s_GlobalMeshBuilder.AddVertex({ x0, y1 }, { g->uv0.x, g->uv1.y }, col);
+
+                                s_GlobalMeshBuilder.AddTriangleIndices(vidx, vidx + 1, vidx + 2);
+                                s_GlobalMeshBuilder.AddTriangleIndices(vidx, vidx + 2, vidx + 3);
+
+                                curX += g->xAdvance;
+                            }
+                        }
+                        };
+
+                    if (cmd.textShadowColor.a > 0.001f) {
+                        DrawString({ cmd.pos.x + globalStyle.TextShadowOffsetX, cmd.pos.y + globalStyle.TextShadowOffsetY }, cmd.textShadowColor);
+                    }
+                    if (cmd.textOutline && cmd.textOutlineColor.a > 0.001f) {
+                        DrawString({ cmd.pos.x - 1.f, cmd.pos.y }, cmd.textOutlineColor);
+                        DrawString({ cmd.pos.x + 1.f, cmd.pos.y }, cmd.textOutlineColor);
+                        DrawString({ cmd.pos.x, cmd.pos.y - 1.f }, cmd.textOutlineColor);
+                        DrawString({ cmd.pos.x, cmd.pos.y + 1.f }, cmd.textOutlineColor);
+                    }
+                    DrawString(cmd.pos, cmd.color);
+                    break;
+                }
+                }
+            }
+        }
+
+        if (s_GlobalMeshBuilder.Vertices.empty() || s_GlobalMeshBuilder.Indices.empty()) {
+            return;
+        }
+
+        // 第四阶段：整帧单次上传顶点与索引数据 (Single Map-Unmap)
+        if (!g_DX11_VB || g_DX11_VertexBufferSize < s_GlobalMeshBuilder.Vertices.size()) {
+            if (g_DX11_VB) { g_DX11_VB->Release(); g_DX11_VB = nullptr; }
+            g_DX11_VertexBufferSize = s_GlobalMeshBuilder.Vertices.size() + INITIAL_VERTEX_BUFFER_SIZE;
+            D3D11_BUFFER_DESC desc{};
+            desc.ByteWidth = static_cast<UINT>(g_DX11_VertexBufferSize * sizeof(DX11Vertex));
+            desc.Usage = D3D11_USAGE_DYNAMIC;
+            desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+            desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+            g_DX11_Device->CreateBuffer(&desc, nullptr, &g_DX11_VB);
+        }
+
+        if (!g_DX11_IB || g_DX11_IndexBufferSize < s_GlobalMeshBuilder.Indices.size()) {
+            if (g_DX11_IB) { g_DX11_IB->Release(); g_DX11_IB = nullptr; }
+            g_DX11_IndexBufferSize = s_GlobalMeshBuilder.Indices.size() + INITIAL_INDEX_BUFFER_SIZE;
+            D3D11_BUFFER_DESC desc{};
+            desc.ByteWidth = static_cast<UINT>(g_DX11_IndexBufferSize * sizeof(uint32_t));
+            desc.Usage = D3D11_USAGE_DYNAMIC;
+            desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+            desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+            g_DX11_Device->CreateBuffer(&desc, nullptr, &g_DX11_IB);
+        }
+
+        D3D11_MAPPED_SUBRESOURCE vMap;
+        if (SUCCEEDED(g_DX11_Context->Map(g_DX11_VB, 0, D3D11_MAP_WRITE_DISCARD, 0, &vMap))) {
+            memcpy(vMap.pData, s_GlobalMeshBuilder.Vertices.data(), s_GlobalMeshBuilder.Vertices.size() * sizeof(DX11Vertex));
+            g_DX11_Context->Unmap(g_DX11_VB, 0);
+        }
+
+        D3D11_MAPPED_SUBRESOURCE iMap;
+        if (SUCCEEDED(g_DX11_Context->Map(g_DX11_IB, 0, D3D11_MAP_WRITE_DISCARD, 0, &iMap))) {
+            memcpy(iMap.pData, s_GlobalMeshBuilder.Indices.data(), s_GlobalMeshBuilder.Indices.size() * sizeof(uint32_t));
+            g_DX11_Context->Unmap(g_DX11_IB, 0);
+        }
+
         // 设置视口
         D3D11_VIEWPORT vp{};
         vp.Width = drawData->DisplaySize.x;
@@ -936,11 +1230,14 @@ namespace Shadow {
             g_DX11_Context->Unmap(g_DX11_ConstantBuffer, 0);
         }
 
-        // 绑定 DX11 管线状态
+        // 统一配置管线状态
         UINT stride = sizeof(DX11Vertex);
         UINT offset = 0;
         g_DX11_Context->IASetInputLayout(g_DX11_InputLayout);
         g_DX11_Context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        g_DX11_Context->IASetVertexBuffers(0, 1, &g_DX11_VB, &stride, &offset);
+        g_DX11_Context->IASetIndexBuffer(g_DX11_IB, DXGI_FORMAT_R32_UINT, 0);
+
         g_DX11_Context->VSSetShader(g_DX11_VertexShader, nullptr, 0);
         g_DX11_Context->VSSetConstantBuffers(0, 1, &g_DX11_ConstantBuffer);
         g_DX11_Context->PSSetShader(g_DX11_PixelShader, nullptr, 0);
@@ -951,168 +1248,13 @@ namespace Shadow {
         float blendFactor[4] = { 0.f, 0.f, 0.f, 0.f };
         g_DX11_Context->OMSetBlendState(g_DX11_BlendState, blendFactor, 0xFFFFFFFF);
 
-        auto RenderBatch = [&](const DX11MeshBuilder& mesh, ID3D11ShaderResourceView* srv, const D3D11_RECT& scissor) {
-            if (mesh.Vertices.empty() || mesh.Indices.empty()) return;
-
-            if (!g_DX11_VB || g_DX11_VertexBufferSize < mesh.Vertices.size()) {
-                if (g_DX11_VB) { g_DX11_VB->Release(); g_DX11_VB = nullptr; }
-                g_DX11_VertexBufferSize = mesh.Vertices.size() + INITIAL_VERTEX_BUFFER_SIZE;
-                D3D11_BUFFER_DESC desc{};
-                desc.ByteWidth = static_cast<UINT>(g_DX11_VertexBufferSize * sizeof(DX11Vertex));
-                desc.Usage = D3D11_USAGE_DYNAMIC;
-                desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-                desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-                g_DX11_Device->CreateBuffer(&desc, nullptr, &g_DX11_VB);
-            }
-
-            if (!g_DX11_IB || g_DX11_IndexBufferSize < mesh.Indices.size()) {
-                if (g_DX11_IB) { g_DX11_IB->Release(); g_DX11_IB = nullptr; }
-                g_DX11_IndexBufferSize = mesh.Indices.size() + INITIAL_INDEX_BUFFER_SIZE;
-                D3D11_BUFFER_DESC desc{};
-                desc.ByteWidth = static_cast<UINT>(g_DX11_IndexBufferSize * sizeof(uint32_t));
-                desc.Usage = D3D11_USAGE_DYNAMIC;
-                desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-                desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-                g_DX11_Device->CreateBuffer(&desc, nullptr, &g_DX11_IB);
-            }
-
-            D3D11_MAPPED_SUBRESOURCE vMap;
-            if (SUCCEEDED(g_DX11_Context->Map(g_DX11_VB, 0, D3D11_MAP_WRITE_DISCARD, 0, &vMap))) {
-                memcpy(vMap.pData, mesh.Vertices.data(), mesh.Vertices.size() * sizeof(DX11Vertex));
-                g_DX11_Context->Unmap(g_DX11_VB, 0);
-            }
-
-            D3D11_MAPPED_SUBRESOURCE iMap;
-            if (SUCCEEDED(g_DX11_Context->Map(g_DX11_IB, 0, D3D11_MAP_WRITE_DISCARD, 0, &iMap))) {
-                memcpy(iMap.pData, mesh.Indices.data(), mesh.Indices.size() * sizeof(uint32_t));
-                g_DX11_Context->Unmap(g_DX11_IB, 0);
-            }
-
-            g_DX11_Context->IASetVertexBuffers(0, 1, &g_DX11_VB, &stride, &offset);
-            g_DX11_Context->IASetIndexBuffer(g_DX11_IB, DXGI_FORMAT_R32_UINT, 0);
-            g_DX11_Context->RSSetScissorRects(1, &scissor);
-
-            ID3D11ShaderResourceView* bindSRV = srv ? srv : g_DX11_WhiteSRV;
+        // 第五阶段：依序遍历极少数合并批次进行绘制 (Low DrawCalls)
+        for (const auto& batch : s_GlobalMeshBuilder.Batches) {
+            if (batch.indexCount == 0) continue;
+            g_DX11_Context->RSSetScissorRects(1, &batch.scissorRect);
+            ID3D11ShaderResourceView* bindSRV = batch.pSRV ? batch.pSRV : g_DX11_WhiteSRV;
             g_DX11_Context->PSSetShaderResources(0, 1, &bindSRV);
-
-            g_DX11_Context->DrawIndexed(static_cast<UINT>(mesh.Indices.size()), 0, 0);
-            };
-
-        for (const ShadowDrawList* cmdList : drawData->CmdLists) {
-            if (!cmdList) continue;
-            for (const auto& cmd : cmdList->CmdBuffer) {
-                D3D11_RECT scissor{ 0, 0, static_cast<LONG>(drawData->DisplaySize.x), static_cast<LONG>(drawData->DisplaySize.y) };
-                if (cmd.clippingEnabled) {
-                    scissor.left = std::max(0L, static_cast<LONG>(cmd.clipMin.x));
-                    scissor.top = std::max(0L, static_cast<LONG>(cmd.clipMin.y));
-                    scissor.right = std::min(static_cast<LONG>(drawData->DisplaySize.x), static_cast<LONG>(cmd.clipMax.x));
-                    scissor.bottom = std::min(static_cast<LONG>(drawData->DisplaySize.y), static_cast<LONG>(cmd.clipMax.y));
-                    if (scissor.right <= scissor.left || scissor.bottom <= scissor.top) continue;
-                }
-
-                DX11MeshBuilder builder;
-                ID3D11ShaderResourceView* texSRV = static_cast<ID3D11ShaderResourceView*>(cmd.texture.NativePtr);
-
-                switch (cmd.type) {
-                case ShadowDrawCmdType::Line:
-                    builder.BuildThickLine(cmd.pos, cmd.size, cmd.color, cmd.thickness);
-                    RenderBatch(builder, texSRV, scissor);
-                    break;
-                case ShadowDrawCmdType::Rect: {
-                    float halfThick = cmd.thickness * THICKNESS_HALF_RATIO;
-                    builder.BuildThickLine({ cmd.pos.x - halfThick, cmd.pos.y }, { cmd.pos.x + cmd.size.x + halfThick, cmd.pos.y }, cmd.color, cmd.thickness);
-                    builder.BuildThickLine({ cmd.pos.x - halfThick, cmd.pos.y + cmd.size.y }, { cmd.pos.x + cmd.size.x + halfThick, cmd.pos.y + cmd.size.y }, cmd.color, cmd.thickness);
-                    builder.BuildThickLine({ cmd.pos.x, cmd.pos.y + halfThick }, { cmd.pos.x, cmd.pos.y + cmd.size.y - halfThick }, cmd.color, cmd.thickness);
-                    builder.BuildThickLine({ cmd.pos.x + cmd.size.x, cmd.pos.y + halfThick }, { cmd.pos.x + cmd.size.x, cmd.pos.y + cmd.size.y - halfThick }, cmd.color, cmd.thickness);
-                    RenderBatch(builder, texSRV, scissor);
-                    break;
-                }
-                case ShadowDrawCmdType::RectFilled:
-                    builder.BuildRectFilled(cmd.pos, cmd.size, cmd.color, cmd.rounding, cmd.flags);
-                    RenderBatch(builder, texSRV, scissor);
-                    break;
-                case ShadowDrawCmdType::Texture: {
-                    uint32_t idx = static_cast<uint32_t>(builder.Vertices.size());
-                    builder.AddVertex(cmd.pos, { TEXTURE_DEFAULT_UV_MIN, TEXTURE_DEFAULT_UV_MIN }, cmd.color);
-                    builder.AddVertex({ cmd.pos.x + cmd.size.x, cmd.pos.y }, { TEXTURE_DEFAULT_UV_MAX, TEXTURE_DEFAULT_UV_MIN }, cmd.color);
-                    builder.AddVertex({ cmd.pos.x + cmd.size.x, cmd.pos.y + cmd.size.y }, { TEXTURE_DEFAULT_UV_MAX, TEXTURE_DEFAULT_UV_MAX }, cmd.color);
-                    builder.AddVertex({ cmd.pos.x, cmd.pos.y + cmd.size.y }, { TEXTURE_DEFAULT_UV_MIN, TEXTURE_DEFAULT_UV_MAX }, cmd.color);
-                    builder.AddTriangleIndices(idx, idx + 1, idx + 2);
-                    builder.AddTriangleIndices(idx, idx + 2, idx + 3);
-                    RenderBatch(builder, texSRV, scissor);
-                    break;
-                }
-                case ShadowDrawCmdType::CircleFilled:
-                    builder.BuildCircleFilled(cmd.pos, cmd.size.x, cmd.color);
-                    RenderBatch(builder, texSRV, scissor);
-                    break;
-                case ShadowDrawCmdType::Triangle:
-                    builder.BuildThickLine(cmd.p1, cmd.p2, cmd.color, cmd.thickness);
-                    builder.BuildThickLine(cmd.p2, cmd.p3, cmd.color, cmd.thickness);
-                    builder.BuildThickLine(cmd.p3, cmd.p1, cmd.color, cmd.thickness);
-                    RenderBatch(builder, texSRV, scissor);
-                    break;
-                case ShadowDrawCmdType::TriangleFilled: {
-                    uint32_t idx = static_cast<uint32_t>(builder.Vertices.size());
-                    builder.AddVertex(cmd.p1, { 0.f, 0.f }, cmd.color);
-                    builder.AddVertex(cmd.p2, { 0.f, 0.f }, cmd.color);
-                    builder.AddVertex(cmd.p3, { 0.f, 0.f }, cmd.color);
-                    builder.AddTriangleIndices(idx, idx + 1, idx + 2);
-                    RenderBatch(builder, texSRV, scissor);
-                    break;
-                }
-                case ShadowDrawCmdType::Text: {
-                    if (!cmd.font.NativePtr || cmd.text.empty()) break;
-                    auto* font = static_cast<DX11FontResource*>(cmd.font.NativePtr);
-                    int targetPixelHeight = std::max(MIN_TARGET_PIXEL_HEIGHT, static_cast<int>(std::round(font->BaseFontSize * cmd.fontScale * globalStyle.FontScaleDpi)));
-
-                    auto DrawString = [&](Vec2 pos, Color col) {
-                        const char* p = cmd.text.data();
-                        const char* end = p + cmd.text.size();
-                        float curX = pos.x;
-                        float curY = pos.y;
-
-                        while (p < end) {
-                            uint32_t cp = DX11_DecodeUTF8(p, end);
-                            if (cp == 0) break;
-
-                            const DX11Glyph* g = DX11_GetOrBakeGlyph(font, cp, targetPixelHeight);
-                            if (g) {
-                                float x0 = std::floor(curX + g->xOff);
-                                float y0 = std::floor(curY + g->yOff);
-                                float x1 = x0 + g->width;
-                                float y1 = y0 + g->height;
-
-                                uint32_t vidx = static_cast<uint32_t>(builder.Vertices.size());
-                                builder.AddVertex({ x0, y0 }, { g->uv0.x, g->uv0.y }, col);
-                                builder.AddVertex({ x1, y0 }, { g->uv1.x, g->uv0.y }, col);
-                                builder.AddVertex({ x1, y1 }, { g->uv1.x, g->uv1.y }, col);
-                                builder.AddVertex({ x0, y1 }, { g->uv0.x, g->uv1.y }, col);
-
-                                builder.AddTriangleIndices(vidx, vidx + 1, vidx + 2);
-                                builder.AddTriangleIndices(vidx, vidx + 2, vidx + 3);
-
-                                curX += g->xAdvance;
-                            }
-                        }
-                        };
-
-                    if (cmd.textShadowColor.a > 0.001f) {
-                        DrawString({ cmd.pos.x + globalStyle.TextShadowOffsetX, cmd.pos.y + globalStyle.TextShadowOffsetY }, cmd.textShadowColor);
-                    }
-                    if (cmd.textOutline && cmd.textOutlineColor.a > 0.001f) {
-                        DrawString({ cmd.pos.x - 1.f, cmd.pos.y }, cmd.textOutlineColor);
-                        DrawString({ cmd.pos.x + 1.f, cmd.pos.y }, cmd.textOutlineColor);
-                        DrawString({ cmd.pos.x, cmd.pos.y - 1.f }, cmd.textOutlineColor);
-                        DrawString({ cmd.pos.x, cmd.pos.y + 1.f }, cmd.textOutlineColor);
-                    }
-                    DrawString(cmd.pos, cmd.color);
-
-                    RenderBatch(builder, font->AtlasSRV, scissor);
-                    break;
-                }
-                }
-            }
+            g_DX11_Context->DrawIndexed(batch.indexCount, batch.startIndex, 0);
         }
     }
 } // namespace Shadow
